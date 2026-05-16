@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  pm:
+    build: .
+    image: pm:latest
+    container_name: pm
+    restart: unless-stopped
+    volumes:
+      - ./plugins:/plugins
+      - ./data/config:/config
+      - ./data/media:/media
+    environment:
+      - PLEX_URL=http://192.168.1.x:32400
+      - PLEX_TOKEN=your-plex-token
+      - LIBRARY_PATHS=/media
+      - PLUGIN_DIR=/plugins
+      - REPORT_PATH=/config/reports
+      - LOG_PATH=/config/logs
+      - RUN_SCHEDULE=0 3 * * *
+      - LOG_LEVEL=INFO
+      - LOG_RETENTION_DAYS=30
+      - REPORT_RETENTION_DAYS=90
