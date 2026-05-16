@@ -74,7 +74,7 @@ class ParsedFilename:
 
 @dataclass
 class MetadataResult:
-    # Resolved full title for this scene/movie (required)
+    # Resolved full title for this scene/movie (required, must be non-empty)
     title: str
 
     # Long-form description / plot summary
@@ -101,6 +101,22 @@ class MetadataResult:
     source_url: str | None = None
     # Site-internal ID — stored in NFO <uniqueid> for traceability
     source_id: str | None = None
+
+    def __post_init__(self) -> None:
+        # Validate at the plugin boundary so bad data never reaches the writers.
+        # A missing title would produce a corrupt NFO and garbage in Plex.
+        if not self.title or not self.title.strip():
+            raise ValueError("MetadataResult.title must be a non-empty string")
+        # Normalise: strip whitespace from title
+        self.title = self.title.strip()
+        # Ensure list fields are actually lists (guard against plugins returning None)
+        for list_field in ("genres", "labels", "tags", "actors"):
+            val = getattr(self, list_field)
+            if val is None:
+                setattr(self, list_field, [])
+        # Validate rating is in a sensible range if provided
+        if self.rating is not None and not (0.0 <= self.rating <= 10.0):
+            raise ValueError(f"MetadataResult.rating must be between 0 and 10, got {self.rating}")
 
 
 class MetadataPlugin(ABC):

@@ -4,9 +4,10 @@
 # Entrypoint for the pm metadata agent.
 #
 # Usage:
-#   python -m app.main              # start the scheduler (normal container mode)
-#   python -m app.main --once       # run once and exit (useful for testing)
-#   python -m app.main --once --force  # run once, re-process all files
+#   python -m app.main                        # start the scheduler (normal container mode)
+#   python -m app.main --once                 # run once and exit (useful for testing)
+#   python -m app.main --once --force         # run once, re-process all files
+#   python -m app.main --once --dry-run       # parse + route but skip all writes
 #
 # On startup this module:
 #   1. Parses CLI flags
@@ -37,7 +38,7 @@ from app.writers.plex import connect_plex, push_to_plex
 logger = logging.getLogger(__name__)
 
 
-def run(config, plex_server, router: Router) -> None:
+def run(config, plex_server, router: Router, dry_run: bool = False) -> None:
     """
     Execute one full metadata pass over all configured library paths.
 
@@ -47,7 +48,11 @@ def run(config, plex_server, router: Router) -> None:
       - Write an NFO sidecar + poster/fanart images next to the file
       - Push the same metadata to Plex (if connected) with field locks
       - Record the outcome in the run report
+
+    When dry_run=True, all writes are skipped; routing and plugin fetches still run.
     """
+    if dry_run:
+        logger.info("DRY RUN mode — no files or Plex records will be written")
     report = RunReport(started_at=datetime.now().isoformat(timespec="seconds"))
 
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
@@ -99,22 +104,27 @@ def run(config, plex_server, router: Router) -> None:
             continue
 
         # Write the NFO sidecar and download poster/fanart images alongside the video file
-        try:
-            write_nfo(media, result)
-            write_images(media, result)
-        except Exception as exc:
-            logger.exception("NFO write error for %s", media.path)
-            report.record(FileResult(path=media.path, status="error", message=str(exc)))
-            continue
+        if dry_run:
+            logger.info("[DRY RUN] Would write NFO + images for: %s", media.path)
+        else:
+            try:
+                write_nfo(media, result)
+                write_images(media, result)
+            except Exception as exc:
+                logger.exception("NFO write error for %s", media.path)
+                report.record(FileResult(path=media.path, status="error", message=str(exc)))
+                continue
 
         # Push the same metadata to Plex with field locks so Plex's built-in agent
         # won't overwrite our values on the next scheduled refresh.
         # This is non-fatal: if Plex is unreachable we still have the NFO sidecar.
-        if plex_server is not None:
+        if not dry_run and plex_server is not None:
             try:
                 push_to_plex(plex_server, media.path, result)
             except Exception as exc:
                 logger.warning("Plex push failed for %s: %s", media.path, exc)
+        elif dry_run and plex_server is not None:
+            logger.info("[DRY RUN] Would push to Plex for: %s", media.path)
 
         report.record(FileResult(path=media.path, status="updated"))
         logger.info("Updated: %s", media.path)
@@ -145,6 +155,11 @@ def main() -> None:
         action="store_true",
         help="Re-process files that already have .nfo sidecars (ignore skip logic)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and route files but skip all writes (NFO, images, Plex)",
+    )
     args = parser.parse_args()
 
     # Load all settings from environment variables; fails fast if PLEX_URL/TOKEN missing
@@ -171,7 +186,7 @@ def main() -> None:
 
     # Wrap run() so the scheduler and --once path call the same function
     def _run():
-        run(config, plex_server, router)
+        run(config, plex_server, router, dry_run=args.dry_run)
 
     if args.once:
         # Run immediately and exit — useful for testing or docker exec one-shots

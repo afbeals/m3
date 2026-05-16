@@ -1,0 +1,79 @@
+# config.example.yml
+#
+# Annotated example of all supported configuration for pm.
+# Copy this to config.yml and mount it into the container at /config/config.yml,
+# OR set the values as environment variables (see ARCHITECTURE.md for the full list).
+#
+# Environment variables always take precedence over values in this file.
+# Secret values (PLEX_TOKEN, API keys) should only be set as env vars, never
+# committed to this file.
+
+# ---------------------------------------------------------------------------
+# Plex connection (REQUIRED)
+# ---------------------------------------------------------------------------
+
+# URL of your Plex Media Server, reachable from inside the Docker container.
+# plex_url: "http://192.168.1.100:32400"
+
+# Plex authentication token.
+# Find yours at: https://support.plex.tv/articles/204059436
+# Set via PLEX_TOKEN env var — do not put your real token in this file.
+# plex_token: ""
+
+# ---------------------------------------------------------------------------
+# Library paths (REQUIRED)
+# ---------------------------------------------------------------------------
+
+# Comma-separated list of host directories that contain your media files.
+# These are mounted read-write so pm can write .nfo sidecars and images.
+# library_paths: "/media/movies,/media/adult"
+
+# ---------------------------------------------------------------------------
+# Plugin directory (REQUIRED)
+# ---------------------------------------------------------------------------
+
+# Path to the directory where your plugin .py files live.
+# Mount this from your host into the container.
+# plugin_dir: "/plugins"
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+# Standard 5-field cron expression controlling when the agent runs.
+# Default: 3am every night.
+# run_schedule: "0 3 * * *"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+# Verbosity level for the log output.
+# One of: DEBUG, INFO, WARNING, ERROR, CRITICAL
+# log_level: "INFO"
+
+# Directory where rotating log files are written.
+# log_path: "/config/logs"
+
+# Log files older than this many days are deleted at the end of each run.
+# log_retention_days: 30
+
+# ---------------------------------------------------------------------------
+# Run reports
+# ---------------------------------------------------------------------------
+
+# Directory where per-run JSON + summary text reports are written.
+# report_path: "/config/reports"
+
+# Report files older than this many days are deleted at the end of each run.
+# report_retention_days: 90
+
+# ---------------------------------------------------------------------------
+# Plugin-specific API keys
+# ---------------------------------------------------------------------------
+# Each plugin reads its own key from os.environ. Set these as Docker env vars:
+#
+#   MYSITE_API_KEY=your-key-here
+#   OTHERSITE_API_KEY=your-key-here
+#
+# Never commit real API keys to this file.
