@@ -61,23 +61,21 @@ A scheduled Python service that reads media filenames from Plex library director
 
 ```
 pm/
-├── ARCHITECTURE.md               # this file
-├── FILENAME_PATTERNS.md          # full filename grammar + parser design
-├── NOTE_filename_grammar_source.md  # verbatim source note
 ├── Dockerfile
 ├── docker-compose.yml            # example Unraid-compatible compose
 ├── requirements.txt
-├── config.example.yml            # annotated example config
+├── requirements-dev.txt          # pytest + coverage (local dev only)
+├── .gitignore
 │
 ├── app/
 │   ├── main.py                   # entrypoint; starts scheduler; --once / --force flags
-│   ├── config.py                 # loads/validates config from env
-│   ├── scheduler.py              # APScheduler setup; triggers run()
+│   ├── config.py                 # loads/validates config from env vars
+│   ├── scheduler.py              # APScheduler cron; Windows-safe SIGUSR1 handler
 │   ├── logging_setup.py          # rotating file + stdout handlers; retention cleanup
-│   │
-│   ├── scanner.py                # walks library dirs, yields media files
 │   ├── parser.py                 # universal filename decoder → ParsedFilename
+│   ├── scanner.py                # walks library dirs, yields media files
 │   ├── router.py                 # O(1) site_id dispatch; alias resolution
+│   ├── reporter.py               # builds + writes run report; cleans up old logs/reports
 │   │
 │   ├── plugins/
 │   │   ├── base.py               # MetadataPlugin base class, MetadataResult, ParsedFilename
@@ -87,10 +85,22 @@ pm/
 │   │   ├── nfo.py                # writes NFO XML + downloads poster/fanart
 │   │   └── plex.py               # PlexAPI integration; field-locked updates
 │   │
-│   └── reporter.py               # builds + writes run report; cleans up old logs/reports
+│   └── tests/
+│       ├── test_parser.py        # 32 tests — all forms, subtypes, edge cases
+│       ├── test_router.py        # 5 tests — dispatch, aliases, unmatched
+│       ├── test_scanner.py       # 7 tests — video detection, sidecar skip, force
+│       └── test_plugin_loader.py # 5 tests — discovery, bad files, missing dir
 │
-└── plugins/                      # mounted from host; drop .py files here
-    └── example_plugin.py         # reference implementation
+├── plugins/                      # mounted from host at /plugins; drop .py files here
+│   └── example_plugin.py         # reference implementation with full comments
+│
+└── docs/
+    ├── ARCHITECTURE.md           # this file
+    ├── FILENAME_PATTERNS.md      # full filename grammar + parser design
+    ├── UNRAID_SETUP.md           # Docker build + Unraid deployment guide
+    ├── local-testing.md          # local dev testing guide (macOS, Linux, Windows)
+    ├── NOTE_filename_grammar_source.md  # verbatim source note
+    └── filename_patterns_raw.txt # raw note text
 ```
 
 ---
@@ -272,6 +282,12 @@ docker exec pm python -m app.main --once --force
 ```
 
 `--force` only applies to the run it's passed to. Scheduled runs always use normal skip logic.
+
+**Manual trigger without restart (Unix/Linux/macOS only):**
+```bash
+docker exec pm kill -USR1 1
+```
+`SIGUSR1` is not available on Windows. On Windows use `--once` via `docker exec` instead.
 
 ---
 
