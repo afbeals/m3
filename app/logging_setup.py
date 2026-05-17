@@ -49,6 +49,10 @@ def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str =
     `retention_days` days. If `pattern_suffix` is given (e.g. ".log", ".json"),
     only files with that suffix are considered.
 
+    For log files (.log suffix), the active log file "pm.log" is always skipped
+    even if its mtime predates the cutoff — only rotated backups (pm.log.1, etc.)
+    are eligible for deletion.
+
     Returns the number of files deleted.
     """
     if not os.path.isdir(directory):
@@ -63,11 +67,23 @@ def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str =
         if pattern_suffix and not fname.endswith(pattern_suffix):
             continue
 
+        # Never delete the active log file — only rotated backups (pm.log.1, pm.log.2, ...)
+        if fname == "pm.log":
+            continue
+
         fpath = os.path.join(directory, fname)
         if os.path.isfile(fpath):
             mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
             if mtime < cutoff:
-                os.remove(fpath)
-                removed += 1
+                try:
+                    os.remove(fpath)
+                    removed += 1
+                except OSError as exc:
+                    # Log but continue — a locked or unwritable file shouldn't
+                    # abort cleanup of all other files
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "Could not delete old file %s: %s", fpath, exc
+                    )
 
     return removed

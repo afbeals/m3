@@ -159,7 +159,9 @@ class ExampleSitePlugin(MetadataPlugin):
         Adjust field names to match your actual API response shape.
         """
         return MetadataResult(
-            title=data.get("title", "Unknown Title"),
+            # Use `or` (not just `.get(..., default)`) so a present-but-null title
+            # field also falls back to the default, instead of passing None to MetadataResult.
+            title=data.get("title") or "Unknown Title",
             summary=data.get("description"),
             rating=data.get("rating"),
             year=data.get("year"),
@@ -171,5 +173,7 @@ class ExampleSitePlugin(MetadataPlugin):
             poster_url=data.get("poster_url"),
             fanart_url=data.get("fanart_url"),
             source_url=data.get("url"),
-            source_id=str(data.get("id", "")),
+            # Convert to str only when the value is actually present; passing None
+            # is safe — MetadataResult.__post_init__ accepts None for source_id.
+            source_id=str(data["id"]) if data.get("id") is not None else None,
         )

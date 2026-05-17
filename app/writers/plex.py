@@ -58,8 +58,13 @@ def find_plex_item(server: PlexServer, file_path: str):
         if results:
             return results[0]
 
-        # Slow fallback: iterate all sections → items → media parts to find a match
-        # This is O(library size) but only runs if the fast path fails
+        # Slow fallback: iterate all sections → items → media parts to find a match.
+        # This is O(library size) and can be very slow on large libraries.
+        # It only runs when the fast filepath filter isn't supported by this Plex version.
+        logger.warning(
+            "Fast Plex filepath filter returned no results for %s — falling back to full "
+            "library scan. This may be slow on large libraries.", file_path
+        )
         for section in server.library.sections():
             for item in section.search():
                 for media in item.media:
@@ -77,6 +82,9 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
     Update the Plex item for file_path with all fields from MetadataResult.
     Each field is written with a lock (.locked = 1) to prevent Plex from
     overwriting it during the next library refresh.
+
+    Genres, labels, tags, and actors are cleared before writing so that
+    re-runs with --force don't accumulate stale values from previous metadata.
 
     Returns True on success, False if the item wasn't found or an error occurred.
     """
@@ -109,8 +117,13 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
         if edits:
             item.edit(**edits)
 
-        # Tags/genres/labels/actors are added individually via their own API methods
-        # locked=True on each prevents the Plex agent from clearing them on refresh
+        # Clear existing list fields before writing so re-runs don't accumulate
+        # stale values alongside the new ones.
+        item.removeGenres()
+        item.removeLabels()
+        item.removeTags()
+
+        # Add fresh values with locks so the Plex agent can't clear them on refresh
         for genre in result.genres:
             item.addGenre(genre, locked=True)
         for label in result.labels:

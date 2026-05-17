@@ -117,6 +117,9 @@ class MetadataResult:
         # Validate rating is in a sensible range if provided
         if self.rating is not None and not (0.0 <= self.rating <= 10.0):
             raise ValueError(f"MetadataResult.rating must be between 0 and 10, got {self.rating}")
+        # Guard against plugins passing str(None) = "None" as source_id
+        if self.source_id is not None and self.source_id.strip().lower() in ("none", ""):
+            self.source_id = None
 
 
 class MetadataPlugin(ABC):
@@ -126,7 +129,11 @@ class MetadataPlugin(ABC):
 
     # Optional shorthand aliases users can also use in filenames.
     # e.g. aliases = ["WB"] means "% WB - 12345" also routes here.
-    aliases: list[str] = []
+    #
+    # Override with your own list literal in each subclass — do NOT mutate this
+    # list at runtime. A class-level list is shared across all subclasses that
+    # don't override it, so appending to it would affect every plugin.
+    aliases: list[str] = []  # subclasses should override: aliases = ["MY", "ALIAS"]
 
     @abstractmethod
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:

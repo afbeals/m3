@@ -115,9 +115,11 @@ def _parse_general_form(stem: str) -> ParsedFilename:
 
     # Parse match payload
     # Split on " - " (with optional surrounding spaces)
+    # An empty payload (e.g. stem ending with " %") means there is no site token —
+    # return None rather than a partially-filled object with site="".
     tokens = [t.strip() for t in re.split(r"\s+-\s+", raw_payload)]
     if not tokens or not tokens[0]:
-        return ParsedFilename(form="general", actors=actors, genres=genres, raw_match_payload=raw_payload)
+        return None
 
     site = tokens[0]
     rest_tokens = tokens[1:]
@@ -160,7 +162,18 @@ def _parse_general_form(stem: str) -> ParsedFilename:
     match_subtype: MatchSubtype
 
     def _looks_like_url_slug(tok: str) -> bool:
-        return " " not in tok or bool(re.search(r"\d+$", tok))
+        # URL slugs are hyphen-separated, space-free tokens (e.g. "eager-hands",
+        # "Stranger-Than-Fiction"). A token with spaces is a title or actor name,
+        # not a slug — even if it ends in a digit (e.g. "Chapter 5").
+        # The only exception is a slug with an embedded numeric ID at the end
+        # separated by a space (e.g. "Stranger-Than-Fiction 77675"), which is
+        # still slug-like because it contains hyphens and no internal title words.
+        if " " not in tok:
+            return True
+        # Space-containing token: treat as slug only if it has hyphens (slug part)
+        # and the trailing word is purely numeric (an appended ID).
+        parts = tok.rsplit(" ", 1)
+        return "-" in parts[0] and bool(re.match(r"^\d+$", parts[1]))
 
     if not text_tokens and scene_id:
         match_subtype = "exact"
@@ -203,7 +216,8 @@ def parse(filename_stem: str) -> ParsedFilename | None:
     if "%" in stem:
         try:
             return _parse_general_form(stem)
-        except Exception:
+        except (ValueError, IndexError):
+            # Malformed input — e.g. a payload that can't be tokenised
             return None
 
     return None

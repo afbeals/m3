@@ -74,14 +74,19 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     """Write the JSON and plain-text reports, then clean up old JSON reports."""
     os.makedirs(report_path, exist_ok=True)
 
-    # Timestamp used in the JSON filename so each run produces a unique file
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Derive the filename from the run's start time so the filename is consistent
+    # with the report contents. Fall back to the current time if started_at is empty.
+    raw_ts = report.started_at or datetime.now().isoformat(timespec="seconds")
+    ts = raw_ts.replace(":", "").replace("-", "").replace("T", "_")[:15]
 
     # --- JSON report (full detail, machine-readable) ---
     json_path = os.path.join(report_path, f"run_{ts}.json")
-    with open(json_path, "w") as fh:
-        # asdict() converts the nested dataclasses to plain dicts for JSON serialisation
-        json.dump(asdict(report), fh, indent=2)
+    try:
+        with open(json_path, "w") as fh:
+            # asdict() converts the nested dataclasses to plain dicts for JSON serialisation
+            json.dump(asdict(report), fh, indent=2)
+    except OSError as exc:
+        logger.error("Could not write JSON report to %s: %s", json_path, exc)
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
@@ -128,10 +133,12 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     else:
         lines.append("Errors:\n  (none)")
 
-    with open(txt_path, "w") as fh:
-        fh.write("\n".join(lines) + "\n")
-
-    logger.info("Report written to %s", txt_path)
+    try:
+        with open(txt_path, "w") as fh:
+            fh.write("\n".join(lines) + "\n")
+        logger.info("Report written to %s", txt_path)
+    except OSError as exc:
+        logger.error("Could not write text report to %s: %s", txt_path, exc)
 
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.

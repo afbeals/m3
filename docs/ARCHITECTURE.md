@@ -356,10 +356,8 @@ ENTRYPOINT ["python", "-m", "app.main"]
 |---|---|
 | `python-plexapi` | Plex HTTP API client |
 | `apscheduler` | In-process cron scheduler |
-| `httpx` | Async HTTP for plugin API calls |
-| `pydantic` | Config validation + MetadataResult schema |
+| `httpx` | HTTP client for plugin API calls and image downloads |
 | `lxml` | NFO XML generation |
-| `pillow` | Image validation/processing before writing poster |
 
 ---
 
@@ -368,4 +366,3 @@ ENTRYPOINT ["python", "-m", "app.main"]
 - **New plugin**: drop a `.py` file in the plugins directory, restart the container
 - **New metadata fields**: add to `MetadataResult`, update `nfo.py` and `plex.py` writers
 - **Web UI** (future): FastAPI layer over `scheduler.py` + `reporter.py` — no core changes needed
-- **Dry-run mode** (future): `DRY_RUN=true` env var; all writes become log statements

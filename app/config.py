@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 class Config:
     # Connection details for your Plex Media Server
     plex_url: str
+    # plex_token is excluded from __repr__ so it never appears in logs or tracebacks
     plex_token: str
 
     # Directories inside the container that will be scanned for media files
@@ -55,6 +56,17 @@ class Config:
     # Set via --force CLI flag, not an env var.
     force: bool = False
 
+    def __repr__(self) -> str:
+        # Redact plex_token so it never appears in logs or debug output
+        return (
+            f"Config(plex_url={self.plex_url!r}, plex_token='***', "
+            f"library_paths={self.library_paths!r}, plugin_dir={self.plugin_dir!r}, "
+            f"report_path={self.report_path!r}, log_path={self.log_path!r}, "
+            f"run_schedule={self.run_schedule!r}, log_level={self.log_level!r}, "
+            f"log_retention_days={self.log_retention_days!r}, "
+            f"report_retention_days={self.report_retention_days!r}, force={self.force!r})"
+        )
+
 
 def load_config(force: bool = False) -> Config:
     # Inner helper: raise if a required env var is missing or empty
@@ -67,6 +79,18 @@ def load_config(force: bool = False) -> Config:
     # Inner helper: return env var value or a default if not set
     def optional(key: str, default: str) -> str:
         return os.environ.get(key, default).strip()
+
+    # Inner helper: parse an integer env var with a clear error on bad values
+    def optional_int(key: str, default: int) -> int:
+        raw = os.environ.get(key, "").strip()
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            raise ValueError(
+                f"Environment variable {key!r} must be an integer, got {raw!r}"
+            ) from None
 
     # LIBRARY_PATHS is comma-separated, e.g. "/media/Movies,/media/TV"
     # Split and strip each path, dropping empty entries
@@ -82,7 +106,7 @@ def load_config(force: bool = False) -> Config:
         log_path=optional("LOG_PATH", "/config/logs"),
         run_schedule=optional("RUN_SCHEDULE", "0 3 * * *"),
         log_level=optional("LOG_LEVEL", "INFO").upper(),
-        log_retention_days=int(optional("LOG_RETENTION_DAYS", "30")),
-        report_retention_days=int(optional("REPORT_RETENTION_DAYS", "90")),
+        log_retention_days=optional_int("LOG_RETENTION_DAYS", 30),
+        report_retention_days=optional_int("REPORT_RETENTION_DAYS", 90),
         force=force,
     )

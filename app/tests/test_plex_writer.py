@@ -1,0 +1,203 @@
+# Tests for app/writers/plex.py
+from __future__ import annotations
+
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
+from app.plugins.base import MetadataResult
+from app.writers.plex import connect_plex, find_plex_item, push_to_plex
+
+
+def _make_result(**kwargs) -> MetadataResult:
+    defaults = dict(
+        title="Test Scene",
+        summary="A summary.",
+        rating=7.5,
+        year=2023,
+        content_rating="NR",
+        genres=["Drama"],
+        labels=["award"],
+        tags=["tag-1"],
+        actors=["Jane Doe"],
+        poster_url="http://x.com/p.jpg",
+        fanart_url="http://x.com/f.jpg",
+        source_url="http://x.com/scene/1",
+        source_id="1",
+    )
+    defaults.update(kwargs)
+    return MetadataResult(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# connect_plex
+# ---------------------------------------------------------------------------
+
+def test_connect_plex_returns_server_on_success():
+    mock_server = MagicMock()
+    mock_server.friendlyName = "My Plex"
+    with patch("app.writers.plex.PlexServer", return_value=mock_server):
+        result = connect_plex("http://localhost:32400", "token")
+    assert result is mock_server
+
+
+def test_connect_plex_returns_none_on_error():
+    with patch("app.writers.plex.PlexServer", side_effect=Exception("refused")):
+        result = connect_plex("http://localhost:32400", "token")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# find_plex_item — fast path
+# ---------------------------------------------------------------------------
+
+def test_find_plex_item_uses_fast_path():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    mock_server.library.search.return_value = [mock_item]
+
+    result = find_plex_item(mock_server, "/media/movie.mp4")
+
+    assert result is mock_item
+    mock_server.library.search.assert_called_once_with(
+        filters={"media.filepath": "/media/movie.mp4"}
+    )
+
+
+def test_find_plex_item_falls_back_to_slow_scan():
+    mock_part = MagicMock()
+    mock_part.file = "/media/movie.mp4"
+    mock_media = MagicMock()
+    mock_media.parts = [mock_part]
+    mock_item = MagicMock()
+    mock_item.media = [mock_media]
+    mock_section = MagicMock()
+    mock_section.search.return_value = [mock_item]
+
+    mock_server = MagicMock()
+    # Fast path returns nothing — triggers fallback
+    mock_server.library.search.return_value = []
+    mock_server.library.sections.return_value = [mock_section]
+
+    result = find_plex_item(mock_server, "/media/movie.mp4")
+    assert result is mock_item
+
+
+def test_find_plex_item_returns_none_when_not_found():
+    mock_section = MagicMock()
+    mock_section.search.return_value = []
+    mock_server = MagicMock()
+    mock_server.library.search.return_value = []
+    mock_server.library.sections.return_value = [mock_section]
+
+    result = find_plex_item(mock_server, "/media/missing.mp4")
+    assert result is None
+
+
+def test_find_plex_item_returns_none_on_exception():
+    mock_server = MagicMock()
+    mock_server.library.search.side_effect = Exception("network error")
+
+    result = find_plex_item(mock_server, "/media/movie.mp4")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# push_to_plex — field writes
+# ---------------------------------------------------------------------------
+
+def _server_with_item(item=None):
+    """Return a mock server whose find path returns the given item."""
+    mock_server = MagicMock()
+    if item is None:
+        item = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=item):
+        yield mock_server, item
+
+
+def test_push_to_plex_returns_false_when_item_not_found():
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=None):
+        result = push_to_plex(mock_server, "/media/movie.mp4", _make_result())
+    assert result is False
+
+
+def test_push_to_plex_calls_edit_with_scalar_fields():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", _make_result())
+
+    call_kwargs = mock_item.edit.call_args.kwargs
+    assert call_kwargs["title.value"] == "Test Scene"
+    assert call_kwargs["title.locked"] == 1
+    assert call_kwargs["rating.value"] == 7.5
+    assert call_kwargs["rating.locked"] == 1
+    assert call_kwargs["year.value"] == 2023
+
+
+def test_push_to_plex_clears_list_fields_before_writing():
+    """Genres/labels/tags must be cleared first so re-runs don't accumulate stale values."""
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", _make_result())
+
+    mock_item.removeGenres.assert_called_once()
+    mock_item.removeLabels.assert_called_once()
+    mock_item.removeTags.assert_called_once()
+
+
+def test_push_to_plex_adds_genres_and_actors():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    result = _make_result(genres=["Action", "Drama"], actors=["Alice", "Bob"])
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", result)
+
+    genre_calls = [c.args[0] for c in mock_item.addGenre.call_args_list]
+    assert "Action" in genre_calls
+    assert "Drama" in genre_calls
+
+    actor_calls = [c.args[0] for c in mock_item.addActor.call_args_list]
+    assert "Alice" in actor_calls
+    assert "Bob" in actor_calls
+
+
+def test_push_to_plex_uploads_poster_and_fanart():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4",
+                     _make_result(poster_url="http://p.jpg", fanart_url="http://f.jpg"))
+
+    mock_item.uploadPoster.assert_called_once_with(url="http://p.jpg")
+    mock_item.uploadArt.assert_called_once_with(url="http://f.jpg")
+
+
+def test_push_to_plex_skips_poster_when_none():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4",
+                     _make_result(poster_url=None, fanart_url=None))
+
+    mock_item.uploadPoster.assert_not_called()
+    mock_item.uploadArt.assert_not_called()
+
+
+def test_push_to_plex_returns_true_on_success():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        result = push_to_plex(mock_server, "/media/movie.mp4", _make_result())
+    assert result is True
+
+
+def test_push_to_plex_returns_false_on_exception():
+    mock_item = MagicMock()
+    mock_item.edit.side_effect = Exception("Plex API error")
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        result = push_to_plex(mock_server, "/media/movie.mp4", _make_result())
+    assert result is False

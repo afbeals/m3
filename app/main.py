@@ -14,8 +14,8 @@
 #   2. Loads config from environment variables
 #   3. Sets up logging (rotating file + stdout)
 #   4. Discovers and loads plugins from the plugin directory
-#   5. Connects to Plex (non-fatal if it fails — sidecars still get written)
-#   6. Either runs once (--once) or starts the APScheduler cron loop
+#   5. Either runs once (--once) or starts the APScheduler cron loop
+#      (Plex connection is established per-run inside run(), not at startup)
 #
 # The core run() function is the heart of each pass:
 #   scan → route → fetch → write NFO → write to Plex → report
@@ -23,7 +23,6 @@
 
 import argparse
 import logging
-import os
 from datetime import datetime
 
 from app.config import load_config
@@ -38,7 +37,7 @@ from app.writers.plex import connect_plex, push_to_plex
 logger = logging.getLogger(__name__)
 
 
-def run(config, plex_server, router: Router, dry_run: bool = False) -> None:
+def run(config, router: Router, dry_run: bool = False) -> None:
     """
     Execute one full metadata pass over all configured library paths.
 
@@ -50,9 +49,19 @@ def run(config, plex_server, router: Router, dry_run: bool = False) -> None:
       - Record the outcome in the run report
 
     When dry_run=True, all writes are skipped; routing and plugin fetches still run.
+
+    Plex is reconnected on every run so that long-running schedulers don't use
+    a stale connection after a Plex server restart or token expiry.
     """
     if dry_run:
         logger.info("DRY RUN mode — no files or Plex records will be written")
+
+    # Reconnect to Plex at the start of every run (not once at startup) so that
+    # a Plex restart between scheduled runs doesn't leave us with a dead connection.
+    plex_server = connect_plex(config.plex_url, config.plex_token)
+    if plex_server is None:
+        logger.warning("Plex connection failed. Metadata will be written to sidecars only.")
+
     report = RunReport(started_at=datetime.now().isoformat(timespec="seconds"))
 
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
@@ -179,14 +188,11 @@ def main() -> None:
     # Build the router with the loaded plugin registry
     router = Router(registry)
 
-    # Connect to Plex — non-fatal; if this fails we fall back to sidecar-only writes
-    plex_server = connect_plex(config.plex_url, config.plex_token)
-    if plex_server is None:
-        logger.warning("Plex connection failed. Metadata will be written to sidecars only.")
-
-    # Wrap run() so the scheduler and --once path call the same function
+    # Wrap run() so the scheduler and --once path call the same function.
+    # Plex is reconnected inside run() on every execution so scheduled runs
+    # don't use a stale connection after a Plex restart.
     def _run():
-        run(config, plex_server, router, dry_run=args.dry_run)
+        run(config, router, dry_run=args.dry_run)
 
     if args.once:
         # Run immediately and exit — useful for testing or docker exec one-shots

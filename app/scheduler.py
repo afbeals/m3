@@ -59,8 +59,16 @@ def start_scheduler(run_fn, schedule: str) -> None:
     # On Windows, use `--once` via `docker exec` to trigger a manual run instead.
     if platform.system() != "Windows":
         def _handle_sigusr1(signum, frame):
-            logger.info("Received SIGUSR1 — triggering immediate run")
-            run_fn()
+            # Do NOT call run_fn() directly here. Signal handlers run between
+            # bytecode instructions and calling blocking I/O (HTTP, file writes,
+            # logging) from a handler can deadlock or corrupt in-progress state.
+            # Instead, schedule a one-off job — APScheduler executes it safely
+            # on the next scheduler tick from the main thread.
+            logger.info("Received SIGUSR1 — scheduling immediate run")
+            try:
+                scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
+            except Exception as exc:
+                logger.warning("SIGUSR1: could not schedule run: %s", exc)
 
         signal.signal(signal.SIGUSR1, _handle_sigusr1)
         logger.debug("SIGUSR1 handler registered (Unix only)")

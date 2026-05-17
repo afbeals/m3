@@ -22,6 +22,7 @@ import importlib.util
 import inspect
 import logging
 import os
+import sys
 
 from app.plugins.base import MetadataPlugin
 
@@ -52,11 +53,19 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
         # Dynamically import the file as a Python module
         try:
             spec = importlib.util.spec_from_file_location(module_name, fpath)
+            if spec is None or spec.loader is None:
+                logger.warning("Could not create module spec for plugin file: %s", fpath)
+                continue
             module = importlib.util.module_from_spec(spec)
+            # Register in sys.modules before exec_module so that intra-plugin
+            # imports (e.g. a plugin importing a shared helper in the same dir)
+            # resolve correctly without creating duplicate module instances.
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
         except Exception:
             # Log the full traceback but continue loading other plugins
             logger.exception("Failed to import plugin file: %s", fpath)
+            sys.modules.pop(module_name, None)  # clean up on failure
             continue
 
         # Walk every class defined in the module

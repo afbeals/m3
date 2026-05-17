@@ -1,40 +1,42 @@
 # config.example.yml
 #
-# Annotated example of all supported configuration for pm.
-# Copy this to config.yml and mount it into the container at /config/config.yml,
-# OR set the values as environment variables (see ARCHITECTURE.md for the full list).
+# Reference list of all environment variables supported by pm.
+# Copy the relevant lines into your Docker run command, docker-compose.yml,
+# or Unraid Docker template.
 #
-# Environment variables always take precedence over values in this file.
-# Secret values (PLEX_TOKEN, API keys) should only be set as env vars, never
-# committed to this file.
+# NOTE: pm reads configuration exclusively from environment variables.
+# There is no YAML config file loader — this file is documentation only.
+#
+# Secret values (PLEX_TOKEN, API keys) should be set as env vars directly
+# and never committed to version control.
 
 # ---------------------------------------------------------------------------
 # Plex connection (REQUIRED)
 # ---------------------------------------------------------------------------
 
 # URL of your Plex Media Server, reachable from inside the Docker container.
-# plex_url: "http://192.168.1.100:32400"
+# PLEX_URL=http://192.168.1.100:32400
 
 # Plex authentication token.
 # Find yours at: https://support.plex.tv/articles/204059436
-# Set via PLEX_TOKEN env var — do not put your real token in this file.
-# plex_token: ""
+# PLEX_TOKEN=your-plex-token-here
 
 # ---------------------------------------------------------------------------
 # Library paths (REQUIRED)
 # ---------------------------------------------------------------------------
 
-# Comma-separated list of host directories that contain your media files.
-# These are mounted read-write so pm can write .nfo sidecars and images.
-# library_paths: "/media/movies,/media/adult"
+# Comma-separated list of container paths that contain your media files.
+# These must be mounted read-write so pm can write .nfo sidecars and images.
+# LIBRARY_PATHS=/media/movies,/media/adult
 
 # ---------------------------------------------------------------------------
-# Plugin directory (REQUIRED)
+# Plugin directory
 # ---------------------------------------------------------------------------
 
 # Path to the directory where your plugin .py files live.
 # Mount this from your host into the container.
-# plugin_dir: "/plugins"
+# Default: /plugins
+# PLUGIN_DIR=/plugins
 
 # ---------------------------------------------------------------------------
 # Scheduling
@@ -42,7 +44,7 @@
 
 # Standard 5-field cron expression controlling when the agent runs.
 # Default: 3am every night.
-# run_schedule: "0 3 * * *"
+# RUN_SCHEDULE=0 3 * * *
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -50,23 +52,28 @@
 
 # Verbosity level for the log output.
 # One of: DEBUG, INFO, WARNING, ERROR, CRITICAL
-# log_level: "INFO"
+# Default: INFO
+# LOG_LEVEL=INFO
 
 # Directory where rotating log files are written.
-# log_path: "/config/logs"
+# Default: /config/logs
+# LOG_PATH=/config/logs
 
 # Log files older than this many days are deleted at the end of each run.
-# log_retention_days: 30
+# Default: 30
+# LOG_RETENTION_DAYS=30
 
 # ---------------------------------------------------------------------------
 # Run reports
 # ---------------------------------------------------------------------------
 
 # Directory where per-run JSON + summary text reports are written.
-# report_path: "/config/reports"
+# Default: /config/reports
+# REPORT_PATH=/config/reports
 
 # Report files older than this many days are deleted at the end of each run.
-# report_retention_days: 90
+# Default: 90
+# REPORT_RETENTION_DAYS=90
 
 # ---------------------------------------------------------------------------
 # Plugin-specific API keys
@@ -76,4 +83,4 @@
 #   MYSITE_API_KEY=your-key-here
 #   OTHERSITE_API_KEY=your-key-here
 #
-# Never commit real API keys to this file.
+# Never commit real API keys to version control.
