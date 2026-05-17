@@ -2,7 +2,12 @@
 {% block title %}Plugins{% endblock %}
 
 {% block content %}
-<h1>Loaded Plugins</h1>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+  <h1>Loaded Plugins</h1>
+  <form method="POST" action="/trigger/reload">
+    <button type="submit" title="Reload plugins without restarting the container (Unix only)">↺ Reload plugins</button>
+  </form>
+</div>
 
 {% if plugins %}
 <table>

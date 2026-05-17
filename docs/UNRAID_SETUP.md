@@ -154,6 +154,8 @@ services:
       - REPORT_RETENTION_DAYS=90
       - PLUGIN_RATE_LIMIT_SECS=1.0
       - APP_NAME=pm
+      # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
+      # - NOTIFY_URL=
       # Plugin API keys:
       # - MYSITE_API_KEY=your-key-here
 ```

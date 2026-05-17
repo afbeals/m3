@@ -117,8 +117,21 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 
 **Run Now** — triggers an immediate run without restarting the container.
 
-**Inline retry** — on the run-detail page, any `error` or `scrape_error` row has a
+**Inline retry** — on the run-detail page, any `error`, `scrape_error`, or `unmatched` row has a
 ↺ button that re-queues that single file for immediate reprocessing.
+
+**`/healthz?verbose=1`** — extended response for uptime monitors (Uptime Kuma, Grafana, etc.):
+
+```json
+{
+  "status": "ok",
+  "last_run": "2025-05-17T03:00:01",
+  "hours_since_last_run": 6.4,
+  "run_count": 42
+}
+```
+
+Alert when `hours_since_last_run` exceeds your expected run interval (e.g. > 26h for a nightly schedule).
 
 **Status indicator** — the header shows "▶ Running — Ns" while a run is in progress
 and "Idle" otherwise, polled automatically every 2 seconds via HTMX.
@@ -150,6 +163,10 @@ docker exec pm kill -USR2 1
 
 # List all files that would be unmatched (no plugin claimed them)
 python -m app.main --list-unmatched
+
+# Test the filename parser without running a full pass (useful during plugin development)
+python -m app.tools.parse "Jane Doe with Drama % mysite - 12345"
+python -m app.tools.parse --json "Jane Doe % MS - eager-hands"   # JSON output
 ```
 
 ---

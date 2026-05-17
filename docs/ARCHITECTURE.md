@@ -101,6 +101,11 @@ pm/
 │   │   ├── base.py               # MetadataPlugin base class, MetadataResult, ParsedFilename
 │   │   └── loader.py             # importlib-based discovery from mounted plugin dir
 │   │
+│   ├── tools/
+│   │   └── parse.py              # CLI tool: test the filename parser without running a full pass
+│   │                             #   python -m app.tools.parse "Jane Doe % mysite - 12345"
+│   │                             #   python -m app.tools.parse --json "Jane Doe % MS - eager-hands"
+│   │
 │   ├── web/
 │   │   ├── __init__.py           # FastAPI app factory (create_app)
 │   │   ├── routes.py             # all route handlers

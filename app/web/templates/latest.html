@@ -30,38 +30,38 @@
   </div>
 
   <div class="stats">
-    <div class="stat">
+    <a href="/runs/{{ latest.filename }}?status=updated" class="stat stat-link">
       <div class="stat-label">Updated</div>
       <div class="stat-value {% if latest.updated > 0 %}green{% else %}dim{% endif %}">
         {{ latest.updated }}
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/runs/{{ latest.filename }}?status=skipped" class="stat stat-link">
       <div class="stat-label">Skipped</div>
       <div class="stat-value dim">{{ latest.skipped }}</div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/runs/{{ latest.filename }}?status=scrape_error" class="stat stat-link">
       <div class="stat-label">Scrape errors</div>
       <div class="stat-value {% if latest.scrape_errors > 0 %}yellow{% else %}dim{% endif %}">
         {{ latest.scrape_errors }}
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/runs/{{ latest.filename }}?status=error" class="stat stat-link">
       <div class="stat-label">Errors</div>
       <div class="stat-value {% if latest.errors > 0 %}red{% else %}dim{% endif %}">
         {{ latest.errors }}
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/runs/{{ latest.filename }}?status=unmatched" class="stat stat-link">
       <div class="stat-label">Unmatched</div>
       <div class="stat-value {% if latest.unmatched > 0 %}yellow{% else %}dim{% endif %}">
         {{ latest.unmatched }}
       </div>
-    </div>
-    <div class="stat">
+    </a>
+    <a href="/runs/{{ latest.filename }}" class="stat stat-link">
       <div class="stat-label">Total</div>
       <div class="stat-value dim">{{ latest.total_scanned }}</div>
-    </div>
+    </a>
   </div>
 
   <a href="/runs/{{ latest.filename }}">View full detail →</a>

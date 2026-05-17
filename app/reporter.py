@@ -106,13 +106,23 @@ def write_report(
     ts = raw_ts.replace(":", "").replace("-", "").replace("T", "_")[:15]
 
     # --- JSON report (full detail, machine-readable) ---
+    # Written atomically via .tmp + os.replace() — same guard as the text report.
+    # A crash mid-write would otherwise leave a truncated JSON file that raises
+    # json.JSONDecodeError in history.py and silently disappears from run history.
     json_path = os.path.join(report_path, f"run_{ts}.json")
+    json_tmp = json_path + ".tmp"
     try:
-        with open(json_path, "w") as fh:
+        with open(json_tmp, "w") as fh:
             # asdict() converts the nested dataclasses to plain dicts for JSON serialisation
             json.dump(asdict(report), fh, indent=2)
+        os.replace(json_tmp, json_path)
     except OSError as exc:
         logger.error("Could not write JSON report to %s: %s", json_path, exc)
+        if os.path.exists(json_tmp):
+            try:
+                os.remove(json_tmp)
+            except OSError:
+                pass
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")

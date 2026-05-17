@@ -42,6 +42,10 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     templates = Jinja2Templates(directory=templates_dir)
     templates.env.globals["app_name"] = config.app_name
 
+    # Defined inside create_app (rather than module-level) so it stays with the
+    # other Jinja2 globals that are registered here. It has no external dependencies,
+    # so either location would work; keeping them together makes the template API
+    # easier to find.
     def _fmt_duration(seconds: int | None) -> str:
         if seconds is None:
             return "—"
@@ -57,9 +61,14 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
             return ""
         try:
             dt = datetime.fromisoformat(iso_str)
+            # RunReport.started_at uses datetime.now() (naive local time).
+            # Compare against local time so the elapsed calculation is correct
+            # on servers not running in UTC. If the datetime is tz-aware,
+            # fall back to a UTC comparison.
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+                secs = int((datetime.now() - dt).total_seconds())
+            else:
+                secs = int((datetime.now(timezone.utc) - dt).total_seconds())
             if secs < 0:
                 return ""
             if secs < 60:

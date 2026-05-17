@@ -225,6 +225,24 @@ fanart_url = fanart_el["src"] if fanart_el else None
 
 ## Testing Your Plugin
 
+### 0. Check routing (fastest — no API call)
+
+Before writing a single line of plugin code, verify your filenames route to your plugin:
+
+```bash
+# List every file in your library that currently has no plugin — shows you exactly
+# what you need to cover before your plugin can process anything.
+docker exec pm python -m app.main --list-unmatched
+
+# Or locally after activating the venv:
+PLEX_URL=x PLEX_TOKEN=x LIBRARY_PATHS=/tmp/pm-test-media PLUGIN_DIR=./plugins \
+REPORT_PATH=/tmp NOTIFY_URL= LOG_PATH=/tmp \
+python3 -m app.main --list-unmatched
+```
+
+Once your plugin is in place, run `--list-unmatched` again — your files should
+disappear from the list (they'll now be routed to your plugin).
+
 ### 1. Test parsing first (no API needed)
 
 ```bash

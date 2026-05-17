@@ -7,7 +7,22 @@
   Active values loaded from environment variables. Read-only — edit env vars and restart to change.
 </p>
 
-<table>
+{% set sections = [
+  ("Plex",          ["App name", "Plex URL", "Plex token"]),
+  ("Library",       ["Library paths", "Plugin directory"]),
+  ("Storage",       ["Report path", "Log path", "Log retention (days)", "Report retention (days)"]),
+  ("Schedule",      ["Run schedule"]),
+  ("Logging",       ["Log level"]),
+  ("Plugin",        ["Plugin rate limit (s)"]),
+  ("Notifications", ["Notify URL"]),
+  ("Web dashboard", ["Web enabled", "Web host", "Web port"]),
+] %}
+{% set entry_map = {} %}
+{% for label, env_var, value in entries %}{% set _ = entry_map.update({label: (env_var, value)}) %}{% endfor %}
+
+{% for section_name, labels in sections %}
+<h2>{{ section_name }}</h2>
+<table style="margin-bottom:0.5rem;">
   <thead>
     <tr>
       <th>Setting</th>
@@ -16,13 +31,17 @@
     </tr>
   </thead>
   <tbody>
-    {% for label, env_var, value in entries %}
+    {% for label in labels %}
+    {% if label in entry_map %}
+    {% set env_var, value = entry_map[label] %}
     <tr>
       <td>{{ label }}</td>
       <td class="muted">{{ env_var }}</td>
       <td class="path">{{ value }}</td>
     </tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>
+{% endfor %}
 {% endblock %}

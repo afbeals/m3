@@ -142,7 +142,20 @@ def _download_image(url: str, dest_path: str) -> bool:
                     f"Unexpected content-type {content_type!r} for image URL {url}"
                 )
 
-            # Reject payloads that exceed the size cap to prevent OOM
+            # Check Content-Length header first to avoid downloading a huge body
+            # before discovering it's oversized — important for misconfigured or
+            # malicious URLs that could send hundreds of MB.
+            cl = r.headers.get("content-length")
+            if cl is not None:
+                try:
+                    if int(cl) > _DOWNLOAD_MAX_BYTES:
+                        raise ValueError(
+                            f"Image Content-Length ({cl} bytes) exceeds limit from {url}"
+                        )
+                except (ValueError, OverflowError):
+                    pass  # malformed Content-Length; fall through to body check
+
+            # Final size check on the actual downloaded body
             if len(r.content) > _DOWNLOAD_MAX_BYTES:
                 raise ValueError(
                     f"Image response too large ({len(r.content)} bytes) from {url}"

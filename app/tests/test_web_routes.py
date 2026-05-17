@@ -29,6 +29,7 @@ def _make_config(report_path: str) -> MagicMock:
     cfg.report_retention_days = 90
     cfg.web_enabled = True
     cfg.plugin_rate_limit_secs = 1.0
+    cfg.notify_url = ""
     return cfg
 
 
@@ -418,3 +419,67 @@ def test_config_shows_plugin_rate_limit():
         with TestClient(app) as client:
             r = client.get("/config")
     assert "PLUGIN_RATE_LIMIT_SECS" in r.text
+
+
+def test_config_shows_notify_url():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert "NOTIFY_URL" in r.text
+
+
+# ---------------------------------------------------------------------------
+# POST /trigger/reload
+# ---------------------------------------------------------------------------
+
+def test_trigger_reload_redirects_to_plugins():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        import app.web.routes as routes_module
+        with TestClient(app, follow_redirects=True) as client:
+            orig_platform = routes_module.platform
+            orig_os = routes_module.os
+            try:
+                routes_module.platform = MagicMock()
+                routes_module.platform.system.return_value = "Linux"
+                routes_module.os = MagicMock()
+                r = client.post("/trigger/reload")
+            finally:
+                routes_module.platform = orig_platform
+                routes_module.os = orig_os
+    assert r.status_code == 200
+    assert "Plugins" in r.text
+
+
+def test_trigger_reload_noop_on_windows():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        import app.web.routes as routes_module
+        with TestClient(app, follow_redirects=True) as client:
+            orig_platform = routes_module.platform
+            try:
+                routes_module.platform = MagicMock()
+                routes_module.platform.system.return_value = "Windows"
+                r = client.post("/trigger/reload")
+            finally:
+                routes_module.platform = orig_platform
+    assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# run_detail — unmatched rows have inline retry
+# ---------------------------------------------------------------------------
+
+def test_run_detail_shows_inline_retry_for_unmatched_rows():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 0, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 1, "total_scanned": 1,
+            "files": [{"path": "/media/mystery.mp4", "status": "unmatched", "message": "no plugin"}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json")
+    assert "inline-form" in r.text

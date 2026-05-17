@@ -21,6 +21,8 @@ import dataclasses
 import inspect
 import logging
 import os
+import platform
+import signal
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -252,6 +254,26 @@ async def config_page(request: Request):
 # ---------------------------------------------------------------------------
 # Manual triggers
 # ---------------------------------------------------------------------------
+
+@router.post("/trigger/reload")
+async def trigger_reload(request: Request):
+    """Reload plugins in-place by sending SIGUSR2 to the current process (Unix only).
+
+    On Windows this is a no-op — the user must restart the container instead.
+    Redirects to /plugins so the user sees the refreshed plugin list.
+    """
+    if platform.system() != "Windows":
+        try:
+            os.kill(os.getpid(), signal.SIGUSR2)
+            logger.info("Plugin reload triggered via web UI")
+        except Exception as exc:
+            logger.warning("Could not send SIGUSR2 for plugin reload: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+    else:
+        logger.info("Plugin reload requested on Windows — restart required instead")
+
+    return RedirectResponse(url="/plugins", status_code=303)
+
 
 @router.post("/trigger/run")
 async def trigger_run(request: Request):

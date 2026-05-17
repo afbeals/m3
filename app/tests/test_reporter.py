@@ -162,3 +162,24 @@ def test_write_report_creates_dir_if_missing(tmp_path):
     write_report(report, str(nested), retention_days=90)
 
     assert (nested / "run_latest.txt").exists()
+
+
+def test_write_report_json_is_valid_after_write(tmp_path):
+    """JSON report must be readable immediately after write (atomic write guard)."""
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/a.mp4", status="updated"))
+
+    write_report(report, str(tmp_path), retention_days=90)
+
+    json_file = list(tmp_path.glob("run_*.json"))[0]
+    data = json.loads(json_file.read_text())
+    assert data["updated"] == 1
+
+
+def test_write_report_no_tmp_file_left_behind(tmp_path):
+    """No .tmp file should remain after a successful write."""
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    write_report(report, str(tmp_path), retention_days=90)
+
+    tmp_files = list(tmp_path.glob("*.tmp"))
+    assert tmp_files == []

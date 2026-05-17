@@ -104,9 +104,11 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
     media_files, skipped_count = scan_library(config.library_paths, force=config.force)
 
-    # Record skipped files in the report so the summary includes an accurate count
-    for _ in range(skipped_count):
-        report.record(FileResult(path="", status="skipped"))
+    # Count skipped files in the report without adding per-file entries.
+    # Skipped files have no path to show in the detail view, and appending
+    # thousands of empty-path FileResult objects would bloat the JSON report.
+    report.skipped += skipped_count
+    report.total_scanned += skipped_count
 
     if not media_files and skipped_count == 0:
         logger.warning(

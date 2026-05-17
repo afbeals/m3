@@ -85,7 +85,7 @@
       </td>
       <td class="msg">{{ f.message or "" }}</td>
       <td>
-        {% if f.status in ("error", "scrape_error") %}
+        {% if f.status in ("error", "scrape_error", "unmatched") and f.path %}
         <form method="POST" action="/trigger/file" class="inline-form">
           <input type="hidden" name="file_path" value="{{ f.path }}">
           <button type="submit" title="Re-process this file">↺</button>

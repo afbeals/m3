@@ -42,7 +42,7 @@ def list_runs(report_path: str) -> list[dict]:
             with open(fpath) as fh:
                 data = json.load(fh)
             data["filename"] = fname
-            data.pop("files", None)
+            data.pop("files", None)  # strip per-file list to keep memory small
             runs.append(data)
         except Exception as exc:
             logger.warning("Could not read report file %s: %s", fpath, exc)
