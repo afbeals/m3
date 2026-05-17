@@ -116,6 +116,8 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 
+> **Tip — debugging:** If files are not being processed as expected, temporarily change `LOG_LEVEL` to `DEBUG` and restart the container. This logs every routing decision, plugin call, and write operation. Switch back to `INFO` once the issue is resolved to reduce log volume.
+
 4. Click **Apply** to create and start the container.
 
 ---

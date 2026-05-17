@@ -147,6 +147,7 @@ or `SelectorMissingError` — distinct from a generic plugin crash (`status=erro
 | Dashboard shows "No runs yet" | No runs have completed | Trigger one: click **Run Now** or run `docker exec pm python -m app.main --once` |
 | Status badge stuck on "Running" | Run crashed without updating RunState | Restart the container — the badge resets on startup |
 | "Run Now" button doesn't seem to do anything | Run already in progress | Watch the status badge in the header; it changes to "▶ Running" within 2 seconds |
+| Dashboard returns HTTP 500 / web page errors but scheduler keeps running | Unhandled exception in a route handler | Check container logs (`docker logs pm --tail 50`) for the Python traceback. The scheduler runs on the main thread; the web server is a daemon thread, so a crash in a route doesn't stop runs. Fix: restart the container to recover the web UI. |
 
 ---
 

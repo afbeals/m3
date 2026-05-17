@@ -136,12 +136,15 @@ async def run_detail(request: Request, filename: str, status: str = ""):
 # ---------------------------------------------------------------------------
 
 @router.get("/unmatched", response_class=HTMLResponse)
-async def unmatched_digest(request: Request):
+async def unmatched_digest(request: Request, q: str = ""):
     entries = aggregate_unmatched(request.app.state.config.report_path)
+    query = q.strip().lower()
+    if query:
+        entries = [e for e in entries if query in e["path"].lower()]
     return request.app.state.templates.TemplateResponse(
         request,
         "unmatched.html",
-        {"entries": entries},
+        {"entries": entries, "q": q},
     )
 
 
@@ -284,6 +287,8 @@ async def trigger_file(request: Request):
                 logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
         logger.info("trigger_file: reprocessed %s", file_path)
 
+    # daemon=True so the thread doesn't keep the process alive if the container
+    # is stopped mid-reprocess; the write is idempotent so an interrupted run is safe.
     thread = threading.Thread(target=_run_single, daemon=True, name="pm-trigger-file")
     thread.start()
 

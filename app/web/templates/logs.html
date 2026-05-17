@@ -17,4 +17,8 @@
 {% else %}
 <div class="card muted">Log file is empty.</div>
 {% endif %}
+
+{% if lines %}
+<script>window.scrollTo(0, document.body.scrollHeight);</script>
+{% endif %}
 {% endblock %}

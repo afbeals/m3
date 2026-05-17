@@ -27,6 +27,47 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 
+def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
+    """
+    Register a SIGUSR2 handler that reloads plugins from plugin_dir in-place
+    (Unix only). Replaces all entries in the shared registry dict without
+    restarting the container or disturbing the scheduler.
+
+    Call this after build_scheduler() when the web UI or main process has a
+    reference to the live registry dict that routes need to stay up-to-date.
+    """
+    if platform.system() == "Windows":
+        logger.debug("Skipping SIGUSR2 handler (not supported on Windows)")
+        return
+
+    from app.plugins.loader import load_plugins
+
+    _reload_event = threading.Event()
+
+    def _handle_sigusr2(signum, frame):
+        _reload_event.set()
+
+    def _watcher():
+        while True:
+            _reload_event.wait()
+            logger.info("SIGUSR2 received — reloading plugins from %s", plugin_dir)
+            try:
+                new_registry = load_plugins(plugin_dir)
+                registry.clear()
+                registry.update(new_registry)
+                logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
+            except Exception as exc:
+                logger.warning("Plugin reload failed: %s", exc)
+            finally:
+                _reload_event.clear()
+
+    watcher_thread = threading.Thread(target=_watcher, daemon=True)
+    watcher_thread.start()
+
+    signal.signal(signal.SIGUSR2, _handle_sigusr2)
+    logger.debug("SIGUSR2 hot-reload handler registered (Unix only)")
+
+
 def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     """
     Build and configure a BlockingScheduler for run_fn on the given cron schedule.

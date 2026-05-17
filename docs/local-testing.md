@@ -339,7 +339,9 @@ plugin → parse → fetch → NFO pipeline without a Plex server.
 
 | Topic | Detail |
 |---|---|
-| Manual run trigger | `SIGUSR1` is not supported on Windows. Use `--once` via `docker exec` or restart the container instead. |
+| Manual run trigger | `SIGUSR1` (trigger immediate run) and `SIGUSR2` (hot-reload plugins) are Unix signals and are not supported on Windows. Use `--once` locally, or the **Run Now** button / `docker exec` in a Docker/Unraid environment instead. |
+| Diagnosing unmatched files | `--list-unmatched` works normally on Windows: `python -m app.main --list-unmatched` |
 | Path separators | Use backslashes (`C:\pm-test-media`) for `LIBRARY_PATHS` on Windows when running locally. Inside Docker the paths are always Linux-style (`/media`). |
 | Python command | Use `python` (not `python3`) on most Windows installs. |
 | Line endings | The app writes NFO files in UTF-8. If you open them in Notepad and see no line breaks, use Notepad++ or VS Code instead. |
+| RotatingFileHandler | Python's rotating log handler can occasionally fail to rotate on Windows if another process has the log file open (e.g., VS Code). This is a known Python limitation. If you see a rotation warning in logs, close any open log file viewers and it will recover on the next rotation. |

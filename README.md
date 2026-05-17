@@ -107,11 +107,12 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | Page | URL | What you see |
 |---|---|---|
 | Latest run | `/` | Run status, stats, next scheduled time, Run Now button |
-| Run history | `/runs` | All past runs with duration |
+| Run history | `/runs` | All past runs with duration and success rate; paginated 25/page |
 | Run detail | `/runs/<timestamp>` | Per-file status with inline ↺ retry buttons |
-| Unmatched digest | `/unmatched` | Files never claimed by any plugin, across all runs |
+| Unmatched digest | `/unmatched` | Files never claimed by any plugin, across all runs; filterable by path |
 | Plugin list | `/plugins` | All loaded plugins and their site IDs |
 | Config | `/config` | Active env var values (Plex token masked) |
+| Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
 | Health check | `/healthz` | Docker health-check endpoint |
 
 **Run Now** — triggers an immediate run without restarting the container.
@@ -143,6 +144,12 @@ python -m app.main --once --dry-run
 
 # Trigger an immediate run without restarting the container (Unix/Linux/macOS)
 docker exec pm kill -USR1 1
+
+# Reload plugins without restarting the container (Unix/Linux/macOS)
+docker exec pm kill -USR2 1
+
+# List all files that would be unmatched (no plugin claimed them)
+python -m app.main --list-unmatched
 ```
 
 ---

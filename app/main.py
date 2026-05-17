@@ -108,11 +108,6 @@ def run(config, router: Router, dry_run: bool = False) -> None:
             ))
             continue
 
-        # Throttle between plugin calls to avoid hammering the source site.
-        # Applied immediately before the fetch so the first file isn't delayed.
-        if config.plugin_rate_limit_secs > 0:
-            time.sleep(config.plugin_rate_limit_secs)
-
         # Case 4: call the plugin to fetch metadata from the external API
         try:
             result = plugin.fetch(parsed)
@@ -137,6 +132,13 @@ def run(config, router: Router, dry_run: bool = False) -> None:
                 message="plugin returned no result",
             ))
             continue
+
+        # Throttle after a successful fetch to avoid hammering the source site.
+        # Placed here (after fetch, after the None-result guard) so that:
+        #   - the first file in a run is not delayed
+        #   - failed fetches (exception or None result) don't count toward the window
+        if config.plugin_rate_limit_secs > 0:
+            time.sleep(config.plugin_rate_limit_secs)
 
         # Write the NFO sidecar and download poster/fanart images alongside the video file
         if dry_run:
@@ -251,6 +253,11 @@ def main() -> None:
         action="store_true",
         help="Parse and route files but skip all writes (NFO, images, Plex)",
     )
+    parser.add_argument(
+        "--list-unmatched",
+        action="store_true",
+        help="Scan library paths, print files that cannot be routed to any plugin, then exit",
+    )
     args = parser.parse_args()
 
     # Load all settings from environment variables; fails fast if PLEX_URL/TOKEN missing
@@ -284,6 +291,24 @@ def main() -> None:
     # Build the router with the loaded plugin registry
     router = Router(registry)
 
+    if args.list_unmatched:
+        # Scan libraries, print every file the router cannot dispatch, then exit.
+        # Useful for diagnosing missing plugins or unexpected filename formats without
+        # running a full metadata pass.
+        media_files, skipped_count = scan_library(config.library_paths, force=True)
+        unroutable = []
+        for media in media_files:
+            parsed, plugin = router.dispatch(media.stem)
+            if parsed is None or plugin is None:
+                unroutable.append(media.path)
+        if unroutable:
+            print(f"{len(unroutable)} unmatched file(s):")
+            for path in unroutable:
+                print(f"  {path}")
+        else:
+            print("All files matched a plugin.")
+        return
+
     run_state = RunState()
 
     # Wrap run() so the scheduler and --once path call the same function.
@@ -313,8 +338,13 @@ def main() -> None:
 
     # Build the scheduler (registers SIGUSR1 handler, adds cron job).
     # We build it before starting the web server so both share the same instance.
-    from app.scheduler import build_scheduler
+    from app.scheduler import build_scheduler, register_sigusr2_reload
     scheduler = build_scheduler(_run, config.run_schedule)
+
+    # SIGUSR2 triggers an in-place plugin reload without restarting the container.
+    # The registry dict is shared with the router and the web dashboard; mutating
+    # it in-place keeps all references up-to-date without rebuilding the router.
+    register_sigusr2_reload(registry, config.plugin_dir)
 
     # Launch the web dashboard in a daemon thread so it runs alongside the scheduler.
     # The scheduler keeps the main thread; the web server is the side thread.
