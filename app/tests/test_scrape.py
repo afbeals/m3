@@ -111,7 +111,7 @@ def test_fetch_html_raises_when_response_too_large():
 
 def test_fetch_html_raises_after_max_retries_on_network_error():
     with patch("app.scrape.httpx.Client") as MockClient, \
-         patch("app.scrape.time.sleep"):  # skip actual waits in tests
+         patch("app.utils.time.sleep"):  # skip actual waits in tests
         mock_client = MockClient.return_value.__enter__.return_value
         mock_client.get.side_effect = httpx.ConnectError("connection refused")
         with pytest.raises(ScrapeError, match="after 3 attempts"):
@@ -122,7 +122,7 @@ def test_fetch_html_retries_then_succeeds():
     """Succeeds on the 3rd attempt after two network errors."""
     good_response = _make_response(text="<html>ok</html>")
     with patch("app.scrape.httpx.Client") as MockClient, \
-         patch("app.scrape.time.sleep"):
+         patch("app.utils.time.sleep"):
         mock_client = MockClient.return_value.__enter__.return_value
         mock_client.get.side_effect = [
             httpx.ConnectError("refused"),
@@ -135,7 +135,7 @@ def test_fetch_html_retries_then_succeeds():
 
 def test_fetch_html_raises_on_http_4xx():
     with patch("app.scrape.httpx.Client") as MockClient, \
-         patch("app.scrape.time.sleep"):
+         patch("app.utils.time.sleep"):
         mock_client = MockClient.return_value.__enter__.return_value
         # httpx raises HTTPStatusError on raise_for_status() for 4xx
         bad_resp = httpx.Response(404, content=b"Not Found")
@@ -152,7 +152,7 @@ def test_fetch_html_raises_on_http_4xx():
 def test_fetch_html_does_not_retry_scrape_error():
     """A ScrapeError raised during validation must not be retried."""
     with patch("app.scrape.httpx.Client") as MockClient, \
-         patch("app.scrape.time.sleep") as mock_sleep:
+         patch("app.utils.time.sleep") as mock_sleep:
         mock_client = MockClient.return_value.__enter__.return_value
         mock_client.get.return_value = _make_response(content_type="text/plain")
         with pytest.raises(ScrapeError):

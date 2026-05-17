@@ -89,6 +89,12 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 
 > Replace `/mnt/user/<your-media-share>` with the actual path to your media on Unraid (e.g., `/mnt/user/Media` or `/mnt/user/data/media`). The container needs read access to scan files and write access to create sidecar files.
 
+**Port mapping** (click `Add another Port`):
+
+| Container Port | Host Port | Protocol | Notes |
+|---|---|---|---|
+| `8765` | `8765` | TCP | Web dashboard — change the host port if 8765 is already in use |
+
 **Environment variables** (click `Add another Variable` for each):
 
 | Key | Value | Notes |
@@ -103,6 +109,10 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 | `LOG_LEVEL` | `INFO` | Use `DEBUG` for troubleshooting |
 | `LOG_RETENTION_DAYS` | `30` | Days before old log files are deleted |
 | `REPORT_RETENTION_DAYS` | `90` | Days before old report files are deleted |
+| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls; set to `0` to disable |
+| `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard |
+| `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
+| `APP_NAME` | `pm` | Display name in the dashboard header and page title |
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 
@@ -126,6 +136,8 @@ services:
       - /mnt/user/appdata/pm/plugins:/plugins
       - /mnt/user/appdata/pm/config:/config
       - /mnt/user/Media:/media          # replace with your actual media path
+    ports:
+      - "8765:8765"
     environment:
       - PLEX_URL=http://192.168.1.x:32400
       - PLEX_TOKEN=your-plex-token
@@ -137,6 +149,8 @@ services:
       - LOG_LEVEL=INFO
       - LOG_RETENTION_DAYS=30
       - REPORT_RETENTION_DAYS=90
+      - PLUGIN_RATE_LIMIT_SECS=1.0
+      - APP_NAME=pm
       # Plugin API keys:
       # - MYSITE_API_KEY=your-key-here
 ```
@@ -181,6 +195,19 @@ You should see something like:
 [pm] Watching 2 library path(s)
 ```
 
+### Open the web dashboard
+
+Navigate to `http://<your-unraid-ip>:8765` in your browser. You should see the pm dashboard with the latest run summary and a "Run Now" button.
+
+If you changed `WEB_PORT`, use that port number instead.
+
+In Unraid you can also add a WebUI link to the container:
+1. Click the container icon → **Edit**
+2. In the **WebUI** field enter: `http://[IP]:[PORT:8765]`
+3. Click **Apply**
+
+After that, a small "WebUI" button appears next to the container icon in the Docker tab.
+
 ### Check log files
 
 ```bash
@@ -190,6 +217,9 @@ cat /mnt/user/appdata/pm/config/logs/pm.log
 
 ### Trigger a manual run (without waiting for the schedule)
 
+Via the web dashboard: click **Run Now** on the main page.
+
+Via SSH:
 ```bash
 docker exec pm python -m app.main --once
 ```
@@ -201,7 +231,10 @@ docker exec pm python -m app.main --once --force
 
 ### Check the run report
 
-After a run completes:
+After a run completes, either:
+- Open the dashboard → **Runs** → click any run
+- Or read the text summary directly:
+
 ```bash
 cat /mnt/user/appdata/pm/config/reports/run_latest.txt
 ```
@@ -224,6 +257,7 @@ Alternatively, follow the [official Plex guide](https://support.plex.tv/articles
 ### If using Docker Hub:
 1. Pull the new image: `docker pull yourdockerhubuser/pm:latest`
 2. In the Unraid Docker UI: click the container icon → **Update** (or Force Update)
+3. The container restarts automatically with the new image
 
 ### If built locally on Unraid:
 ```bash
@@ -232,6 +266,32 @@ git pull   # or re-copy the updated source
 docker build -t pm:latest .
 docker restart pm
 ```
+
+No data migration is needed between versions — pm stores all state in the config directory (`/mnt/user/appdata/pm/config/`) which is mounted from the host and survives container restarts and updates.
+
+---
+
+## Backup and Restore
+
+### What to back up
+
+The only persistent state pm writes is in `/mnt/user/appdata/pm/`:
+
+| Path | Contents | Notes |
+|---|---|---|
+| `config/reports/` | Run history JSON + summary text | Safe to delete old ones; they only affect dashboard history |
+| `config/logs/` | Rotating log files | Safe to delete; pm recreates them on next run |
+| `plugins/` | Your plugin `.py` files | **Back these up** — they are not recoverable from the container |
+
+NFO sidecars and poster images live **next to your media files** in your media share — they are already backed up with your media.
+
+Plex does not need to be backed up separately; if you lose the Plex database you can always re-run pm with `--force` to rebuild all metadata.
+
+### Restore after data loss
+
+1. Restore your plugin files to `/mnt/user/appdata/pm/plugins/`
+2. Start the container — pm recreates the config directory structure automatically
+3. Run `docker exec pm python -m app.main --once --force` to re-process all media files
 
 ---
 

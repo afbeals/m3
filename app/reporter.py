@@ -19,11 +19,13 @@
 #   "error"        — plugin or writer raised an unexpected exception
 # -----------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.logging_setup import cleanup_old_files
 
@@ -44,6 +46,8 @@ class RunReport:
     # ISO timestamps set by main.run() at the start and end of each run
     started_at: str = ""
     finished_at: str = ""
+    # Wall-clock duration in seconds; computed by write_report() when both timestamps are present
+    duration_seconds: int | None = None
 
     # Counters — updated by record() as each file result comes in
     total_scanned: int = 0
@@ -81,6 +85,15 @@ class RunReport:
 def write_report(report: RunReport, report_path: str, retention_days: int) -> None:
     """Write the JSON and plain-text reports, then clean up old JSON reports."""
     os.makedirs(report_path, exist_ok=True)
+
+    # Compute wall-clock duration if both timestamps are present
+    if report.started_at and report.finished_at:
+        try:
+            start = datetime.fromisoformat(report.started_at)
+            end = datetime.fromisoformat(report.finished_at)
+            report.duration_seconds = max(0, int((end - start).total_seconds()))
+        except ValueError:
+            pass  # malformed timestamp — leave duration_seconds as None
 
     # Derive the filename from the run's start time so the filename is consistent
     # with the report contents. Fall back to the current time if started_at is empty.

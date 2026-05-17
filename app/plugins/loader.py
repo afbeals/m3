@@ -32,7 +32,11 @@ logger = logging.getLogger(__name__)
 def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
     """
     Discover and load MetadataPlugin subclasses from .py files in plugin_dir.
+
     Returns a dict mapping every registered id/alias (lowercase) to a plugin instance.
+    Returns an empty dict (without raising) if plugin_dir doesn't exist, contains no
+    valid plugins, or all files fail to import — callers receive a usable empty registry
+    and the warnings are logged so the user can investigate.
     """
     # The registry maps lowercase site_id / alias → plugin instance
     registry: dict[str, MetadataPlugin] = {}

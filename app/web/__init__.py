@@ -40,6 +40,15 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
     templates = Jinja2Templates(directory=templates_dir)
     templates.env.globals["app_name"] = config.app_name
+
+    def _fmt_duration(seconds: int | None) -> str:
+        if seconds is None:
+            return "—"
+        if seconds < 60:
+            return f"{seconds}s"
+        return f"{seconds // 60}m {seconds % 60}s"
+
+    templates.env.globals["fmt_duration"] = _fmt_duration
     app.state.templates = templates
 
     app.include_router(router)

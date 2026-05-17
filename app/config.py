@@ -64,6 +64,11 @@ class Config:
     # Override via APP_NAME env var to rename the app without editing code.
     app_name: str = "pm"
 
+    # Minimum seconds to wait between plugin fetch() calls during a run.
+    # Prevents hammering a site with hundreds of rapid-fire requests on large libraries.
+    # Set to 0 to disable throttling (not recommended for production).
+    plugin_rate_limit_secs: float = 1.0
+
     # When True, re-process files that already have .nfo sidecars.
     # Set via --force CLI flag, not an env var.
     force: bool = False
@@ -78,7 +83,8 @@ class Config:
             f"log_retention_days={self.log_retention_days!r}, "
             f"report_retention_days={self.report_retention_days!r}, "
             f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, "
-            f"app_name={self.app_name!r}, force={self.force!r})"
+            f"app_name={self.app_name!r}, "
+            f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, force={self.force!r})"
         )
 
 
@@ -129,5 +135,6 @@ def load_config(force: bool = False) -> Config:
         web_port=optional_int("WEB_PORT", 8765),
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=optional("APP_NAME", "pm"),
+        plugin_rate_limit_secs=float(optional("PLUGIN_RATE_LIMIT_SECS", "1.0")),
         force=force,
     )

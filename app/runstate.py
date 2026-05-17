@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 
 
 class RunState:
-    """Thread-safe flag tracking whether a run is currently in progress."""
+    """Thread-safe flag tracking whether a run is currently in progress.
+
+    The scheduler thread calls start()/stop() around each run() invocation.
+    The web server thread calls snapshot() from route handlers.  All three
+    methods are protected by a single lock so reads and writes are always
+    consistent across threads.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()

@@ -9,7 +9,7 @@
   <thead>
     <tr>
       <th>Started</th>
-      <th>Finished</th>
+      <th>Duration</th>
       <th>Updated</th>
       <th>Scrape errors</th>
       <th>Errors</th>
@@ -22,7 +22,7 @@
     {% for run in runs %}
     <tr>
       <td>{{ run.started_at or "—" }}</td>
-      <td>{{ run.finished_at or "in progress" }}</td>
+      <td class="muted">{{ fmt_duration(run.get('duration_seconds')) }}</td>
       <td class="{% if run.updated > 0 %}stat-value green{% endif %}">{{ run.updated }}</td>
       <td class="{% if run.scrape_errors > 0 %}stat-value yellow{% endif %}">{{ run.scrape_errors }}</td>
       <td class="{% if run.errors > 0 %}stat-value red{% endif %}">{{ run.errors }}</td>

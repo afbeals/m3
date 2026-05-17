@@ -24,6 +24,8 @@
     Started: {{ latest.started_at or "—" }}
     &nbsp;·&nbsp;
     Finished: {{ latest.finished_at or "in progress" }}
+    &nbsp;·&nbsp;
+    Duration: {{ fmt_duration(latest.get('duration_seconds')) }}
   </div>
 
   <div class="stats">

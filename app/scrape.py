@@ -24,9 +24,10 @@
 from __future__ import annotations
 
 import logging
-import time
 
 import httpx
+
+from app.utils import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,12 @@ class SelectorMissingError(ScrapeError):
     """
 
 
+class _NoRetryError(Exception):
+    """Internal sentinel: wraps a ScrapeError that should not be retried."""
+    def __init__(self, scrape_exc: ScrapeError) -> None:
+        self.scrape_exc = scrape_exc
+
+
 def fetch_html(
     url: str,
     *,
@@ -76,55 +83,52 @@ def fetch_html(
 
     - Follows redirects automatically.
     - Sets a browser-like User-Agent to avoid bot-blocking CDNs.
-    - Retries up to `max_attempts` times with exponential backoff.
+    - Retries up to `max_attempts` times with exponential backoff on network/HTTP errors.
     - Raises ScrapeError on:
         - HTTP 4xx / 5xx after all retries
-        - Response body missing a text/html Content-Type
-        - Empty response body
-        - Response body larger than _MAX_RESPONSE_BYTES (10 MB)
+        - Response body missing a text/html Content-Type (not retried)
+        - Empty response body (not retried)
+        - Response body larger than _MAX_RESPONSE_BYTES / 10 MB (not retried)
     """
-    last_exc: Exception | None = None
+    def _attempt() -> str:
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=timeout,
+            headers={"User-Agent": _USER_AGENT},
+        ) as client:
+            r = client.get(url)
+            r.raise_for_status()
 
-    with httpx.Client(
-        follow_redirects=True,
-        timeout=timeout,
-        headers={"User-Agent": _USER_AGENT},
-    ) as client:
-        for attempt in range(1, max_attempts + 1):
-            try:
-                r = client.get(url)
-                r.raise_for_status()
+            content_type = r.headers.get("content-type", "")
+            if not content_type or "text/html" not in content_type:
+                # Wrap in _NoRetryError so retry_with_backoff sees it as a
+                # terminal failure — no point retrying a wrong content-type.
+                raise _NoRetryError(ScrapeError(
+                    f"Expected text/html but got {content_type!r} from {url}"
+                ))
 
-                content_type = r.headers.get("content-type", "")
-                if not content_type or "text/html" not in content_type:
-                    raise ScrapeError(
-                        f"Expected text/html but got {content_type!r} from {url}"
-                    )
+            if len(r.content) > _MAX_RESPONSE_BYTES:
+                raise _NoRetryError(ScrapeError(
+                    f"Response too large ({len(r.content)} bytes) from {url}"
+                ))
 
-                if len(r.content) > _MAX_RESPONSE_BYTES:
-                    raise ScrapeError(
-                        f"Response too large ({len(r.content)} bytes) from {url}"
-                    )
+            text = r.text
+            if not text.strip():
+                raise _NoRetryError(ScrapeError(f"Empty response body from {url}"))
 
-                text = r.text
-                if not text.strip():
-                    raise ScrapeError(f"Empty response body from {url}")
+            return text
 
-                return text
-
-            except ScrapeError:
-                raise  # don't retry on our own validation errors
-
-            except Exception as exc:
-                last_exc = exc
-                if attempt < max_attempts:
-                    wait = _BACKOFF_BASE ** attempt
-                    logger.warning(
-                        "fetch_html attempt %d/%d failed for %s (%s); retrying in %.0fs",
-                        attempt, max_attempts, url, exc, wait,
-                    )
-                    time.sleep(wait)
-
-    raise ScrapeError(
-        f"Failed to fetch {url} after {max_attempts} attempts: {last_exc}"
-    )
+    try:
+        return retry_with_backoff(
+            _attempt,
+            max_attempts=max_attempts,
+            backoff_base=_BACKOFF_BASE,
+            description=f"fetch_html {url}",
+            reraise_on=(_NoRetryError,),
+        )
+    except _NoRetryError as exc:
+        raise exc.scrape_exc
+    except ScrapeError:
+        raise
+    except Exception as exc:
+        raise ScrapeError(f"Failed to fetch {url} after {max_attempts} attempts: {exc}") from exc

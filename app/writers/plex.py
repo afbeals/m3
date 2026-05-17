@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from plexapi.server import PlexServer
 
@@ -59,14 +60,21 @@ def find_plex_item(server: PlexServer, file_path: str):
             return results[0]
 
         # Slow fallback: iterate all sections → items → media parts to find a match.
-        # This is O(library size) and can be very slow on large libraries.
-        # It only runs when the fast filepath filter isn't supported by this Plex version.
+        # O(library size) — only runs when the fast filepath filter isn't supported.
+        # A 60-second wall-clock guard prevents this from hanging a run indefinitely
+        # on very large libraries.
         logger.warning(
             "Fast Plex filepath filter returned no results for %s — falling back to full "
             "library scan. This may be slow on large libraries.", file_path
         )
+        deadline = time.monotonic() + 60
         for section in server.library.sections():
             for item in section.search():
+                if time.monotonic() > deadline:
+                    logger.warning(
+                        "Plex full-library scan timed out after 60s searching for %s", file_path
+                    )
+                    return None
                 for media in item.media:
                     for part in media.parts:
                         if part.file == file_path:
@@ -94,12 +102,17 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
         return False
 
     try:
-        # Build a dict of field edits — each field needs both a .value and a .locked key
+        # Build a dict of field edits — each field needs both a .value and a .locked key.
+        # The .locked = 1 flag tells Plex's built-in metadata agent to leave that field
+        # alone on its next scheduled refresh.  Without the lock, Plex silently overwrites
+        # our custom metadata the next time it runs its own agent (e.g. The Movie Database).
+        # Locked fields show a padlock icon in the Plex item editor so users can see
+        # which fields are under external control.
         edits: dict = {}
 
         if result.title:
             edits["title.value"] = result.title
-            edits["title.locked"] = 1          # prevents Plex agent from overwriting
+            edits["title.locked"] = 1
         if result.summary:
             edits["summary.value"] = result.summary
             edits["summary.locked"] = 1

@@ -25,13 +25,13 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 
 import httpx
 from lxml import etree
 
 from app.plugins.base import MetadataResult
 from app.scanner import MediaFile
+from app.utils import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -129,58 +129,49 @@ def _download_image(url: str, dest_path: str) -> bool:
     - Writes atomically via a .tmp file + os.replace() so interrupted downloads
       never leave a partial file at dest_path.
     """
-    last_exc: Exception | None = None
-    # One client for all attempts — avoids creating a new TCP connection per retry
-    with httpx.Client(follow_redirects=True, timeout=30) as client:
-        for attempt in range(1, _DOWNLOAD_MAX_ATTEMPTS + 1):
+    def _attempt() -> bool:
+        with httpx.Client(follow_redirects=True, timeout=30) as client:
+            r = client.get(url)
+            r.raise_for_status()
+
+            # Reject non-image content types to avoid writing HTML error pages to disk
+            content_type = r.headers.get("content-type", "")
+            if not content_type or not content_type.startswith("image/"):
+                raise ValueError(
+                    f"Unexpected content-type {content_type!r} for image URL {url}"
+                )
+
+            # Reject payloads that exceed the size cap to prevent OOM
+            if len(r.content) > _DOWNLOAD_MAX_BYTES:
+                raise ValueError(
+                    f"Image response too large ({len(r.content)} bytes) from {url}"
+                )
+
+            # Write atomically: .tmp then os.replace() so dest_path is never partial
+            tmp_path = dest_path + ".tmp"
             try:
-                r = client.get(url)
-                r.raise_for_status()   # raise on 4xx/5xx responses
+                with open(tmp_path, "wb") as fh:
+                    fh.write(r.content)
+                os.replace(tmp_path, dest_path)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise
 
-                # Reject non-image content types to avoid writing HTML error pages
-                # or other garbage to disk when a CDN returns an unexpected response.
-                # A missing Content-Type header is also treated as invalid — a legitimate
-                # image CDN should always send one.
-                content_type = r.headers.get("content-type", "")
-                if not content_type or not content_type.startswith("image/"):
-                    raise ValueError(
-                        f"Unexpected content-type {content_type!r} for image URL {url}"
-                    )
+            logger.info("Downloaded image: %s", dest_path)
+            return True
 
-                # Reject payloads that exceed the size cap to prevent OOM
-                if len(r.content) > _DOWNLOAD_MAX_BYTES:
-                    raise ValueError(
-                        f"Image response too large ({len(r.content)} bytes) from {url}"
-                    )
-
-                # Write atomically: write to a .tmp file then rename into place.
-                # os.replace() is atomic on all platforms, so dest_path is never
-                # left in a partial/empty state if the process is interrupted.
-                tmp_path = dest_path + ".tmp"
-                try:
-                    with open(tmp_path, "wb") as fh:
-                        fh.write(r.content)
-                    os.replace(tmp_path, dest_path)
-                except Exception:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                    raise
-
-                logger.info("Downloaded image: %s", dest_path)
-                return True
-            except Exception as exc:
-                last_exc = exc
-                if attempt < _DOWNLOAD_MAX_ATTEMPTS:
-                    wait = _DOWNLOAD_BACKOFF_BASE ** attempt
-                    logger.warning(
-                        "Image download attempt %d/%d failed (%s); retrying in %.0fs",
-                        attempt, _DOWNLOAD_MAX_ATTEMPTS, exc, wait,
-                    )
-                    time.sleep(wait)
-
-    logger.error("Failed to download image from %s after %d attempts: %s",
-                 url, _DOWNLOAD_MAX_ATTEMPTS, last_exc)
-    return False
+    try:
+        return retry_with_backoff(
+            _attempt,
+            max_attempts=_DOWNLOAD_MAX_ATTEMPTS,
+            backoff_base=_DOWNLOAD_BACKOFF_BASE,
+            description=f"image download {url}",
+        )
+    except Exception as exc:
+        logger.error("Failed to download image from %s after %d attempts: %s",
+                     url, _DOWNLOAD_MAX_ATTEMPTS, exc)
+        return False
 
 
 def write_images(media: MediaFile, result: MetadataResult) -> bool:

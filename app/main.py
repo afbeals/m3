@@ -23,6 +23,7 @@
 
 import argparse
 import logging
+import time
 from datetime import datetime
 
 from app.config import load_config
@@ -106,6 +107,11 @@ def run(config, router: Router, dry_run: bool = False) -> None:
             ))
             continue
 
+        # Throttle between plugin calls to avoid hammering the source site.
+        # Applied immediately before the fetch so the first file isn't delayed.
+        if config.plugin_rate_limit_secs > 0:
+            time.sleep(config.plugin_rate_limit_secs)
+
         # Case 4: call the plugin to fetch metadata from the external API
         try:
             result = plugin.fetch(parsed)
@@ -167,10 +173,20 @@ def run(config, router: Router, dry_run: bool = False) -> None:
 
     report.finished_at = datetime.now().isoformat(timespec="seconds")
 
-    # Write JSON + plain-text report files and clean up old ones
-    write_report(report, config.report_path, config.report_retention_days)
+    # Dry runs don't write report files — they'd pollute history with zero-action entries.
+    # The summary is logged to stdout instead so the user still sees what would have run.
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Skipping report write. "
+            "updated=%d skipped=%d unmatched=%d scrape_errors=%d errors=%d",
+            report.updated, report.skipped, report.unmatched,
+            report.scrape_errors, report.errors,
+        )
+    else:
+        # Write JSON + plain-text report files and clean up old ones
+        write_report(report, config.report_path, config.report_retention_days)
 
-    # Delete old log files beyond the retention window
+    # Delete old log files beyond the retention window (runs regardless of dry_run)
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
 
     logger.info(
@@ -178,6 +194,44 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         report.updated, report.skipped, report.unmatched, report.add_form,
         report.scrape_errors, report.errors,
     )
+
+
+def _validate_paths(config) -> None:
+    """
+    Check that critical filesystem paths are accessible before the scheduler starts.
+    Logs a clear error and raises SystemExit for each fatal misconfiguration so the
+    container exits immediately with a useful message rather than silently doing nothing.
+    """
+    import os
+    errors: list[str] = []
+
+    # At least one library path must exist and be a directory
+    found_any = False
+    for path in config.library_paths:
+        if os.path.isdir(path):
+            found_any = True
+        else:
+            logger.warning("Library path does not exist or is not a directory: %s", path)
+    if config.library_paths and not found_any:
+        errors.append(
+            f"None of the configured LIBRARY_PATHS exist: {config.library_paths}. "
+            "Check that volumes are mounted correctly."
+        )
+
+    # report_path must be writable (create it if absent — it may not exist yet)
+    try:
+        os.makedirs(config.report_path, exist_ok=True)
+        test = os.path.join(config.report_path, ".write_test")
+        with open(test, "w") as fh:
+            fh.write("")
+        os.remove(test)
+    except OSError as exc:
+        errors.append(f"REPORT_PATH {config.report_path!r} is not writable: {exc}")
+
+    for msg in errors:
+        logger.error("Startup validation failed: %s", msg)
+    if errors:
+        raise SystemExit(1)
 
 
 def main() -> None:
@@ -207,6 +261,10 @@ def main() -> None:
 
     logger.info("pm starting up")
     logger.info("Library paths: %s", config.library_paths)
+
+    # Validate critical paths before starting the scheduler so misconfigurations
+    # fail immediately with a clear message rather than silently producing empty runs.
+    _validate_paths(config)
 
     # Discover plugins from the mounted plugin directory
     registry = load_plugins(config.plugin_dir)

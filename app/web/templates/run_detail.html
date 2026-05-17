@@ -13,6 +13,8 @@
     Started: {{ run.started_at or "—" }}
     &nbsp;·&nbsp;
     Finished: {{ run.finished_at or "in progress" }}
+    &nbsp;·&nbsp;
+    Duration: {{ fmt_duration(run.get('duration_seconds')) }}
   </div>
   <div class="stats" style="margin-top:0.75rem;">
     <div class="stat">

@@ -76,6 +76,40 @@
 # REPORT_RETENTION_DAYS=90
 
 # ---------------------------------------------------------------------------
+# Plugin behaviour
+# ---------------------------------------------------------------------------
+
+# Seconds to wait between plugin fetch() calls (rate limiting).
+# Increase this if a site blocks you for hitting it too fast.
+# Set to 0 to disable rate limiting entirely.
+# Default: 1.0
+# PLUGIN_RATE_LIMIT_SECS=1.0
+
+# ---------------------------------------------------------------------------
+# Web dashboard
+# ---------------------------------------------------------------------------
+
+# Enable or disable the built-in web dashboard.
+# Default: true
+# WEB_ENABLED=true
+
+# Port the dashboard HTTP server listens on inside the container.
+# Map this to a host port in your Docker / Unraid config.
+# Default: 8765
+# WEB_PORT=8765
+
+# Host/IP the dashboard binds to.
+# 0.0.0.0 means it's reachable from outside the container (normal Docker usage).
+# Change to 127.0.0.1 to restrict to localhost only.
+# Default: 0.0.0.0
+# WEB_HOST=0.0.0.0
+
+# Display name shown in the dashboard header, page title, and footer.
+# Change this if you've renamed the project or run multiple instances.
+# Default: pm
+# APP_NAME=pm
+
+# ---------------------------------------------------------------------------
 # Plugin-specific API keys
 # ---------------------------------------------------------------------------
 # Each plugin reads its own key from os.environ. Set these as Docker env vars:

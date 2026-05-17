@@ -30,6 +30,7 @@ def _config(tmp_path, library_path=None):
     cfg.log_retention_days = 30
     cfg.plex_url = "http://localhost:32400"
     cfg.plex_token = "token"
+    cfg.plugin_rate_limit_secs = 0.0  # no delay in tests
     return cfg
 
 
@@ -196,8 +197,8 @@ def test_run_dry_run_skips_nfo_write(tmp_path):
 
     mock_nfo.assert_not_called()
     mock_img.assert_not_called()
-    report = mock_report.call_args.args[0]
-    assert report.updated == 1  # still marked updated in dry run
+    # dry_run skips write_report entirely (no report files are created)
+    mock_report.assert_not_called()
 
 
 def test_run_dry_run_skips_plex_push(tmp_path):

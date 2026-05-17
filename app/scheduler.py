@@ -70,12 +70,14 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
         def _watcher():
             while True:
                 _trigger_event.wait()
-                _trigger_event.clear()
                 logger.info("SIGUSR1 received — scheduling immediate run")
                 try:
                     scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
                 except Exception as exc:
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
+                finally:
+                    # Clear after add_job so a second SIGUSR1 during add_job isn't lost
+                    _trigger_event.clear()
 
         watcher_thread = threading.Thread(target=_watcher, daemon=True)
         watcher_thread.start()

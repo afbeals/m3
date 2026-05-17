@@ -170,6 +170,9 @@ print('form:', r.form, 'site:', r.site, 'scene_id:', r.scene_id)
 
 Set environment variables and run with `--once`:
 
+> **Note:** `--once` runs immediately and exits. It does **not** start the web
+> dashboard. To use the dashboard locally, omit `--once` (see step 5b below).
+
 ### macOS / Linux
 
 ```bash
@@ -221,6 +224,30 @@ $env:EXAMPLESITE_API_KEY = "your-api-key"
 
 python -m app.main --once
 ```
+
+---
+
+## 5b. Run with the web dashboard (optional)
+
+Omit `--once` to start the scheduler and web server together (just like in Docker):
+
+```bash
+source .venv/bin/activate
+
+PLEX_URL=http://your-plex-ip:32400 \
+PLEX_TOKEN=your-plex-token \
+LIBRARY_PATHS=/tmp/pm-test-media \
+PLUGIN_DIR=./plugins \
+REPORT_PATH=/tmp/pm-test-reports \
+LOG_PATH=/tmp/pm-test-logs \
+LOG_LEVEL=DEBUG \
+EXAMPLESITE_API_KEY=your-api-key \
+python3 -m app.main
+```
+
+Open `http://localhost:8765` in your browser. You'll see the dashboard with a
+**Run Now** button — click it to trigger an immediate run without waiting for the
+cron schedule. Press Ctrl+C to stop.
 
 ---
 

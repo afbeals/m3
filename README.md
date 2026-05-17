@@ -99,6 +99,33 @@ See `plugins/example_plugin.py` for a fully-commented reference implementation.
 
 ---
 
+## Web Dashboard
+
+When running normally (not `--once`), pm serves a built-in dashboard at
+`http://<host>:8765` (default port):
+
+| Page | URL | What you see |
+|---|---|---|
+| Latest run | `/` | Run status, stats, next scheduled time, Run Now button |
+| Run history | `/runs` | All past runs with duration |
+| Run detail | `/runs/<timestamp>` | Per-file status with inline ↺ retry buttons |
+| Unmatched digest | `/unmatched` | Files never claimed by any plugin, across all runs |
+| Plugin list | `/plugins` | All loaded plugins and their site IDs |
+| Config | `/config` | Active env var values (Plex token masked) |
+| Health check | `/healthz` | Docker health-check endpoint |
+
+**Run Now** — triggers an immediate run without restarting the container.
+
+**Inline retry** — on the run-detail page, any `error` or `scrape_error` row has a
+↺ button that re-queues that single file for immediate reprocessing.
+
+**Status indicator** — the header shows "▶ Running — Ns" while a run is in progress
+and "Idle" otherwise, polled automatically every 2 seconds via HTMX.
+
+To disable the dashboard: set `WEB_ENABLED=false`. To change the port: set `WEB_PORT=<port>`.
+
+---
+
 ## Run Modes
 
 ```bash
