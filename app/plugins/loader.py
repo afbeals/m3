@@ -48,7 +48,10 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
             continue
 
         fpath = os.path.join(plugin_dir, fname)
-        module_name = fname[:-3]  # strip .py extension to use as module name
+        # Namespace the module name to avoid shadowing stdlib modules or other
+        # plugins with the same base name (e.g. a plugin named "json.py" would
+        # shadow the stdlib json module without this prefix).
+        module_name = f"pm_plugin.{fname[:-3]}"
 
         # Dynamically import the file as a Python module
         try:

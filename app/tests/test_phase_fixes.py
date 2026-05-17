@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import os
+import tempfile
+import time
 import pytest
 
 from app.config import load_config
+from app.logging_setup import cleanup_old_files
 from app.parser import parse
 from app.plugins.base import MetadataResult
+from app.scheduler import start_scheduler
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +146,90 @@ def test_write_images_returns_true_when_all_succeed(tmp_path):
         ok = write_images(media, result)
 
     assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Parser: bare "Add" stem returns None (no actors = invalid)
+# ---------------------------------------------------------------------------
+
+def test_parse_bare_add_returns_none():
+    assert parse("Add") is None
+
+
+def test_parse_bare_add_case_insensitive_returns_none():
+    assert parse("add") is None
+
+
+def test_parse_add_with_actor_is_valid():
+    result = parse("Add Jane Doe")
+    assert result is not None
+    assert result.form == "add"
+    assert "Jane Doe" in result.actors
+
+
+# ---------------------------------------------------------------------------
+# Parser: % in match payload corrupts site token
+# ---------------------------------------------------------------------------
+
+def test_parse_percent_in_payload_returns_none():
+    # The payload starts with a %-encoded character before the real site token.
+    # The parser should return None rather than treating "%20" as the site.
+    assert parse("Jane Doe % %20 - real-site - 12345") is None
+
+
+# ---------------------------------------------------------------------------
+# Scheduler: ValueError on bad cron expression
+# ---------------------------------------------------------------------------
+
+def test_scheduler_raises_on_bad_cron_expression():
+    with pytest.raises(ValueError, match="5-field cron"):
+        start_scheduler(lambda: None, "not-a-cron")
+
+
+def test_scheduler_raises_on_too_few_cron_fields():
+    with pytest.raises(ValueError, match="5-field cron"):
+        start_scheduler(lambda: None, "0 3 * *")  # only 4 fields
+
+
+# ---------------------------------------------------------------------------
+# cleanup_old_files: rotated log files deleted correctly
+# ---------------------------------------------------------------------------
+
+def test_cleanup_deletes_rotated_log_files():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a rotated log file with an old mtime
+        rotated = os.path.join(tmpdir, "pm.log.1")
+        open(rotated, "w").close()
+        old_time = time.time() - (40 * 24 * 3600)  # 40 days ago
+        os.utime(rotated, (old_time, old_time))
+
+        removed = cleanup_old_files(tmpdir, retention_days=30, pattern_suffix=".log")
+
+        assert removed == 1
+        assert not os.path.exists(rotated)
+
+
+def test_cleanup_skips_active_log_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Active log file with old mtime — must not be deleted
+        active = os.path.join(tmpdir, "pm.log")
+        open(active, "w").close()
+        old_time = time.time() - (40 * 24 * 3600)
+        os.utime(active, (old_time, old_time))
+
+        removed = cleanup_old_files(tmpdir, retention_days=30, pattern_suffix=".log")
+
+        assert removed == 0
+        assert os.path.exists(active)
+
+
+def test_cleanup_skips_files_within_retention():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        recent = os.path.join(tmpdir, "pm.log.1")
+        open(recent, "w").close()
+        # mtime is now — within retention window
+
+        removed = cleanup_old_files(tmpdir, retention_days=30, pattern_suffix=".log")
+
+        assert removed == 0
+        assert os.path.exists(recent)

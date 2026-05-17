@@ -122,6 +122,7 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
         item.removeGenres()
         item.removeLabels()
         item.removeTags()
+        item.removeActors()
 
         # Add fresh values with locks so the Plex agent can't clear them on refresh
         for genre in result.genres:

@@ -99,7 +99,7 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
         uid.set("type", "pm")   # "pm" identifies this tool as the source
         uid.text = result.source_id
 
-        # Serialise to XML with pretty-printing
+    # Serialise to XML with pretty-printing
     tree = etree.ElementTree(root)
     etree.indent(tree, space="  ")
 
@@ -139,8 +139,10 @@ def _download_image(url: str, dest_path: str) -> bool:
 
                 # Reject non-image content types to avoid writing HTML error pages
                 # or other garbage to disk when a CDN returns an unexpected response.
+                # A missing Content-Type header is also treated as invalid — a legitimate
+                # image CDN should always send one.
                 content_type = r.headers.get("content-type", "")
-                if content_type and not content_type.startswith("image/"):
+                if not content_type or not content_type.startswith("image/"):
                     raise ValueError(
                         f"Unexpected content-type {content_type!r} for image URL {url}"
                     )

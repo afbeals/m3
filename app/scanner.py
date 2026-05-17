@@ -35,14 +35,19 @@ class MediaFile:
     nfo_path: str    # where the .nfo sidecar should live, e.g. /media/Movies/My Movie.nfo
 
 
-def scan_library(library_paths: list[str], force: bool = False) -> list[MediaFile]:
+def scan_library(
+    library_paths: list[str], force: bool = False
+) -> tuple[list[MediaFile], int]:
     """
     Walk each path in library_paths recursively and collect video files to process.
 
     Skips files that already have a .nfo sidecar, unless force=True.
-    Returns a list of MediaFile objects ready for routing and metadata fetching.
+    Returns a tuple of:
+      - list of MediaFile objects ready for routing and metadata fetching
+      - count of files skipped because a sidecar already exists
     """
     results: list[MediaFile] = []
+    skipped = 0
 
     for lib_path in library_paths:
         # Warn and skip paths that don't exist (e.g. misconfigured volume mount)
@@ -66,9 +71,10 @@ def scan_library(library_paths: list[str], force: bool = False) -> list[MediaFil
                 # If the sidecar already exists and we're not forcing, skip this file
                 if not force and os.path.exists(nfo_path):
                     logger.debug("Skipping (sidecar exists): %s", full_path)
+                    skipped += 1
                     continue
 
                 results.append(MediaFile(path=full_path, stem=stem, nfo_path=nfo_path))
 
-    logger.info("Scanner found %d file(s) to process", len(results))
-    return results
+    logger.info("Scanner found %d file(s) to process, %d skipped", len(results), skipped)
+    return results, skipped

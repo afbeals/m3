@@ -40,12 +40,18 @@ def setup_logging(log_path: str, log_level: str) -> None:
     # Shared format: timestamp, level, logger name, message
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    root = logging.getLogger()
+
+    # Guard against duplicate handlers if setup_logging is called more than once
+    # (e.g. during tests). Remove any previously added handlers first.
+    if root.handlers:
+        root.handlers.clear()
+
+    root.setLevel(getattr(logging, log_level, logging.INFO))
+
     # Stream handler writes to stdout so `docker logs pm` captures it
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(fmt)
-
-    root = logging.getLogger()
-    root.setLevel(getattr(logging, log_level, logging.INFO))
     root.addHandler(stream_handler)
 
     # Rotating file handler: max 10 MB per file, keep 5 backups (pm.log, pm.log.1, ...)
@@ -84,8 +90,10 @@ def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str =
     removed = 0
 
     for fname in os.listdir(directory):
-        # Skip files that don't match the requested suffix filter
-        if pattern_suffix and not fname.endswith(pattern_suffix):
+        # Skip files that don't match the requested suffix filter.
+        # Use `in` rather than `endswith` so rotated log files (pm.log.1,
+        # pm.log.2, …) are caught by the ".log" suffix filter.
+        if pattern_suffix and pattern_suffix not in fname:
             continue
 
         # Never delete the active log file — only rotated backups (pm.log.1, pm.log.2, ...)

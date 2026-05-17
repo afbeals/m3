@@ -122,6 +122,8 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
         lines.append("Unmatched files:")
         for f in unmatched_files:
             lines.append(f"  {f.path}")
+            if f.message:
+                lines.append(f"    → {f.message}")
         lines.append("")
 
     # Error files — plugin crashed or writer failed

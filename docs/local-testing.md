@@ -7,7 +7,7 @@ to Docker/Unraid.
 
 ## Prerequisites
 
-- Python 3.9 or later
+- Python 3.12 or later
 - `pip` / `venv` (included with Python)
 - An API key for whichever site your plugin targets
 - Optional: a running Plex server (not required — the app works in sidecar-only

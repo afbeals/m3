@@ -122,6 +122,11 @@ def _parse_general_form(stem: str) -> ParsedFilename:
         return None
 
     site = tokens[0]
+    # Reject a site token that contains % — it means the payload started with an
+    # encoded character (e.g. "Actor % %20 - real-site - 12345") and the split
+    # landed on the wrong % boundary.
+    if "%" in site:
+        return None
     rest_tokens = tokens[1:]
 
     date: str | None = None
@@ -211,13 +216,13 @@ def parse(filename_stem: str) -> ParsedFilename | None:
         return None
 
     if re.match(r"^add\b", stem, re.IGNORECASE):
+        # A stem that is exactly "Add" (nothing after the keyword) has no actors
+        # and is not a valid Add form — treat it as unmatched.
+        if re.fullmatch(r"add", stem, re.IGNORECASE):
+            return None
         return _parse_add_form(stem)
 
     if "%" in stem:
-        try:
-            return _parse_general_form(stem)
-        except (ValueError, IndexError):
-            # Malformed input — e.g. a payload that can't be tokenised
-            return None
+        return _parse_general_form(stem)
 
     return None

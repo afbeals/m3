@@ -137,7 +137,7 @@ def test_push_to_plex_calls_edit_with_scalar_fields():
 
 
 def test_push_to_plex_clears_list_fields_before_writing():
-    """Genres/labels/tags must be cleared first so re-runs don't accumulate stale values."""
+    """Genres/labels/tags/actors must be cleared first so re-runs don't accumulate stale values."""
     mock_item = MagicMock()
     mock_server = MagicMock()
     with patch("app.writers.plex.find_plex_item", return_value=mock_item):
@@ -146,6 +146,7 @@ def test_push_to_plex_clears_list_fields_before_writing():
     mock_item.removeGenres.assert_called_once()
     mock_item.removeLabels.assert_called_once()
     mock_item.removeTags.assert_called_once()
+    mock_item.removeActors.assert_called_once()
 
 
 def test_push_to_plex_adds_genres_and_actors():

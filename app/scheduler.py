@@ -19,6 +19,7 @@
 import logging
 import platform
 import signal
+import threading
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -58,17 +59,28 @@ def start_scheduler(run_fn, schedule: str) -> None:
     # SIGUSR1 is not available on Windows — only register the handler on Unix systems.
     # On Windows, use `--once` via `docker exec` to trigger a manual run instead.
     if platform.system() != "Windows":
+        # A threading.Event lets the signal handler set a flag without acquiring
+        # the scheduler's internal lock, avoiding a potential deadlock if the signal
+        # arrives while the scheduler is in the middle of a lock-protected operation.
+        _trigger_event = threading.Event()
+
         def _handle_sigusr1(signum, frame):
-            # Do NOT call run_fn() directly here. Signal handlers run between
-            # bytecode instructions and calling blocking I/O (HTTP, file writes,
-            # logging) from a handler can deadlock or corrupt in-progress state.
-            # Instead, schedule a one-off job — APScheduler executes it safely
-            # on the next scheduler tick from the main thread.
-            logger.info("Received SIGUSR1 — scheduling immediate run")
-            try:
-                scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
-            except Exception as exc:
-                logger.warning("SIGUSR1: could not schedule run: %s", exc)
+            # Signal handlers must be lock-free. Set the event here; a watcher
+            # thread picks it up and schedules the job safely from a normal thread.
+            _trigger_event.set()
+
+        def _watcher():
+            while True:
+                _trigger_event.wait()
+                _trigger_event.clear()
+                logger.info("SIGUSR1 received — scheduling immediate run")
+                try:
+                    scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
+                except Exception as exc:
+                    logger.warning("SIGUSR1: could not schedule run: %s", exc)
+
+        watcher_thread = threading.Thread(target=_watcher, daemon=True)
+        watcher_thread.start()
 
         signal.signal(signal.SIGUSR1, _handle_sigusr1)
         logger.debug("SIGUSR1 handler registered (Unix only)")

@@ -65,9 +65,13 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     report = RunReport(started_at=datetime.now().isoformat(timespec="seconds"))
 
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
-    media_files = scan_library(config.library_paths, force=config.force)
+    media_files, skipped_count = scan_library(config.library_paths, force=config.force)
 
-    if not media_files:
+    # Record skipped files in the report so the summary includes an accurate count
+    for _ in range(skipped_count):
+        report.record(FileResult(path="", status="skipped"))
+
+    if not media_files and skipped_count == 0:
         logger.warning(
             "No media files found to process. Check that LIBRARY_PATHS is correct "
             "and that the directories are mounted and contain video files."
@@ -124,9 +128,15 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         else:
             try:
                 write_nfo(media, result)
-                write_images(media, result)
             except Exception as exc:
                 logger.exception("NFO write error for %s", media.path)
+                report.record(FileResult(path=media.path, status="error", message=str(exc)))
+                continue
+
+            try:
+                write_images(media, result)
+            except Exception as exc:
+                logger.exception("Image write error for %s", media.path)
                 report.record(FileResult(path=media.path, status="error", message=str(exc)))
                 continue
 
@@ -135,7 +145,9 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         # This is non-fatal: if Plex is unreachable we still have the NFO sidecar.
         if not dry_run and plex_server is not None:
             try:
-                push_to_plex(plex_server, media.path, result)
+                ok = push_to_plex(plex_server, media.path, result)
+                if not ok:
+                    logger.warning("Plex push returned failure for %s", media.path)
             except Exception as exc:
                 logger.warning("Plex push failed for %s: %s", media.path, exc)
         elif dry_run and plex_server is not None:
@@ -153,8 +165,8 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
 
     logger.info(
-        "Run complete. updated=%d unmatched=%d add_form=%d errors=%d",
-        report.updated, report.unmatched, report.add_form, report.errors,
+        "Run complete. updated=%d skipped=%d unmatched=%d add_form=%d errors=%d",
+        report.updated, report.skipped, report.unmatched, report.add_form, report.errors,
     )
 
 

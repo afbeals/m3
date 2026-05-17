@@ -45,7 +45,7 @@ A scheduled Python service that reads media filenames from Plex library director
   - Returns: normalized MetadataResult
        │
        ▼
-[Writers — run in parallel]
+[Writers — run sequentially]
   ├── [NFO Writer]     writes <filename>.nfo + poster.jpg + fanart.jpg next to media
   └── [Plex Writer]    pushes MetadataResult to Plex HTTP API with field locks
        │
@@ -86,10 +86,15 @@ pm/
 │   │   └── plex.py               # PlexAPI integration; field-locked updates
 │   │
 │   └── tests/
-│       ├── test_parser.py        # 32 tests — all forms, subtypes, edge cases
-│       ├── test_router.py        # 5 tests — dispatch, aliases, unmatched
-│       ├── test_scanner.py       # 7 tests — video detection, sidecar skip, force
-│       └── test_plugin_loader.py # 5 tests — discovery, bad files, missing dir
+│       ├── test_parser.py           # 32 tests — all forms, subtypes, edge cases
+│       ├── test_router.py           # 5 tests — dispatch, aliases, unmatched
+│       ├── test_scanner.py          # 7 tests — video detection, sidecar skip, force
+│       ├── test_plugin_loader.py    # 5 tests — discovery, bad files, missing dir
+│       ├── test_reporter.py         # 9 tests — counters, file output
+│       ├── test_nfo_writer.py       # 17 tests — NFO XML, art block, atomic write, images
+│       ├── test_plex_writer.py      # 11 tests — connect, find item, push
+│       ├── test_run_integration.py  # 11 tests — run() orchestration, dry-run
+│       └── test_phase_fixes.py      # 14 tests — targeted regression tests
 │
 ├── plugins/                      # mounted from host at /plugins; drop .py files here
 │   └── example_plugin.py         # reference implementation with full comments
@@ -226,7 +231,7 @@ item.uploadPoster(url=result.poster_url)
 item.uploadArt(url=result.fanart_url)
 ```
 
-Plex connection is established once at startup and reused across runs.
+Plex connection is established at the start of each run (not once at startup) so that long-running schedulers don't use a stale connection after a Plex server restart or token rotation.
 
 ---
 

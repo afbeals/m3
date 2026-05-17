@@ -68,7 +68,7 @@ def test_run_marks_file_updated_on_success(tmp_path):
     router = Router({"mysite": _GoodPlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
          patch("app.main.write_images", return_value=True), \
          patch("app.main.connect_plex", return_value=None), \
@@ -85,7 +85,7 @@ def test_run_marks_file_unmatched_when_parse_fails(tmp_path):
     router = Router({})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -100,7 +100,7 @@ def test_run_marks_file_add_form(tmp_path):
     router = Router({})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -114,7 +114,7 @@ def test_run_marks_file_unmatched_when_no_plugin(tmp_path):
     router = Router({})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -128,7 +128,7 @@ def test_run_marks_file_unmatched_when_plugin_returns_none(tmp_path):
     router = Router({"nonesite": _NonePlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -142,7 +142,7 @@ def test_run_marks_file_error_when_plugin_raises(tmp_path):
     router = Router({"errorsite": _ErrorPlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -156,7 +156,7 @@ def test_run_marks_file_error_when_nfo_write_fails(tmp_path):
     router = Router({"mysite": _GoodPlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo", side_effect=OSError("disk full")), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
@@ -172,7 +172,7 @@ def test_run_dry_run_skips_nfo_write(tmp_path):
     router = Router({"mysite": _GoodPlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo") as mock_nfo, \
          patch("app.main.write_images") as mock_img, \
          patch("app.main.connect_plex", return_value=None), \
@@ -191,7 +191,7 @@ def test_run_dry_run_skips_plex_push(tmp_path):
     cfg = _config(tmp_path)
     mock_plex = MagicMock()
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
          patch("app.main.write_images", return_value=True), \
          patch("app.main.connect_plex", return_value=mock_plex), \
@@ -208,7 +208,7 @@ def test_run_continues_after_one_file_errors(tmp_path):
     router = Router({"mysite": _GoodPlugin(), "errorsite": _ErrorPlugin()})
     cfg = _config(tmp_path)
 
-    with patch("app.main.scan_library", return_value=[bad, good]), \
+    with patch("app.main.scan_library", return_value=([bad, good], 0)), \
          patch("app.main.write_nfo"), \
          patch("app.main.write_images", return_value=True), \
          patch("app.main.connect_plex", return_value=None), \
@@ -226,7 +226,7 @@ def test_run_pushes_to_plex_when_connected(tmp_path):
     cfg = _config(tmp_path)
     mock_plex = MagicMock()
 
-    with patch("app.main.scan_library", return_value=[media]), \
+    with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
          patch("app.main.write_images", return_value=True), \
          patch("app.main.connect_plex", return_value=mock_plex), \
