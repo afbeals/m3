@@ -3,7 +3,9 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
@@ -13,12 +15,11 @@ RUN useradd -m pm \
 
 USER pm
 
-# Health check: verify the scheduler is still alive by checking that the
-# run_latest.txt report has been updated within the last 25 hours.
-# This catches a hung or crashed scheduler without requiring an HTTP endpoint.
-HEALTHCHECK --interval=1h --timeout=10s --start-period=25h --retries=2 \
-    CMD test -f /config/reports/run_latest.txt \
-        && test $(( $(date +%s) - $(date -r /config/reports/run_latest.txt +%s) )) -lt 90000 \
-        || exit 1
+EXPOSE 8765
+
+# Health check: the web dashboard's /healthz endpoint returns 200 when the
+# process is alive. No start-period needed — uvicorn starts in seconds.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8765/healthz || exit 1
 
 ENTRYPOINT ["python", "-m", "app.main"]

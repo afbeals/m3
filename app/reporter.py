@@ -10,11 +10,13 @@
 #                           can check the most recent run at a glance.
 #
 # File statuses:
-#   "updated"    — metadata fetched and written successfully (NFO + Plex)
-#   "skipped"    — file already had a sidecar and --force was not set
-#   "unmatched"  — filename couldn't be parsed or no plugin registered for site
-#   "add_form"   — filename used the Manual Add form; needs human follow-up
-#   "error"      — plugin or writer raised an exception
+#   "updated"      — metadata fetched and written successfully (NFO + Plex)
+#   "skipped"      — file already had a sidecar and --force was not set
+#   "unmatched"    — filename couldn't be parsed or no plugin registered for site
+#   "add_form"     — filename used the Manual Add form; needs human follow-up
+#   "scrape_error" — plugin raised ScrapeError/SelectorMissingError; site may
+#                    have changed its markup or the record no longer exists
+#   "error"        — plugin or writer raised an unexpected exception
 # -----------------------------------------------------------------------------
 
 import json
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FileResult:
     path: str
-    # One of: "updated", "skipped", "unmatched", "add_form", "error"
+    # One of: "updated", "skipped", "unmatched", "add_form", "scrape_error", "error"
     status: str
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
@@ -49,6 +51,7 @@ class RunReport:
     skipped: int = 0
     unmatched: int = 0
     add_form: int = 0
+    scrape_errors: int = 0
     errors: int = 0
 
     # Full per-file results list (written verbatim to the JSON report)
@@ -66,6 +69,8 @@ class RunReport:
             self.unmatched += 1
         elif result.status == "add_form":
             self.add_form += 1
+        elif result.status == "scrape_error":
+            self.scrape_errors += 1
         elif result.status == "error":
             self.errors += 1
         else:
@@ -96,12 +101,13 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     lines = [
         f"pm run — {report.started_at}",
         "─" * 40,
-        f"  Total files scanned    : {report.total_scanned}",
-        f"  Updated                : {report.updated}",
-        f"  Skipped (up-to-date)   : {report.skipped}",
-        f"  Manual Add (pending)   : {report.add_form}",
-        f"  Unmatched              : {report.unmatched}",
-        f"  Errors                 : {report.errors}",
+        f"  Total files scanned                    : {report.total_scanned}",
+        f"  Updated                                : {report.updated}",
+        f"  Skipped (up-to-date)                   : {report.skipped}",
+        f"  Manual Add (pending)                   : {report.add_form}",
+        f"  Unmatched                              : {report.unmatched}",
+        f"  Scrape errors (site change / not found): {report.scrape_errors}",
+        f"  Errors (unexpected)                    : {report.errors}",
         "",
     ]
 
@@ -121,6 +127,17 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     if unmatched_files:
         lines.append("Unmatched files:")
         for f in unmatched_files:
+            lines.append(f"  {f.path}")
+            if f.message:
+                lines.append(f"    → {f.message}")
+        lines.append("")
+
+    # Scrape errors — site markup changed or record no longer exists.
+    # Listed before generic errors so they're the first thing the user sees.
+    scrape_error_files = [f for f in report.files if f.status == "scrape_error"]
+    if scrape_error_files:
+        lines.append("Scrape errors (site may have changed its markup):")
+        for f in scrape_error_files:
             lines.append(f"  {f.path}")
             if f.message:
                 lines.append(f"    → {f.message}")

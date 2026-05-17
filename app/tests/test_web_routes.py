@@ -1,0 +1,213 @@
+# Tests for app/web routes using FastAPI TestClient.
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.web import create_app
+
+
+def _make_config(report_path: str) -> MagicMock:
+    cfg = MagicMock()
+    cfg.report_path = report_path
+    cfg.web_host = "127.0.0.1"
+    cfg.web_port = 8765
+    return cfg
+
+
+def _make_app(report_path: str, registry: dict | None = None):
+    config = _make_config(report_path)
+    scheduler = MagicMock()
+    run_fn = MagicMock()
+    return create_app(config, registry or {}, scheduler, run_fn)
+
+
+def _write_run(directory: str, filename: str, data: dict) -> None:
+    with open(os.path.join(directory, filename), "w") as fh:
+        json.dump(data, fh)
+
+
+# ---------------------------------------------------------------------------
+# /healthz
+# ---------------------------------------------------------------------------
+
+def test_healthz_returns_200():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# / (latest run)
+# ---------------------------------------------------------------------------
+
+def test_dashboard_returns_200_with_no_runs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/")
+    assert r.status_code == 200
+    assert "Run now" in r.text
+
+
+def test_dashboard_shows_latest_run_stats():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "finished_at": "2025-05-15T03:00:30",
+            "updated": 5, "skipped": 10, "errors": 1,
+            "scrape_errors": 2, "unmatched": 0, "total_scanned": 18,
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/")
+    assert "2025-05-15" in r.text
+    assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# /runs
+# ---------------------------------------------------------------------------
+
+def test_runs_returns_200():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs")
+    assert r.status_code == 200
+
+
+def test_runs_lists_run_files():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 3, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 3,
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs")
+    assert "2025-05-15" in r.text
+
+
+# ---------------------------------------------------------------------------
+# /runs/{filename}
+# ---------------------------------------------------------------------------
+
+def test_run_detail_returns_200():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 1,
+            "files": [{"path": "/media/scene.mp4", "status": "updated", "message": ""}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json")
+    assert r.status_code == 200
+    assert "/media/scene.mp4" in r.text
+
+
+def test_run_detail_returns_404_for_missing():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_does_not_exist.json")
+    assert r.status_code == 404
+
+
+def test_run_detail_status_filter():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "skipped": 0, "errors": 1,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 2,
+            "files": [
+                {"path": "/media/good.mp4", "status": "updated", "message": ""},
+                {"path": "/media/bad.mp4", "status": "error", "message": "crash"},
+            ],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json?status=error")
+    assert "bad.mp4" in r.text
+    assert "good.mp4" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# /plugins
+# ---------------------------------------------------------------------------
+
+def test_plugins_returns_200_empty():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir, registry={})
+        with TestClient(app) as client:
+            r = client.get("/plugins")
+    assert r.status_code == 200
+    assert "No plugins loaded" in r.text
+
+
+def test_plugins_lists_registered_plugins():
+    from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+
+    class _TestPlugin(MetadataPlugin):
+        site_id = "testsite"
+        aliases = ["TS"]
+        def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+            return None
+
+    plugin = _TestPlugin()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir, registry={"testsite": plugin, "ts": plugin})
+        with TestClient(app) as client:
+            r = client.get("/plugins")
+
+    assert "testsite" in r.text
+    assert "_TestPlugin" in r.text
+
+
+# ---------------------------------------------------------------------------
+# POST /trigger/run
+# ---------------------------------------------------------------------------
+
+def test_trigger_run_schedules_job():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+
+        with TestClient(app, follow_redirects=True) as client:
+            r = client.post("/trigger/run")
+
+    assert r.status_code == 200
+    scheduler.add_job.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# POST /trigger/file
+# ---------------------------------------------------------------------------
+
+def test_trigger_file_returns_400_without_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.post("/trigger/file", data={"file_path": ""})
+    assert r.status_code == 400
+
+
+def test_trigger_file_returns_404_for_nonexistent_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.post("/trigger/file", data={"file_path": "/nonexistent/file.mp4"})
+    assert r.status_code == 404

@@ -13,6 +13,7 @@ from app.main import run
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 from app.router import Router
 from app.scanner import MediaFile
+from app.scrape import ScrapeError, SelectorMissingError
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +58,20 @@ class _ErrorPlugin(MetadataPlugin):
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         raise RuntimeError("API down")
+
+
+class _ScrapeErrorPlugin(MetadataPlugin):
+    site_id = "scrapesite"
+
+    def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+        raise SelectorMissingError("title not found at h1.scene-title")
+
+
+class _ScrapeGenericPlugin(MetadataPlugin):
+    site_id = "scrapegeneric"
+
+    def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+        raise ScrapeError("HTTP 503 after 3 attempts")
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +250,34 @@ def test_run_pushes_to_plex_when_connected(tmp_path):
         run(cfg, router)
 
     mock_push.assert_called_once()
+
+
+def test_run_marks_scrape_error_when_selector_missing(tmp_path):
+    media = _make_media(tmp_path, "Jane Doe % scrapesite - 12345")
+    router = Router({"scrapesite": _ScrapeErrorPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.scrape_errors == 1
+    assert report.errors == 0
+
+
+def test_run_scrape_error_message_included_in_result(tmp_path):
+    media = _make_media(tmp_path, "Jane Doe % scrapegeneric - 12345")
+    router = Router({"scrapegeneric": _ScrapeGenericPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.scrape_errors == 1
+    file_result = next(f for f in report.files if f.status == "scrape_error")
+    assert "HTTP 503" in file_result.message

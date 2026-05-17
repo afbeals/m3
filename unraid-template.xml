@@ -1,0 +1,106 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>pm</Name>
+  <Repository>pm:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>
+    pm — Plex Metadata Agent. Scans your media library, fetches metadata from
+    external APIs or HTML sites via drop-in plugins, writes Kodi-compatible NFO
+    sidecar files, downloads posters and fanart, and pushes everything to Plex
+    with field locks so the built-in agent won't overwrite your custom metadata.
+    A built-in web dashboard lets you view run history, browse loaded plugins,
+    and trigger manual runs.
+  </Overview>
+  <Category>MediaApp:Video Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8765]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Description>
+    pm — Plex Metadata Agent. Fetches metadata for your media files from
+    external APIs and HTML sites via drop-in Python plugins, writes NFO
+    sidecars + artwork, and syncs to Plex with field locks.
+  </Description>
+
+  <!-- ── Volumes ──────────────────────────────────────────────────── -->
+  <Config Name="Plugins directory" Target="/plugins" Default="/mnt/user/appdata/pm/plugins"
+          Mode="rw" Description="Drop .py plugin files here. Changes take effect on container restart."
+          Type="Path" Display="always" Required="true" Mask="false"/>
+
+  <Config Name="Config directory" Target="/config" Default="/mnt/user/appdata/pm/config"
+          Mode="rw" Description="Stores run reports and log files."
+          Type="Path" Display="always" Required="true" Mask="false"/>
+
+  <Config Name="Media directory" Target="/media" Default="/mnt/user/Media"
+          Mode="rw" Description="Root of your media library. NFO sidecars and artwork are written here."
+          Type="Path" Display="always" Required="true" Mask="false"/>
+
+  <!-- ── Web UI port ──────────────────────────────────────────────── -->
+  <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp"
+          Description="Port for the pm web dashboard. Access via http://[Unraid-IP]:[PORT]/"
+          Type="Port" Display="always" Required="true" Mask="false"/>
+
+  <!-- ── Plex connection (required) ───────────────────────────────── -->
+  <Config Name="Plex URL" Target="PLEX_URL" Default="http://192.168.1.x:32400"
+          Description="URL of your Plex Media Server on your local network."
+          Type="Variable" Display="always" Required="true" Mask="false"/>
+
+  <Config Name="Plex Token" Target="PLEX_TOKEN" Default=""
+          Description="Your Plex authentication token. Find it in Plex Web: Settings → Troubleshooting → Get Online Media Info token, or via plex.tv/claim."
+          Type="Variable" Display="always" Required="true" Mask="true"/>
+
+  <!-- ── Library ──────────────────────────────────────────────────── -->
+  <Config Name="Library paths" Target="LIBRARY_PATHS" Default="/media"
+          Description="Comma-separated paths inside the container to scan for media files. E.g. /media/Movies,/media/TV"
+          Type="Variable" Display="always" Required="true" Mask="false"/>
+
+  <!-- ── Schedule ─────────────────────────────────────────────────── -->
+  <Config Name="Run schedule (cron)" Target="RUN_SCHEDULE" Default="0 3 * * *"
+          Description="When to run the metadata agent. Default: 3am every day. Cron format: minute hour day month weekday."
+          Type="Variable" Display="always" Required="false" Mask="false"/>
+
+  <!-- ── Logging ──────────────────────────────────────────────────── -->
+  <Config Name="Log level" Target="LOG_LEVEL" Default="INFO"
+          Description="Logging verbosity: DEBUG, INFO, WARNING, ERROR."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Log retention days" Target="LOG_RETENTION_DAYS" Default="30"
+          Description="Delete log files older than N days."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Report retention days" Target="REPORT_RETENTION_DAYS" Default="90"
+          Description="Delete run report files older than N days."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <!-- ── Web dashboard ────────────────────────────────────────────── -->
+  <Config Name="Web UI enabled" Target="WEB_ENABLED" Default="true"
+          Description="Set to false to disable the web dashboard."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Web UI port (env)" Target="WEB_PORT" Default="8765"
+          Description="Must match the port mapping above."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <!-- ── Advanced ─────────────────────────────────────────────────── -->
+  <Config Name="Plugin directory (container)" Target="PLUGIN_DIR" Default="/plugins"
+          Description="Container path where plugin .py files are discovered."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Report path (container)" Target="REPORT_PATH" Default="/config/reports"
+          Description="Container path where run reports are written."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Log path (container)" Target="LOG_PATH" Default="/config/logs"
+          Description="Container path where rotating log files are written."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

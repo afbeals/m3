@@ -22,14 +22,24 @@ def test_record_updated_increments_counter():
 
 def test_record_all_statuses():
     report = RunReport()
-    for status in ("updated", "skipped", "unmatched", "add_form", "error"):
+    for status in ("updated", "skipped", "unmatched", "add_form", "scrape_error", "error"):
         report.record(FileResult(path=f"/{status}.mp4", status=status))
-    assert report.total_scanned == 5
+    assert report.total_scanned == 6
     assert report.updated == 1
     assert report.skipped == 1
     assert report.unmatched == 1
     assert report.add_form == 1
+    assert report.scrape_errors == 1
     assert report.errors == 1
+
+
+def test_record_scrape_error_increments_counter():
+    report = RunReport()
+    report.record(FileResult(path="/scene.mp4", status="scrape_error",
+                             message="title not found at h1.scene-title"))
+    assert report.scrape_errors == 1
+    assert report.errors == 0
+    assert report.total_scanned == 1
 
 
 def test_record_multiple_updated():
@@ -107,6 +117,33 @@ def test_write_report_txt_lists_error_files(tmp_path):
     assert "Errors:" in txt
     assert "/bad.mp4" in txt
     assert "API timeout" in txt
+
+
+def test_write_report_txt_lists_scrape_errors(tmp_path):
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/scene.mp4", status="scrape_error",
+                             message="title not found at h1.scene-title"))
+
+    write_report(report, str(tmp_path), retention_days=90)
+
+    txt = (tmp_path / "run_latest.txt").read_text()
+    assert "Scrape errors" in txt
+    assert "/scene.mp4" in txt
+    assert "h1.scene-title" in txt
+
+
+def test_write_report_scrape_errors_appear_before_errors(tmp_path):
+    """Scrape errors section must appear before generic errors in the text report."""
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/scene.mp4", status="scrape_error", message="selector missing"))
+    report.record(FileResult(path="/crash.mp4", status="error", message="plugin crashed"))
+
+    write_report(report, str(tmp_path), retention_days=90)
+
+    txt = (tmp_path / "run_latest.txt").read_text()
+    scrape_pos = txt.index("Scrape errors")
+    error_pos = txt.index("Errors:")
+    assert scrape_pos < error_pos
 
 
 def test_write_report_txt_no_errors_message(tmp_path):

@@ -27,14 +27,17 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 
-def start_scheduler(run_fn, schedule: str) -> None:
+def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     """
-    Start a blocking scheduler that calls run_fn on the given cron schedule.
-    This function blocks indefinitely until the container is stopped.
+    Build and configure a BlockingScheduler for run_fn on the given cron schedule.
+    Sets up the SIGUSR1 handler (Unix only).
+    Does NOT call scheduler.start() — the caller does that.
+
+    Use this when you need a reference to the scheduler before starting it
+    (e.g. to pass to the web dashboard so it can trigger manual runs).
     """
     scheduler = BlockingScheduler()
 
-    # Split the 5-field cron expression into its component parts
     parts = schedule.strip().split()
     if len(parts) != 5:
         raise ValueError(f"RUN_SCHEDULE must be a 5-field cron expression, got: {schedule!r}")
@@ -51,22 +54,16 @@ def start_scheduler(run_fn, schedule: str) -> None:
     scheduler.add_job(
         run_fn,
         trigger=trigger,
-        max_instances=1,       # never run two instances at the same time
-        coalesce=True,         # if multiple triggers fire while paused, run once not many
-        misfire_grace_time=3600,  # if the scheduler wakes up late, still run if within 1 hour
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
 
     # SIGUSR1 is not available on Windows — only register the handler on Unix systems.
-    # On Windows, use `--once` via `docker exec` to trigger a manual run instead.
     if platform.system() != "Windows":
-        # A threading.Event lets the signal handler set a flag without acquiring
-        # the scheduler's internal lock, avoiding a potential deadlock if the signal
-        # arrives while the scheduler is in the middle of a lock-protected operation.
         _trigger_event = threading.Event()
 
         def _handle_sigusr1(signum, frame):
-            # Signal handlers must be lock-free. Set the event here; a watcher
-            # thread picks it up and schedules the job safely from a normal thread.
             _trigger_event.set()
 
         def _watcher():
@@ -87,9 +84,18 @@ def start_scheduler(run_fn, schedule: str) -> None:
     else:
         logger.debug("Skipping SIGUSR1 handler (not supported on Windows)")
 
+    return scheduler
+
+
+def start_scheduler(run_fn, schedule: str) -> None:
+    """
+    Build and start a blocking scheduler. Blocks until the container is stopped.
+    Convenience wrapper around build_scheduler() for callers that don't need
+    a reference to the scheduler (e.g. when the web UI is disabled).
+    """
+    scheduler = build_scheduler(run_fn, schedule)
     logger.info("Scheduler started. Next run scheduled via: %s", schedule)
     try:
-        # Blocks here until KeyboardInterrupt (Ctrl+C) or container stop signal
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler stopped")

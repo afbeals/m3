@@ -31,6 +31,7 @@ from app.plugins.loader import load_plugins
 from app.reporter import RunReport, FileResult, write_report
 from app.router import Router
 from app.scanner import scan_library
+from app.scrape import ScrapeError
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
 
@@ -107,6 +108,13 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         # Case 4: call the plugin to fetch metadata from the external API
         try:
             result = plugin.fetch(parsed)
+        except ScrapeError as exc:
+            # ScrapeError means the site changed its markup or the record is gone —
+            # a distinct status so the user can distinguish "my plugin is broken"
+            # from "the site changed" in the run report.
+            logger.warning("Scrape error for %s: %s", media.path, exc)
+            report.record(FileResult(path=media.path, status="scrape_error", message=str(exc)))
+            continue
         except Exception as exc:
             logger.exception("Plugin error for %s", media.path)
             report.record(FileResult(path=media.path, status="error", message=str(exc)))
@@ -165,8 +173,9 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
 
     logger.info(
-        "Run complete. updated=%d skipped=%d unmatched=%d add_form=%d errors=%d",
-        report.updated, report.skipped, report.unmatched, report.add_form, report.errors,
+        "Run complete. updated=%d skipped=%d unmatched=%d add_form=%d scrape_errors=%d errors=%d",
+        report.updated, report.skipped, report.unmatched, report.add_form,
+        report.scrape_errors, report.errors,
     )
 
 
@@ -227,9 +236,42 @@ def main() -> None:
         )
         config.force = False
 
-    # Default mode: start the blocking APScheduler cron loop
-    from app.scheduler import start_scheduler
-    start_scheduler(_run, config.run_schedule)
+    # Build the scheduler (registers SIGUSR1 handler, adds cron job).
+    # We build it before starting the web server so both share the same instance.
+    from app.scheduler import build_scheduler
+    scheduler = build_scheduler(_run, config.run_schedule)
+
+    # Launch the web dashboard in a daemon thread so it runs alongside the scheduler.
+    # The scheduler keeps the main thread; the web server is the side thread.
+    if config.web_enabled:
+        import threading
+        import uvicorn
+        from app.web import create_app
+
+        web_app = create_app(config, registry, scheduler, _run)
+        web_config = uvicorn.Config(
+            web_app,
+            host=config.web_host,
+            port=config.web_port,
+            log_level="warning",
+            access_log=False,
+        )
+        web_server = uvicorn.Server(web_config)
+
+        web_thread = threading.Thread(
+            target=web_server.run,
+            daemon=True,
+            name="pm-web",
+        )
+        web_thread.start()
+        logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)
+
+    # Start the blocking scheduler (blocks until container stops)
+    logger.info("Scheduler started. Next run scheduled via: %s", config.run_schedule)
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Scheduler stopped")
 
 
 if __name__ == "__main__":

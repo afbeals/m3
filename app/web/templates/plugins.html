@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Plugins{% endblock %}
+
+{% block content %}
+<h1>Loaded Plugins</h1>
+
+{% if plugins %}
+<table>
+  <thead>
+    <tr>
+      <th>Site ID</th>
+      <th>Aliases</th>
+      <th>Class</th>
+      <th>Source file</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in plugins %}
+    <tr>
+      <td><strong>{{ p.site_id }}</strong></td>
+      <td class="muted">{{ p.aliases | join(", ") or "—" }}</td>
+      <td>{{ p.class_name }}</td>
+      <td class="path">{{ p.source_file }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card muted">
+  No plugins loaded. Drop a <code>.py</code> file into the plugins directory and restart the container.
+</div>
+{% endif %}
+
+<p class="muted" style="margin-top:1rem; font-size:0.8rem;">
+  Changes to plugin files require a container restart to take effect.
+</p>
+{% endblock %}

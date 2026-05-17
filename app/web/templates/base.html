@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}pm{% endblock %} — pm dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
+</head>
+<body>
+  <header>
+    <span class="logo">▸ pm</span>
+    <nav>
+      <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Latest Run</a>
+      <a href="/runs" {% if request.url.path.startswith("/runs") %}class="active"{% endif %}>History</a>
+      <a href="/plugins" {% if request.url.path == "/plugins" %}class="active"{% endif %}>Plugins</a>
+    </nav>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>pm — Plex Metadata Agent</footer>
+</body>
+</html>

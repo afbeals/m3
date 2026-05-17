@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Run History{% endblock %}
+
+{% block content %}
+<h1>Run History</h1>
+
+{% if runs %}
+<table>
+  <thead>
+    <tr>
+      <th>Started</th>
+      <th>Finished</th>
+      <th>Updated</th>
+      <th>Scrape errors</th>
+      <th>Errors</th>
+      <th>Unmatched</th>
+      <th>Total</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for run in runs %}
+    <tr>
+      <td>{{ run.started_at or "—" }}</td>
+      <td>{{ run.finished_at or "in progress" }}</td>
+      <td class="{% if run.updated > 0 %}stat-value green{% endif %}">{{ run.updated }}</td>
+      <td class="{% if run.scrape_errors > 0 %}stat-value yellow{% endif %}">{{ run.scrape_errors }}</td>
+      <td class="{% if run.errors > 0 %}stat-value red{% endif %}">{{ run.errors }}</td>
+      <td class="{% if run.unmatched > 0 %}stat-value yellow{% endif %}">{{ run.unmatched }}</td>
+      <td class="muted">{{ run.total_scanned }}</td>
+      <td><a href="/runs/{{ run.filename }}">detail →</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card muted">No run reports found yet.</div>
+{% endif %}
+{% endblock %}

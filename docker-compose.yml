@@ -8,6 +8,8 @@ services:
       - ./plugins:/plugins
       - ./data/config:/config
       - ./data/media:/media
+    ports:
+      - "8765:8765"
     environment:
       - PLEX_URL=http://192.168.1.x:32400
       - PLEX_TOKEN=your-plex-token
@@ -19,3 +21,5 @@ services:
       - LOG_LEVEL=INFO
       - LOG_RETENTION_DAYS=30
       - REPORT_RETENTION_DAYS=90
+      - WEB_ENABLED=true
+      - WEB_PORT=8765

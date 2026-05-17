@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Latest Run{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+  <h1>Latest Run</h1>
+  <form method="POST" action="/trigger/run">
+    <button type="submit" class="primary"
+            hx-post="/trigger/run" hx-target="body" hx-push-url="/"
+            onclick="this.disabled=true; this.textContent='Queued…'">
+      ▶ Run now
+    </button>
+  </form>
+</div>
+
+{% if latest %}
+<div class="card">
+  <div class="muted" style="margin-bottom:0.75rem;">
+    Started: {{ latest.started_at or "—" }}
+    &nbsp;·&nbsp;
+    Finished: {{ latest.finished_at or "in progress" }}
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Updated</div>
+      <div class="stat-value {% if latest.updated > 0 %}green{% else %}dim{% endif %}">
+        {{ latest.updated }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Skipped</div>
+      <div class="stat-value dim">{{ latest.skipped }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Scrape errors</div>
+      <div class="stat-value {% if latest.scrape_errors > 0 %}yellow{% else %}dim{% endif %}">
+        {{ latest.scrape_errors }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value {% if latest.errors > 0 %}red{% else %}dim{% endif %}">
+        {{ latest.errors }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Unmatched</div>
+      <div class="stat-value {% if latest.unmatched > 0 %}yellow{% else %}dim{% endif %}">
+        {{ latest.unmatched }}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total</div>
+      <div class="stat-value dim">{{ latest.total_scanned }}</div>
+    </div>
+  </div>
+
+  <a href="/runs/{{ latest.filename }}">View full detail →</a>
+</div>
+
+<h2>Re-process a file</h2>
+<div class="card">
+  <form method="POST" action="/trigger/file" class="trigger-form">
+    <input type="text" name="file_path" placeholder="/media/Movies/My Movie.mp4">
+    <button type="submit">Re-process</button>
+  </form>
+  <p class="muted" style="margin-top:0.5rem; font-size:0.8rem;">
+    Forces metadata re-fetch and NFO rewrite for a single file, even if a sidecar already exists.
+  </p>
+</div>
+
+<!-- Auto-refresh every 10s using HTMX to pull the latest run block -->
+<div hx-get="/" hx-trigger="every 10s" hx-target="body" hx-push-url="false" style="display:none"></div>
+
+{% else %}
+<div class="card muted">No runs found yet. Click "Run now" to start the first pass.</div>
+{% endif %}
+{% endblock %}

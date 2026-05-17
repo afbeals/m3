@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.started_at }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:1rem;">
+  <a href="/runs" class="muted">← History</a>
+</div>
+
+<h1>Run {{ run.started_at or run.filename }}</h1>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="muted">
+    Started: {{ run.started_at or "—" }}
+    &nbsp;·&nbsp;
+    Finished: {{ run.finished_at or "in progress" }}
+  </div>
+  <div class="stats" style="margin-top:0.75rem;">
+    <div class="stat">
+      <div class="stat-label">Updated</div>
+      <div class="stat-value {% if run.updated > 0 %}green{% else %}dim{% endif %}">{{ run.updated }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Skipped</div>
+      <div class="stat-value dim">{{ run.skipped }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Scrape errors</div>
+      <div class="stat-value {% if run.scrape_errors > 0 %}yellow{% else %}dim{% endif %}">{{ run.scrape_errors }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value {% if run.errors > 0 %}red{% else %}dim{% endif %}">{{ run.errors }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Unmatched</div>
+      <div class="stat-value {% if run.unmatched > 0 %}yellow{% else %}dim{% endif %}">{{ run.unmatched }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total</div>
+      <div class="stat-value dim">{{ run.total_scanned }}</div>
+    </div>
+  </div>
+</div>
+
+<h2>Files</h2>
+
+<div class="filter-bar">
+  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All</a>
+  <a href="/runs/{{ run.filename }}?status=updated" {% if status_filter == "updated" %}class="active"{% endif %}>
+    <span class="badge badge-updated">updated</span>
+  </a>
+  <a href="/runs/{{ run.filename }}?status=scrape_error" {% if status_filter == "scrape_error" %}class="active"{% endif %}>
+    <span class="badge badge-scrape_error">scrape_error</span>
+  </a>
+  <a href="/runs/{{ run.filename }}?status=error" {% if status_filter == "error" %}class="active"{% endif %}>
+    <span class="badge badge-error">error</span>
+  </a>
+  <a href="/runs/{{ run.filename }}?status=unmatched" {% if status_filter == "unmatched" %}class="active"{% endif %}>
+    <span class="badge badge-unmatched">unmatched</span>
+  </a>
+  <a href="/runs/{{ run.filename }}?status=add_form" {% if status_filter == "add_form" %}class="active"{% endif %}>
+    <span class="badge badge-add_form">add_form</span>
+  </a>
+  <a href="/runs/{{ run.filename }}?status=skipped" {% if status_filter == "skipped" %}class="active"{% endif %}>
+    <span class="badge badge-skipped">skipped</span>
+  </a>
+</div>
+
+{% if files %}
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>File</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in files %}
+    <tr>
+      <td><span class="badge badge-{{ f.status }}">{{ f.status }}</span></td>
+      <td class="path">{{ f.path }}</td>
+      <td class="msg">{{ f.message or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="muted">No files match the selected filter.</div>
+{% endif %}
+{% endblock %}
