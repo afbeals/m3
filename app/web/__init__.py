@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from app.web.routes import router
 
 
-def create_app(config, plugin_registry: dict, scheduler, run_fn) -> FastAPI:
+def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None) -> FastAPI:
     """
     Build and return the FastAPI application.
 
@@ -21,14 +21,16 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn) -> FastAPI:
     plugin_registry — {site_id: plugin_instance} dict from load_plugins()
     scheduler       — the APScheduler BlockingScheduler instance (for "Run now")
     run_fn          — the run() closure used by the scheduler (same one reused here)
+    run_state       — optional RunState for the in-progress indicator
     """
-    app = FastAPI(title="pm dashboard", docs_url=None, redoc_url=None)
+    app = FastAPI(title=f"{config.app_name} dashboard", docs_url=None, redoc_url=None)
 
     # Shared state accessible in all route handlers via request.app.state
     app.state.config = config
     app.state.plugin_registry = plugin_registry
     app.state.scheduler = scheduler
     app.state.run_fn = run_fn
+    app.state.run_state = run_state
 
     # Static files (CSS)
     static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -36,7 +38,9 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn) -> FastAPI:
 
     # Jinja2 templates
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
-    app.state.templates = Jinja2Templates(directory=templates_dir)
+    templates = Jinja2Templates(directory=templates_dir)
+    templates.env.globals["app_name"] = config.app_name
+    app.state.templates = templates
 
     app.include_router(router)
     return app

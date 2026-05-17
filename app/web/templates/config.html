@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Config{% endblock %}
+
+{% block content %}
+<h1>Configuration</h1>
+<p class="muted" style="margin-bottom:1.25rem;">
+  Active values loaded from environment variables. Read-only — edit env vars and restart to change.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Setting</th>
+      <th>Env var</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for label, env_var, value in entries %}
+    <tr>
+      <td>{{ label }}</td>
+      <td class="muted">{{ env_var }}</td>
+      <td class="path">{{ value }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

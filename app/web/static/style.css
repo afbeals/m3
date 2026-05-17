@@ -53,6 +53,34 @@ nav a {
 
 nav a:hover, nav a.active { color: var(--text); }
 
+/* ---- Run status badge (polled via HTMX) ---- */
+.status-slot { margin-left: auto; }
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+}
+
+.status-badge.idle {
+  color: var(--dim);
+  border: 1px solid var(--border);
+}
+
+.status-badge.running {
+  color: var(--green);
+  border: 1px solid var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
 main { max-width: 1100px; margin: 0 auto 3rem; }
 
 h1 { font-size: 1rem; color: var(--text); margin-bottom: 1rem; }
@@ -152,6 +180,9 @@ button:hover, .btn:hover { background: var(--border); }
 
 button.primary { background: #1a3a1f; border-color: var(--green); color: var(--green); }
 button.primary:hover { background: #234d28; }
+
+.inline-form { display: inline; }
+.inline-form button { padding: 0.1rem 0.4rem; font-size: 0.75rem; }
 
 .trigger-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .trigger-form input[type="text"] {

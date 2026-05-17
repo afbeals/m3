@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 
-from app.web.history import get_run, list_runs
+from app.web.history import aggregate_unmatched, get_run, list_runs
 
 
 def _write_run(directory: str, filename: str, data: dict) -> str:
@@ -102,3 +102,82 @@ def test_get_run_rejects_non_json():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = get_run(tmpdir, "run_latest.txt")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# aggregate_unmatched
+# ---------------------------------------------------------------------------
+
+def test_aggregate_unmatched_empty_dir():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = aggregate_unmatched(tmpdir)
+    assert result == []
+
+
+def test_aggregate_unmatched_counts_across_runs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 0,
+            "files": [{"path": "/media/X.mp4", "status": "unmatched", "message": "no plugin"}],
+        })
+        _write_run(tmpdir, "run_20250102_030000.json", {
+            "started_at": "2025-01-02T03:00:00", "updated": 0,
+            "files": [
+                {"path": "/media/X.mp4", "status": "unmatched", "message": "no plugin"},
+                {"path": "/media/Y.mp4", "status": "unmatched", "message": "no plugin"},
+            ],
+        })
+        result = aggregate_unmatched(tmpdir)
+
+    paths = {e["path"]: e for e in result}
+    assert paths["/media/X.mp4"]["count"] == 2
+    assert paths["/media/Y.mp4"]["count"] == 1
+
+
+def test_aggregate_unmatched_last_seen_is_newest():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 0,
+            "files": [{"path": "/media/X.mp4", "status": "unmatched", "message": ""}],
+        })
+        _write_run(tmpdir, "run_20250102_030000.json", {
+            "started_at": "2025-01-02T03:00:00", "updated": 0,
+            "files": [{"path": "/media/X.mp4", "status": "unmatched", "message": ""}],
+        })
+        result = aggregate_unmatched(tmpdir)
+
+    assert result[0]["last_seen"] == "2025-01-02T03:00:00"
+
+
+def test_aggregate_unmatched_sorted_by_count_desc():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i in range(1, 4):
+            _write_run(tmpdir, f"run_2025010{i}_030000.json", {
+                "started_at": f"2025-01-0{i}T03:00:00", "updated": 0,
+                "files": [
+                    {"path": "/media/frequent.mp4", "status": "unmatched", "message": ""},
+                ],
+            })
+        _write_run(tmpdir, "run_20250104_030000.json", {
+            "started_at": "2025-01-04T03:00:00", "updated": 0,
+            "files": [{"path": "/media/rare.mp4", "status": "unmatched", "message": ""}],
+        })
+        result = aggregate_unmatched(tmpdir)
+
+    assert result[0]["path"] == "/media/frequent.mp4"
+    assert result[0]["count"] == 3
+
+
+def test_aggregate_unmatched_ignores_non_unmatched_statuses():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 1,
+            "files": [
+                {"path": "/media/good.mp4", "status": "updated", "message": ""},
+                {"path": "/media/bad.mp4", "status": "unmatched", "message": ""},
+            ],
+        })
+        result = aggregate_unmatched(tmpdir)
+
+    assert len(result) == 1
+    assert result[0]["path"] == "/media/bad.mp4"

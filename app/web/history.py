@@ -61,3 +61,44 @@ def get_run(report_path: str, filename: str) -> dict | None:
     except Exception as exc:
         logger.warning("Could not read report file %s: %s", fpath, exc)
         return None
+
+
+def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
+    """
+    Return a deduplicated list of unmatched file paths seen across the most
+    recent max_runs reports, sorted by occurrence count (desc) then last_seen (desc).
+
+    Each entry: {"path": str, "count": int, "last_seen": str | None, "last_message": str}
+    """
+    summaries = list_runs(report_path)[:max_runs]
+    # Need the full file list — re-read only the runs that have unmatched files.
+    seen: dict[str, dict] = {}  # path -> aggregated entry
+
+    for summary in summaries:
+        filename = summary.get("filename", "")
+        if not filename:
+            continue
+        run = get_run(report_path, filename)
+        if run is None:
+            continue
+        for f in run.get("files", []):
+            if f.get("status") != "unmatched":
+                continue
+            path = f.get("path", "")
+            if not path:
+                continue
+            if path not in seen:
+                seen[path] = {
+                    "path": path,
+                    "count": 0,
+                    "last_seen": None,
+                    "last_message": f.get("message", ""),
+                }
+            entry = seen[path]
+            entry["count"] += 1
+            run_started = run.get("started_at")
+            if run_started and (entry["last_seen"] is None or run_started > entry["last_seen"]):
+                entry["last_seen"] = run_started
+                entry["last_message"] = f.get("message", "")
+
+    return sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))

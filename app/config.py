@@ -60,6 +60,10 @@ class Config:
     web_port: int = 8765
     web_host: str = "0.0.0.0"
 
+    # Display name shown in the dashboard header, page title, and footer.
+    # Override via APP_NAME env var to rename the app without editing code.
+    app_name: str = "pm"
+
     # When True, re-process files that already have .nfo sidecars.
     # Set via --force CLI flag, not an env var.
     force: bool = False
@@ -73,7 +77,8 @@ class Config:
             f"run_schedule={self.run_schedule!r}, log_level={self.log_level!r}, "
             f"log_retention_days={self.log_retention_days!r}, "
             f"report_retention_days={self.report_retention_days!r}, "
-            f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, force={self.force!r})"
+            f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, "
+            f"app_name={self.app_name!r}, force={self.force!r})"
         )
 
 
@@ -123,5 +128,6 @@ def load_config(force: bool = False) -> Config:
         web_enabled=web_enabled,
         web_port=optional_int("WEB_PORT", 8765),
         web_host=optional("WEB_HOST", "0.0.0.0"),
+        app_name=optional("APP_NAME", "pm"),
         force=force,
     )

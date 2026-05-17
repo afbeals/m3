@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timezone
+
+
+class RunState:
+    """Thread-safe flag tracking whether a run is currently in progress."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._running = False
+        self._started_at: datetime | None = None
+
+    def start(self) -> None:
+        with self._lock:
+            self._running = True
+            self._started_at = datetime.now(timezone.utc)
+
+    def stop(self) -> None:
+        with self._lock:
+            self._running = False
+            self._started_at = None
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            if not self._running or self._started_at is None:
+                return {"running": False, "started_at": None, "elapsed_seconds": None}
+            elapsed = int((datetime.now(timezone.utc) - self._started_at).total_seconds())
+            return {
+                "running": True,
+                "started_at": self._started_at.isoformat(),
+                "elapsed_seconds": elapsed,
+            }

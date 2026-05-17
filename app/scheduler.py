@@ -54,6 +54,7 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     scheduler.add_job(
         run_fn,
         trigger=trigger,
+        id="scheduled_run",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,

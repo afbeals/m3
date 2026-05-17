@@ -4,13 +4,18 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Latest Run</h1>
-  <form method="POST" action="/trigger/run">
-    <button type="submit" class="primary"
-            hx-post="/trigger/run" hx-target="body" hx-push-url="/"
-            onclick="this.disabled=true; this.textContent='Queued…'">
-      ▶ Run now
-    </button>
-  </form>
+  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+    <form method="POST" action="/trigger/run">
+      <button type="submit" class="primary"
+              hx-post="/trigger/run" hx-target="body" hx-push-url="/"
+              onclick="this.disabled=true; this.textContent='Queued…'">
+        ▶ Run now
+      </button>
+    </form>
+    {% if next_run %}
+    <span class="muted" style="font-size:0.75rem;">Next run: {{ next_run.strftime("%Y-%m-%d %H:%M") }}</span>
+    {% endif %}
+  </div>
 </div>
 
 {% if latest %}

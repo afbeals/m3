@@ -11,7 +11,7 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.web.history import list_runs, get_run
+from app.web.history import list_runs, get_run, aggregate_unmatched
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,24 @@ async def healthz():
 
 
 # ---------------------------------------------------------------------------
+# Run status badge (HTMX partial — polled every 2s)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/status", response_class=HTMLResponse)
+async def run_status(request: Request):
+    run_state = request.app.state.run_state
+    if run_state is not None:
+        snap = run_state.snapshot()
+    else:
+        snap = {"running": False, "elapsed_seconds": None}
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "partials/status_badge.html",
+        {"snap": snap},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dashboard — latest run
 # ---------------------------------------------------------------------------
 
@@ -35,10 +53,18 @@ async def healthz():
 async def dashboard(request: Request):
     runs = list_runs(request.app.state.config.report_path)
     latest = runs[0] if runs else None
+
+    scheduler = request.app.state.scheduler
+    next_run = None
+    if scheduler is not None:
+        job = scheduler.get_job("scheduled_run")
+        if job is not None:
+            next_run = job.next_run_time
+
     return request.app.state.templates.TemplateResponse(
         request,
         "latest.html",
-        {"latest": latest},
+        {"latest": latest, "next_run": next_run},
     )
 
 
@@ -63,7 +89,6 @@ async def run_detail(request: Request, filename: str, status: str = ""):
         raise HTTPException(status_code=404, detail="Run not found")
 
     files = run.get("files", [])
-    # Filter by status if requested
     if status:
         files = [f for f in files if f.get("status") == status]
 
@@ -71,6 +96,20 @@ async def run_detail(request: Request, filename: str, status: str = ""):
         request,
         "run_detail.html",
         {"run": run, "files": files, "status_filter": status},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Unmatched digest
+# ---------------------------------------------------------------------------
+
+@router.get("/unmatched", response_class=HTMLResponse)
+async def unmatched_digest(request: Request):
+    entries = aggregate_unmatched(request.app.state.config.report_path)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "unmatched.html",
+        {"entries": entries},
     )
 
 
@@ -99,6 +138,36 @@ async def plugin_list(request: Request):
         request,
         "plugins.html",
         {"plugins": plugins},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Config page
+# ---------------------------------------------------------------------------
+
+@router.get("/config", response_class=HTMLResponse)
+async def config_page(request: Request):
+    cfg = request.app.state.config
+    entries = [
+        ("App name",               "APP_NAME",               cfg.app_name),
+        ("Plex URL",               "PLEX_URL",               cfg.plex_url),
+        ("Plex token",             "PLEX_TOKEN",             "***" if cfg.plex_token else "(not set)"),
+        ("Library paths",          "LIBRARY_PATHS",          ", ".join(cfg.library_paths)),
+        ("Plugin directory",       "PLUGIN_DIR",             cfg.plugin_dir),
+        ("Report path",            "REPORT_PATH",            cfg.report_path),
+        ("Log path",               "LOG_PATH",               cfg.log_path),
+        ("Run schedule",           "RUN_SCHEDULE",           cfg.run_schedule),
+        ("Log level",              "LOG_LEVEL",              cfg.log_level),
+        ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days)),
+        ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days)),
+        ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled)),
+        ("Web host",               "WEB_HOST",               cfg.web_host),
+        ("Web port",               "WEB_PORT",               str(cfg.web_port)),
+    ]
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "config.html",
+        {"entries": entries},
     )
 
 
@@ -141,11 +210,8 @@ async def trigger_file(request: Request):
     run_fn = request.app.state.run_fn
     config = request.app.state.config
 
-    # Patch scan_library for this single-file run by wrapping run_fn
-    # in a closure that substitutes a fixed file list.
     from unittest.mock import patch
     with patch("app.main.scan_library", return_value=([media], 0)):
-        # Force re-process even if sidecar exists
         original_force = config.force
         config.force = True
         try:

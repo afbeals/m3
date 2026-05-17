@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Unmatched Files{% endblock %}
+
+{% block content %}
+<h1>Unmatched Files</h1>
+<p class="muted" style="margin-bottom:1.25rem;">
+  Files that appeared across the last 30 runs but matched no plugin.
+  Each row means a plugin is missing or the filename format isn't recognised.
+</p>
+
+{% if entries %}
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Occurrences</th>
+      <th>Last seen</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr>
+      <td class="path">{{ e.path }}</td>
+      <td class="{% if e.count > 2 %}stat-value red{% else %}stat-value yellow{% endif %}" style="font-size:0.9rem;">
+        {{ e.count }}
+      </td>
+      <td class="muted">{{ e.last_seen or "—" }}</td>
+      <td class="msg">{{ e.last_message or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card muted">No unmatched files in the last 30 runs.</div>
+{% endif %}
+{% endblock %}

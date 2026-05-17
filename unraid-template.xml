@@ -83,6 +83,10 @@
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <!-- ── Web dashboard ────────────────────────────────────────────── -->
+  <Config Name="App name" Target="APP_NAME" Default="pm"
+          Description="Display name shown in the dashboard header, page title, and footer. Change this to rename the app without editing code."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
   <Config Name="Web UI enabled" Target="WEB_ENABLED" Default="true"
           Description="Set to false to disable the web dashboard."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>

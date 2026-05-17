@@ -17,6 +17,17 @@ def _make_config(report_path: str) -> MagicMock:
     cfg.report_path = report_path
     cfg.web_host = "127.0.0.1"
     cfg.web_port = 8765
+    cfg.app_name = "pm"
+    cfg.plex_url = "http://localhost:32400"
+    cfg.plex_token = "fake-token"
+    cfg.library_paths = ["/media"]
+    cfg.plugin_dir = "/plugins"
+    cfg.log_path = "/config/logs"
+    cfg.run_schedule = "0 3 * * *"
+    cfg.log_level = "INFO"
+    cfg.log_retention_days = 30
+    cfg.report_retention_days = 90
+    cfg.web_enabled = True
     return cfg
 
 
@@ -211,3 +222,120 @@ def test_trigger_file_returns_404_for_nonexistent_file():
         with TestClient(app) as client:
             r = client.post("/trigger/file", data={"file_path": "/nonexistent/file.mp4"})
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/status
+# ---------------------------------------------------------------------------
+
+def test_api_status_returns_idle_when_no_run_state():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/api/status")
+    assert r.status_code == 200
+    assert "Idle" in r.text
+
+
+def test_api_status_returns_running_when_active():
+    from app.runstate import RunState
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        run_state = RunState()
+        run_state.start()
+        from app.web import create_app
+        app = create_app(config, {}, scheduler, run_fn, run_state)
+        with TestClient(app) as client:
+            r = client.get("/api/status")
+        run_state.stop()
+    assert r.status_code == 200
+    assert "Running" in r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /unmatched
+# ---------------------------------------------------------------------------
+
+def test_unmatched_returns_200_empty():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/unmatched")
+    assert r.status_code == 200
+    assert "No unmatched" in r.text
+
+
+def test_unmatched_lists_paths():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00", "updated": 0,
+            "files": [{"path": "/media/Unknown_Site_001.mp4", "status": "unmatched", "message": ""}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/unmatched")
+    assert r.status_code == 200
+    assert "Unknown_Site_001.mp4" in r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /config
+# ---------------------------------------------------------------------------
+
+def test_config_returns_200():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert r.status_code == 200
+
+
+def test_config_shows_library_paths():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert "LIBRARY_PATHS" in r.text
+
+
+def test_config_masks_plex_token():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert "fake-token" not in r.text
+    assert "***" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Inline retry button in run detail
+# ---------------------------------------------------------------------------
+
+def test_run_detail_shows_inline_retry_for_error_rows():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 0, "skipped": 0, "errors": 1,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 1,
+            "files": [{"path": "/media/bad.mp4", "status": "error", "message": "timeout"}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json")
+    assert "inline-form" in r.text
+
+
+def test_run_detail_no_inline_retry_for_updated_rows():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 1,
+            "files": [{"path": "/media/good.mp4", "status": "updated", "message": ""}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json")
+    assert "inline-form" not in r.text

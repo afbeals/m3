@@ -30,6 +30,7 @@ from app.logging_setup import setup_logging, cleanup_old_files
 from app.plugins.loader import load_plugins
 from app.reporter import RunReport, FileResult, write_report
 from app.router import Router
+from app.runstate import RunState
 from app.scanner import scan_library
 from app.scrape import ScrapeError
 from app.writers.nfo import write_nfo, write_images
@@ -215,11 +216,17 @@ def main() -> None:
     # Build the router with the loaded plugin registry
     router = Router(registry)
 
+    run_state = RunState()
+
     # Wrap run() so the scheduler and --once path call the same function.
     # Plex is reconnected inside run() on every execution so scheduled runs
     # don't use a stale connection after a Plex restart.
     def _run():
-        run(config, router, dry_run=args.dry_run)
+        run_state.start()
+        try:
+            run(config, router, dry_run=args.dry_run)
+        finally:
+            run_state.stop()
 
     if args.once:
         # Run immediately and exit — useful for testing or docker exec one-shots
@@ -248,7 +255,7 @@ def main() -> None:
         import uvicorn
         from app.web import create_app
 
-        web_app = create_app(config, registry, scheduler, _run)
+        web_app = create_app(config, registry, scheduler, _run, run_state)
         web_config = uvicorn.Config(
             web_app,
             host=config.web_host,

@@ -73,6 +73,7 @@
       <th>Status</th>
       <th>File</th>
       <th>Message</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -81,6 +82,14 @@
       <td><span class="badge badge-{{ f.status }}">{{ f.status }}</span></td>
       <td class="path">{{ f.path }}</td>
       <td class="msg">{{ f.message or "" }}</td>
+      <td>
+        {% if f.status in ("error", "scrape_error") %}
+        <form method="POST" action="/trigger/file" class="inline-form">
+          <input type="hidden" name="file_path" value="{{ f.path }}">
+          <button type="submit" title="Re-process this file">↺</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>

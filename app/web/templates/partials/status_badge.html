@@ -1,0 +1,5 @@
+{% if snap.running %}
+<span class="status-badge running">▶ Running{% if snap.elapsed_seconds is not none %} — {{ snap.elapsed_seconds }}s{% endif %}</span>
+{% else %}
+<span class="status-badge idle">● Idle</span>
+{% endif %}
