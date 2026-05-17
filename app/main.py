@@ -260,15 +260,16 @@ def _validate_paths(config) -> None:
             "Check that volumes are mounted correctly."
         )
 
-    # report_path must be writable (create it if absent — it may not exist yet)
-    try:
-        os.makedirs(config.report_path, exist_ok=True)
-        test = os.path.join(config.report_path, ".write_test")
-        with open(test, "w") as fh:
-            fh.write("")
-        os.remove(test)
-    except OSError as exc:
-        errors.append(f"REPORT_PATH {config.report_path!r} is not writable: {exc}")
+    # report_path and log_path must be writable (create them if absent — they may not exist yet)
+    for path_name, path_val in [("REPORT_PATH", config.report_path), ("LOG_PATH", config.log_path)]:
+        try:
+            os.makedirs(path_val, exist_ok=True)
+            test = os.path.join(path_val, ".write_test")
+            with open(test, "w") as fh:
+                fh.write("")
+            os.remove(test)
+        except OSError as exc:
+            errors.append(f"{path_name} {path_val!r} is not writable: {exc}")
 
     for msg in errors:
         logger.error("Startup validation failed: %s", msg)

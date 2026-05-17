@@ -131,15 +131,3 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     return scheduler
 
 
-def start_scheduler(run_fn, schedule: str) -> None:
-    """
-    Build and start a blocking scheduler. Blocks until the container is stopped.
-    Convenience wrapper around build_scheduler() for callers that don't need
-    a reference to the scheduler (e.g. when the web UI is disabled).
-    """
-    scheduler = build_scheduler(run_fn, schedule)
-    logger.info("Scheduler started. Next run scheduled via: %s", schedule)
-    try:
-        scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Scheduler stopped")

@@ -17,30 +17,36 @@
     Duration: {{ fmt_duration(run.get('duration_seconds')) }}
   </div>
   <div class="stats" style="margin-top:0.75rem;">
-    <div class="stat">
+    {% set _updated      = run.get('updated', 0) %}
+    {% set _skipped      = run.get('skipped', 0) %}
+    {% set _scrape_errs  = run.get('scrape_errors', 0) %}
+    {% set _errors       = run.get('errors', 0) %}
+    {% set _unmatched    = run.get('unmatched', 0) %}
+    {% set _total        = run.get('total_scanned', 0) %}
+    <a href="/runs/{{ run.filename }}?status=updated" class="stat stat-link">
       <div class="stat-label">Updated</div>
-      <div class="stat-value {% if run.updated > 0 %}green{% else %}dim{% endif %}">{{ run.updated }}</div>
-    </div>
-    <div class="stat">
+      <div class="stat-value {% if _updated > 0 %}green{% else %}dim{% endif %}">{{ _updated }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=skipped" class="stat stat-link">
       <div class="stat-label">Skipped</div>
-      <div class="stat-value dim">{{ run.skipped }}</div>
-    </div>
-    <div class="stat">
+      <div class="stat-value dim">{{ _skipped }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=scrape_error" class="stat stat-link">
       <div class="stat-label">Scrape errors</div>
-      <div class="stat-value {% if run.scrape_errors > 0 %}yellow{% else %}dim{% endif %}">{{ run.scrape_errors }}</div>
-    </div>
-    <div class="stat">
+      <div class="stat-value {% if _scrape_errs > 0 %}yellow{% else %}dim{% endif %}">{{ _scrape_errs }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=error" class="stat stat-link">
       <div class="stat-label">Errors</div>
-      <div class="stat-value {% if run.errors > 0 %}red{% else %}dim{% endif %}">{{ run.errors }}</div>
-    </div>
-    <div class="stat">
+      <div class="stat-value {% if _errors > 0 %}red{% else %}dim{% endif %}">{{ _errors }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=unmatched" class="stat stat-link">
       <div class="stat-label">Unmatched</div>
-      <div class="stat-value {% if run.unmatched > 0 %}yellow{% else %}dim{% endif %}">{{ run.unmatched }}</div>
-    </div>
-    <div class="stat">
+      <div class="stat-value {% if _unmatched > 0 %}yellow{% else %}dim{% endif %}">{{ _unmatched }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}" class="stat stat-link">
       <div class="stat-label">Total</div>
-      <div class="stat-value dim">{{ run.total_scanned }}</div>
-    </div>
+      <div class="stat-value dim">{{ _total }}</div>
+    </a>
   </div>
 </div>
 
@@ -98,7 +104,8 @@
 </table>
 {% else %}
 <div class="muted">
-  {% if status_filter %}No files with status "{{ status_filter }}" in this run.
+  {% if status_filter == "skipped" %}Skipped files are counted but not individually listed. Use <code>--force</code> to re-process them.
+  {% elif status_filter %}No files with status "{{ status_filter }}" in this run.
   {% elif run.total_scanned == 0 %}No files were scanned in this run.
   {% else %}No file detail available.{% endif %}
 </div>

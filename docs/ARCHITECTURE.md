@@ -87,7 +87,7 @@ pm/
 ├── app/
 │   ├── main.py                   # entrypoint; scheduler; web server; --once/--force flags
 │   ├── config.py                 # loads/validates all config from env vars
-│   ├── scheduler.py              # APScheduler cron; Windows-safe SIGUSR1 handler
+│   ├── scheduler.py              # APScheduler cron; Windows-safe SIGUSR1/SIGUSR2 handlers
 │   ├── runstate.py               # thread-safe run-in-progress flag for web UI
 │   ├── utils.py                  # shared retry_with_backoff helper
 │   ├── logging_setup.py          # rotating file + stdout handlers; retention cleanup

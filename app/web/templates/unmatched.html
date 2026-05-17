@@ -27,7 +27,10 @@
   <tbody>
     {% for e in entries %}
     <tr>
-      <td class="path">{{ e.path }}</td>
+      <td class="path">
+        {{ e.path }}
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('{{ e.path | e }}'); this.textContent='✓'; setTimeout(()=>this.textContent='⎘',1200);" title="Copy path">⎘</button>
+      </td>
       <td class="{% if e.count > 2 %}stat-value red{% else %}stat-value yellow{% endif %}" style="font-size:0.9rem;">
         {{ e.count }}
       </td>

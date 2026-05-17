@@ -106,9 +106,14 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
 
     summaries = list_runs(report_path)[:max_runs]
     # Need the full file list — re-read only the runs that have unmatched files.
+    # Skipping runs whose summary counter is 0 avoids opening JSON files unnecessarily.
     seen: dict[str, dict] = {}  # path -> aggregated entry
 
     for summary in summaries:
+        # Skip runs that explicitly report 0 unmatched files — saves opening the full JSON.
+        # Fall through when the key is absent (old-format reports that predate the counter).
+        if "unmatched" in summary and summary["unmatched"] == 0:
+            continue
         filename = summary.get("filename", "")
         if not filename:
             continue

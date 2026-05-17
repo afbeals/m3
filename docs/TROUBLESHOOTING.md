@@ -129,6 +129,17 @@ or `SelectorMissingError` — distinct from a generic plugin crash (`status=erro
 
 ---
 
+## Disk full / storage issues
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Could not write JSON report` or `Could not write text report` in logs | `REPORT_PATH` volume is full | Free space on the Unraid share or lower `REPORT_RETENTION_DAYS` to delete old reports sooner: `docker exec pm python3 -c "import app.logging_setup as l; l.cleanup_old_files('/config/reports', 7, '.json')"` |
+| `Could not write log file` / log rotation warning | `LOG_PATH` volume is full | Free space or lower `LOG_RETENTION_DAYS`. Set `LOG_LEVEL=WARNING` temporarily to reduce log volume. |
+| Container exits at startup with `LOG_PATH ... is not writable` | Log directory is missing or the volume mount lacks write permission | Verify `/mnt/user/appdata/pm/config/logs` exists and is mounted read-write. Check Unraid share permissions. |
+| `REPORT_PATH ... is not writable` at startup | Same as above but for reports directory | Same fix — confirm `/mnt/user/appdata/pm/config/reports` is mounted read-write. |
+
+---
+
 ## NFO files not appearing
 
 | Symptom | Cause | Fix |

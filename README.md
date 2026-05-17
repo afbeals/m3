@@ -188,6 +188,7 @@ Key variables:
 | `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
 | `APP_NAME` | `pm` | Display name in dashboard header and run reports |
 | `WEB_PORT` | `8765` | Dashboard port |
+| `WEB_HOST` | `0.0.0.0` | Dashboard bind address (`127.0.0.1` to restrict to localhost) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
 
 ---

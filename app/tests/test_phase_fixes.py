@@ -10,7 +10,7 @@ from app.config import load_config
 from app.logging_setup import cleanup_old_files
 from app.parser import parse
 from app.plugins.base import MetadataResult
-from app.scheduler import start_scheduler
+from app.scheduler import build_scheduler
 
 
 # ---------------------------------------------------------------------------
@@ -183,12 +183,12 @@ def test_parse_percent_in_payload_returns_none():
 
 def test_scheduler_raises_on_bad_cron_expression():
     with pytest.raises(ValueError, match="5-field cron"):
-        start_scheduler(lambda: None, "not-a-cron")
+        build_scheduler(lambda: None, "not-a-cron")
 
 
 def test_scheduler_raises_on_too_few_cron_fields():
     with pytest.raises(ValueError, match="5-field cron"):
-        start_scheduler(lambda: None, "0 3 * *")  # only 4 fields
+        build_scheduler(lambda: None, "0 3 * *")  # only 4 fields
 
 
 # ---------------------------------------------------------------------------
