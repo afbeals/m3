@@ -113,7 +113,7 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | Plugin list | `/plugins` | All loaded plugins and their site IDs |
 | Config | `/config` | Active env var values (Plex token masked) |
 | Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
-| Health check | `/healthz` | Docker health-check endpoint |
+| Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time and hours elapsed |
 
 **Run Now** — triggers an immediate run without restarting the container.
 

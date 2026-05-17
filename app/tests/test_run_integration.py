@@ -31,6 +31,7 @@ def _config(tmp_path, library_path=None):
     cfg.plex_url = "http://localhost:32400"
     cfg.plex_token = "token"
     cfg.plugin_rate_limit_secs = 0.0  # no delay in tests
+    cfg.notify_url = ""  # disable webhook in tests
     return cfg
 
 

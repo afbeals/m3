@@ -41,6 +41,38 @@ from app.writers.plex import connect_plex, push_to_plex
 logger = logging.getLogger(__name__)
 
 
+def _fire_webhook(url: str, report) -> None:
+    """POST a compact JSON run summary to the configured NOTIFY_URL.
+
+    Uses a short timeout so a slow/unreachable endpoint doesn't delay the
+    completion log line. Non-fatal: any error is logged as a warning only.
+    """
+    import json as _json
+    import urllib.request
+    payload = _json.dumps({
+        "started_at": report.started_at,
+        "finished_at": report.finished_at,
+        "duration_seconds": report.duration_seconds,
+        "updated": report.updated,
+        "skipped": report.skipped,
+        "unmatched": report.unmatched,
+        "scrape_errors": report.scrape_errors,
+        "errors": report.errors,
+        "total_scanned": report.total_scanned,
+    }).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "pm-metadata-agent/1.0"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            logger.info("Webhook notification sent to %s (HTTP %d)", url, resp.status)
+    except Exception as exc:
+        logger.warning("Webhook notification failed for %s: %s", url, exc)
+
+
 def run(config, router: Router, dry_run: bool = False) -> None:
     """
     Execute one full metadata pass over all configured library paths.
@@ -188,6 +220,11 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     else:
         # Write JSON + plain-text report files and clean up old ones
         write_report(report, config.report_path, config.report_retention_days)
+
+        # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
+        # failure never aborts the run or prevents the report from being written.
+        if config.notify_url:
+            _fire_webhook(config.notify_url, report)
 
     # Delete old log files beyond the retention window (runs regardless of dry_run)
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")

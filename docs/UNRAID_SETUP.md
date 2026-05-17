@@ -113,6 +113,7 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 | `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard |
 | `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
 | `APP_NAME` | `pm` | Display name in the dashboard header and page title |
+| `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) |
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 

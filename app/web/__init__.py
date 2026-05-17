@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -49,6 +50,29 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
         return f"{seconds // 60}m {seconds % 60}s"
 
     templates.env.globals["fmt_duration"] = _fmt_duration
+
+    def _time_ago(iso_str: str | None) -> str:
+        """Return a human-friendly relative time string like '2h ago' or '3d ago'."""
+        if not iso_str:
+            return ""
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+            if secs < 0:
+                return ""
+            if secs < 60:
+                return f"{secs}s ago"
+            if secs < 3600:
+                return f"{secs // 60}m ago"
+            if secs < 86400:
+                return f"{secs // 3600}h ago"
+            return f"{secs // 86400}d ago"
+        except ValueError:
+            return ""
+
+    templates.env.globals["time_ago"] = _time_ago
     app.state.templates = templates
 
     app.include_router(router)

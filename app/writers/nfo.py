@@ -129,8 +129,9 @@ def _download_image(url: str, dest_path: str) -> bool:
     - Writes atomically via a .tmp file + os.replace() so interrupted downloads
       never leave a partial file at dest_path.
     """
-    def _attempt() -> bool:
-        with httpx.Client(follow_redirects=True, timeout=30) as client:
+    # One client for all attempts — reuses the connection across retries
+    with httpx.Client(follow_redirects=True, timeout=30) as client:
+        def _attempt() -> bool:
             r = client.get(url)
             r.raise_for_status()
 
@@ -161,17 +162,17 @@ def _download_image(url: str, dest_path: str) -> bool:
             logger.info("Downloaded image: %s", dest_path)
             return True
 
-    try:
-        return retry_with_backoff(
-            _attempt,
-            max_attempts=_DOWNLOAD_MAX_ATTEMPTS,
-            backoff_base=_DOWNLOAD_BACKOFF_BASE,
-            description=f"image download {url}",
-        )
-    except Exception as exc:
-        logger.error("Failed to download image from %s after %d attempts: %s",
-                     url, _DOWNLOAD_MAX_ATTEMPTS, exc)
-        return False
+        try:
+            return retry_with_backoff(
+                _attempt,
+                max_attempts=_DOWNLOAD_MAX_ATTEMPTS,
+                backoff_base=_DOWNLOAD_BACKOFF_BASE,
+                description=f"image download {url}",
+            )
+        except Exception as exc:
+            logger.error("Failed to download image from %s after %d attempts: %s",
+                         url, _DOWNLOAD_MAX_ATTEMPTS, exc)
+            return False
 
 
 def write_images(media: MediaFile, result: MetadataResult) -> bool:

@@ -151,6 +151,22 @@ or `SelectorMissingError` — distinct from a generic plugin crash (`status=erro
 
 ---
 
+## Runs are very slow on a large library
+
+If a run with hundreds of files takes hours, the most likely cause is the plugin rate limit.
+
+By default `PLUGIN_RATE_LIMIT_SECS=1.0`, meaning pm waits 1 second between each plugin call. For a 3,600-file library that's 1 hour of sleeping. Options:
+
+| Action | Effect |
+|---|---|
+| Set `PLUGIN_RATE_LIMIT_SECS=0.25` | 4× faster; still polite to most APIs |
+| Set `PLUGIN_RATE_LIMIT_SECS=0` | No delay; only safe for sites that explicitly allow it |
+| Run nightly on a subset of paths | Split `LIBRARY_PATHS` into smaller sets and stagger them |
+
+Note: only files **without** an existing `.nfo` sidecar are processed. Once all files are tagged, subsequent runs process only newly added files — the rate limit impact drops to near zero.
+
+---
+
 ## Schedule not running
 
 ```bash

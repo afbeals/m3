@@ -20,9 +20,11 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+from collections import deque
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.web.history import list_runs, get_run, aggregate_unmatched
 
@@ -36,8 +38,37 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 @router.get("/healthz")
-async def healthz():
-    return {"status": "ok"}
+async def healthz(request: Request, verbose: bool = False):
+    """Basic health check used by Docker HEALTHCHECK.
+
+    Add ?verbose=1 for an extended response including last run time and
+    hours since the last run — useful for uptime monitors (e.g. Uptime Kuma)
+    that can alert when runs stop happening.
+    """
+    if not verbose:
+        return {"status": "ok"}
+
+    runs = list_runs(request.app.state.config.report_path)
+    last_run = runs[0].get("started_at") if runs else None
+    hours_since: float | None = None
+    if last_run:
+        try:
+            last_dt = datetime.fromisoformat(last_run)
+            # Make timezone-aware if naive (reports use local time)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            hours_since = round(
+                (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600, 1
+            )
+        except ValueError:
+            pass
+
+    return JSONResponse({
+        "status": "ok",
+        "last_run": last_run,
+        "hours_since_last_run": hours_since,
+        "run_count": len(runs),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -120,14 +151,20 @@ async def run_detail(request: Request, filename: str, status: str = ""):
             status_code=404,
         )
 
-    files = run.get("files", [])
-    if status:
-        files = [f for f in files if f.get("status") == status]
+    all_files = run.get("files", [])
+
+    # Count per status for the filter tab bar
+    status_counts: dict[str, int] = {}
+    for f in all_files:
+        s = f.get("status", "")
+        status_counts[s] = status_counts.get(s, 0) + 1
+
+    files = [f for f in all_files if f.get("status") == status] if status else all_files
 
     return request.app.state.templates.TemplateResponse(
         request,
         "run_detail.html",
-        {"run": run, "files": files, "status_filter": status},
+        {"run": run, "files": files, "status_filter": status, "status_counts": status_counts},
     )
 
 
@@ -228,7 +265,6 @@ async def trigger_run(request: Request):
 @router.post("/trigger/file")
 async def trigger_file(request: Request):
     """Re-process a single file by path (form field: file_path)."""
-    from app.main import run
     from app.scanner import MediaFile
     from app.router import Router
     from app.writers.plex import connect_plex
@@ -260,6 +296,8 @@ async def trigger_file(request: Request):
     import threading
 
     def _run_single():
+        # Rate limit intentionally skipped — this is a single user-initiated
+        # re-process, not a bulk run, so there's no multi-request burst to throttle.
         plex_server = connect_plex(single_config.plex_url, single_config.plex_token)
         parsed, plugin = router_obj.dispatch(media.stem)
         if parsed is None or plugin is None:
@@ -311,9 +349,11 @@ async def log_viewer(request: Request):
         error = f"Log file not found: {log_path}"
     else:
         try:
+            # deque(maxlen=N) keeps only the last N lines in memory regardless
+            # of file size — avoids loading a multi-MB rotated log into RAM.
             with open(log_path) as fh:
-                all_lines = fh.readlines()
-            lines = [l.rstrip("\n") for l in all_lines[-_LOG_TAIL_LINES:]]
+                tail: deque[str] = deque(fh, maxlen=_LOG_TAIL_LINES)
+            lines = [l.rstrip("\n") for l in tail]
         except OSError as exc:
             error = f"Could not read log file: {exc}"
     return request.app.state.templates.TemplateResponse(

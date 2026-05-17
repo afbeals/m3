@@ -22,6 +22,8 @@
 #   WEB_HOST              Host the web dashboard binds to (default: 0.0.0.0)
 #   APP_NAME              Display name in the dashboard header and page title (default: pm)
 #   PLUGIN_RATE_LIMIT_SECS  Seconds between plugin fetch() calls (default: 1.0)
+#   NOTIFY_URL            Optional webhook URL; pm POSTs a JSON summary after each run (default: "")
+#                         Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -71,8 +73,14 @@ class Config:
     # Set to 0 to disable throttling (not recommended for production).
     plugin_rate_limit_secs: float = 1.0
 
+    # Optional webhook URL. When set, pm POSTs a JSON run summary to this URL
+    # after every successful run. Leave empty to disable. Works with any HTTP
+    # endpoint that accepts JSON (Apprise, Gotify, Pushover relay, custom scripts).
+    notify_url: str = ""
+
     # When True, re-process files that already have .nfo sidecars.
-    # Set via --force CLI flag, not an env var.
+    # Set via --force CLI flag, not an env var (running with --force every
+    # scheduled run would defeat the purpose of the skip logic).
     force: bool = False
 
     def __repr__(self) -> str:
@@ -86,7 +94,8 @@ class Config:
             f"report_retention_days={self.report_retention_days!r}, "
             f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, "
             f"app_name={self.app_name!r}, "
-            f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, force={self.force!r})"
+            f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, "
+            f"notify_url={self.notify_url!r}, force={self.force!r})"
         )
 
 
@@ -114,6 +123,23 @@ def load_config(force: bool = False) -> Config:
                 f"Environment variable {key!r} must be an integer, got {raw!r}"
             ) from None
 
+    # Inner helper: parse a float env var with bounds check
+    def optional_float(key: str, default: float, min_val: float = 0.0) -> float:
+        raw = os.environ.get(key, "").strip()
+        if not raw:
+            return default
+        try:
+            val = float(raw)
+        except ValueError:
+            raise ValueError(
+                f"Environment variable {key!r} must be a number, got {raw!r}"
+            ) from None
+        if val < min_val:
+            raise ValueError(
+                f"Environment variable {key!r} must be >= {min_val}, got {val}"
+            )
+        return val
+
     # LIBRARY_PATHS is comma-separated, e.g. "/media/Movies,/media/TV"
     # Split and strip each path, dropping empty entries
     raw_paths = optional("LIBRARY_PATHS", "/media")
@@ -137,6 +163,7 @@ def load_config(force: bool = False) -> Config:
         web_port=optional_int("WEB_PORT", 8765),
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=optional("APP_NAME", "pm"),
-        plugin_rate_limit_secs=float(optional("PLUGIN_RATE_LIMIT_SECS", "1.0")),
+        plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
+        notify_url=optional("NOTIFY_URL", ""),
         force=force,
     )

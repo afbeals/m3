@@ -110,6 +110,18 @@
 # APP_NAME=pm
 
 # ---------------------------------------------------------------------------
+# Notifications (optional)
+# ---------------------------------------------------------------------------
+
+# Optional webhook URL. After every successful run pm POSTs a compact JSON
+# summary (updated, errors, unmatched, duration, timestamps) to this URL.
+# Leave unset to disable. Works with:
+#   - Apprise API:  http://apprise-host/notify/myjson
+#   - Gotify:       http://gotify-host/message?token=xxx
+#   - Pushover relay or any HTTP endpoint that accepts JSON POST
+# NOTIFY_URL=http://your-notify-endpoint/hook
+
+# ---------------------------------------------------------------------------
 # Plugin-specific API keys
 # ---------------------------------------------------------------------------
 # Each plugin reads its own key from os.environ. Set these as Docker env vars:

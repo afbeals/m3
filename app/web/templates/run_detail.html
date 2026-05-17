@@ -47,25 +47,22 @@
 <h2>Files</h2>
 
 <div class="filter-bar">
-  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All</a>
-  <a href="/runs/{{ run.filename }}?status=updated" {% if status_filter == "updated" %}class="active"{% endif %}>
-    <span class="badge badge-updated">updated</span>
+  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All ({{ run.total_scanned }})</a>
+  {% for s, label, cls in [
+    ("updated",     "updated",     "badge-updated"),
+    ("scrape_error","scrape_error","badge-scrape_error"),
+    ("error",       "error",       "badge-error"),
+    ("unmatched",   "unmatched",   "badge-unmatched"),
+    ("add_form",    "add_form",    "badge-add_form"),
+    ("skipped",     "skipped",     "badge-skipped"),
+  ] %}
+  {% set cnt = status_counts.get(s, 0) %}
+  {% if cnt > 0 %}
+  <a href="/runs/{{ run.filename }}?status={{ s }}" {% if status_filter == s %}class="active"{% endif %}>
+    <span class="badge {{ cls }}">{{ label }} ({{ cnt }})</span>
   </a>
-  <a href="/runs/{{ run.filename }}?status=scrape_error" {% if status_filter == "scrape_error" %}class="active"{% endif %}>
-    <span class="badge badge-scrape_error">scrape_error</span>
-  </a>
-  <a href="/runs/{{ run.filename }}?status=error" {% if status_filter == "error" %}class="active"{% endif %}>
-    <span class="badge badge-error">error</span>
-  </a>
-  <a href="/runs/{{ run.filename }}?status=unmatched" {% if status_filter == "unmatched" %}class="active"{% endif %}>
-    <span class="badge badge-unmatched">unmatched</span>
-  </a>
-  <a href="/runs/{{ run.filename }}?status=add_form" {% if status_filter == "add_form" %}class="active"{% endif %}>
-    <span class="badge badge-add_form">add_form</span>
-  </a>
-  <a href="/runs/{{ run.filename }}?status=skipped" {% if status_filter == "skipped" %}class="active"{% endif %}>
-    <span class="badge badge-skipped">skipped</span>
-  </a>
+  {% endif %}
+  {% endfor %}
 </div>
 
 {% if files %}

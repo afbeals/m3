@@ -22,6 +22,7 @@
 <div class="card">
   <div class="muted" style="margin-bottom:0.75rem;">
     Started: {{ latest.started_at or "—" }}
+    {% set ago = time_ago(latest.started_at) %}{% if ago %}<span style="color:var(--dim); font-size:0.8rem;">({{ ago }})</span>{% endif %}
     &nbsp;·&nbsp;
     Finished: {{ latest.finished_at or "in progress" }}
     &nbsp;·&nbsp;

@@ -168,12 +168,21 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     else:
         lines.append("Errors:\n  (none)")
 
+    # Write atomically via .tmp + os.replace() so a crash mid-write never
+    # leaves run_latest.txt in a corrupt/truncated state.
+    txt_tmp = txt_path + ".tmp"
     try:
-        with open(txt_path, "w") as fh:
+        with open(txt_tmp, "w") as fh:
             fh.write("\n".join(lines) + "\n")
+        os.replace(txt_tmp, txt_path)
         logger.info("Report written to %s", txt_path)
     except OSError as exc:
         logger.error("Could not write text report to %s: %s", txt_path, exc)
+        if os.path.exists(txt_tmp):
+            try:
+                os.remove(txt_tmp)
+            except OSError:
+                pass
 
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.

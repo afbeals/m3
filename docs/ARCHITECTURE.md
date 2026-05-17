@@ -288,6 +288,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `WEB_PORT` | `8765` | Port the dashboard listens on |
 | `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
 | `APP_NAME` | `pm` | Display name in the dashboard header and title |
+| `NOTIFY_URL` | *(empty)* | Webhook URL to POST a JSON run summary after each run |
 
 ---
 
@@ -298,6 +299,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 - `max_instances=1` prevents concurrent runs if a previous run is still in progress
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
 - Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only)
+- Plugin hot-reload: `docker exec pm kill -USR2 1` — reloads the plugin registry in-place without restarting the container or disturbing the scheduler (Unix only; Windows-guarded)
 
 ## Run Modes
 
@@ -313,6 +315,9 @@ docker exec pm python -m app.main --once --force
 
 # Dry run — parse + route + fetch but skip all writes and report
 docker exec pm python -m app.main --once --dry-run
+
+# Diagnose unmatched files — scan library, print files no plugin claims, exit
+docker exec pm python -m app.main --list-unmatched
 ```
 
 `--force` only applies to the run it's passed to. Scheduled runs always use normal skip logic.
