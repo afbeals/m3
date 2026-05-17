@@ -24,3 +24,7 @@ services:
       - WEB_ENABLED=true
       - WEB_PORT=8765
       - APP_NAME=pm
+      # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
+      # - NOTIFY_URL=
+      # Optional: seconds between plugin API calls (0 to disable, default 1.0)
+      # - PLUGIN_RATE_LIMIT_SECS=1.0

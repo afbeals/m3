@@ -17,9 +17,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import logging
 import os
+import threading
 from collections import deque
 from datetime import datetime, timezone
 
@@ -27,6 +29,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.web.history import list_runs, get_run, aggregate_unmatched
+from app.writers.nfo import write_nfo, write_images
+from app.writers.plex import connect_plex, push_to_plex
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +237,7 @@ async def config_page(request: Request):
         ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days)),
         ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days)),
         ("Plugin rate limit (s)",  "PLUGIN_RATE_LIMIT_SECS", str(cfg.plugin_rate_limit_secs)),
+        ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)"),
         ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled)),
         ("Web host",               "WEB_HOST",               cfg.web_host),
         ("Web port",               "WEB_PORT",               str(cfg.web_port)),
@@ -267,7 +272,6 @@ async def trigger_file(request: Request):
     """Re-process a single file by path (form field: file_path)."""
     from app.scanner import MediaFile
     from app.router import Router
-    from app.writers.plex import connect_plex
 
     form = await request.form()
     file_path = (form.get("file_path") or "").strip()
@@ -285,20 +289,12 @@ async def trigger_file(request: Request):
     registry = request.app.state.plugin_registry
     router_obj = Router(registry)
 
-    # Build a single-file config so run() processes exactly this one file.
-    # We call run() directly rather than going through the scheduler so this
-    # request doesn't block the event loop any longer than a normal run would.
-    import dataclasses
-    single_config = dataclasses.replace(config, force=True)
-
-    from app.reporter import RunReport, FileResult, write_report
-    from app.writers.nfo import write_nfo, write_images
-    import threading
-
     def _run_single():
-        # Rate limit intentionally skipped — this is a single user-initiated
-        # re-process, not a bulk run, so there's no multi-request burst to throttle.
-        plex_server = connect_plex(single_config.plex_url, single_config.plex_token)
+        # Bypasses the normal run() path deliberately: no library scan, no run
+        # report, no rate limiting. This is a single user-initiated re-process
+        # triggered from the run-detail page — the full pipeline overhead is not
+        # needed and would produce misleading report entries.
+        plex_server = connect_plex(config.plex_url, config.plex_token)
         parsed, plugin = router_obj.dispatch(media.stem)
         if parsed is None or plugin is None:
             logger.warning("trigger_file: could not route %s", file_path)
@@ -318,7 +314,6 @@ async def trigger_file(request: Request):
             logger.warning("trigger_file: write error for %s: %s", file_path, exc)
             return
         if plex_server is not None:
-            from app.writers.plex import push_to_plex
             try:
                 push_to_plex(plex_server, file_path, result)
             except Exception as exc:

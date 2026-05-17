@@ -47,7 +47,7 @@
 <h2>Files</h2>
 
 <div class="filter-bar">
-  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All ({{ run.total_scanned }})</a>
+  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All ({{ status_counts.values() | sum }})</a>
   {% for s, label, cls in [
     ("updated",     "updated",     "badge-updated"),
     ("scrape_error","scrape_error","badge-scrape_error"),

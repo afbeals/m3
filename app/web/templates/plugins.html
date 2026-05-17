@@ -32,6 +32,6 @@
 {% endif %}
 
 <p class="muted" style="margin-top:1rem; font-size:0.8rem;">
-  Changes to plugin files require a container restart to take effect.
+  To reload plugins without restarting: <code>docker exec pm kill -USR2 1</code> (Unix only). A container restart is still needed on Windows.
 </p>
 {% endblock %}

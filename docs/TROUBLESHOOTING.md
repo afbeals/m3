@@ -147,6 +147,7 @@ or `SelectorMissingError` — distinct from a generic plugin crash (`status=erro
 | Dashboard shows "No runs yet" | No runs have completed | Trigger one: click **Run Now** or run `docker exec pm python -m app.main --once` |
 | Status badge stuck on "Running" | Run crashed without updating RunState | Restart the container — the badge resets on startup |
 | "Run Now" button doesn't seem to do anything | Run already in progress | Watch the status badge in the header; it changes to "▶ Running" within 2 seconds |
+| HTMX status badge stops updating / "Run Now" button unresponsive | unpkg.com CDN is unreachable | The dashboard uses HTMX loaded from `unpkg.com`. If that CDN is blocked or down, HTMX won't load and no HTMX-powered interactions will work (badge, Run Now). Scheduled runs are unaffected. Fix: check network access to `unpkg.com` from inside the container, or self-host `htmx.min.js` by placing it in `app/web/static/` and updating the `<script>` tag in `base.html` to point to `/static/htmx.min.js`. |
 | Dashboard returns HTTP 500 / web page errors but scheduler keeps running | Unhandled exception in a route handler | Check container logs (`docker logs pm --tail 50`) for the Python traceback. The scheduler runs on the main thread; the web server is a daemon thread, so a crash in a route doesn't stop runs. Fix: restart the container to recover the web UI. |
 
 ---

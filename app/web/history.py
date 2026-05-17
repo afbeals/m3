@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 _MAX_RUNS = 100  # hard cap: prevents unbounded memory use on large history directories
 
+# Cache for aggregate_unmatched: keyed by (report_path, max_runs).
+# Invalidated whenever the newest report file's mtime changes (i.e. a new run completed).
+_unmatched_cache: dict[tuple, tuple] = {}  # key → (mtime, result)
+
 
 def list_runs(report_path: str) -> list[dict]:
     """
@@ -75,7 +79,31 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
     recent max_runs reports, sorted by occurrence count (desc) then last_seen (desc).
 
     Each entry: {"path": str, "count": int, "last_seen": str | None, "last_message": str}
+
+    Results are cached in memory and invalidated when the newest report file's
+    mtime changes (indicating a new run completed), so repeated page loads on an
+    idle system don't re-open up to max_runs JSON files each time.
     """
+    cache_key = (report_path, max_runs)
+
+    # Determine the mtime of the newest report file to use as a cache key
+    newest_mtime: float | None = None
+    if os.path.isdir(report_path):
+        try:
+            newest = next(
+                (f for f in sorted(os.listdir(report_path), reverse=True)
+                 if f.startswith("run_") and f.endswith(".json")),
+                None,
+            )
+            if newest:
+                newest_mtime = os.path.getmtime(os.path.join(report_path, newest))
+        except OSError:
+            pass
+
+    cached = _unmatched_cache.get(cache_key)
+    if cached is not None and cached[0] == newest_mtime:
+        return cached[1]
+
     summaries = list_runs(report_path)[:max_runs]
     # Need the full file list — re-read only the runs that have unmatched files.
     seen: dict[str, dict] = {}  # path -> aggregated entry
@@ -107,4 +135,6 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
                 entry["last_seen"] = run_started
                 entry["last_message"] = f.get("message", "")
 
-    return sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
+    result = sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
+    _unmatched_cache[cache_key] = (newest_mtime, result)
+    return result
