@@ -159,6 +159,20 @@ python -m app.main --list-unmatched
 All configuration is via environment variables. See [config.example.yml](config.example.yml)
 for the full annotated list, or [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
+Key variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PLEX_URL` | *(required)* | Plex server URL |
+| `PLEX_TOKEN` | *(required)* | Plex authentication token |
+| `LIBRARY_PATHS` | `/media` | Comma-separated container paths to scan |
+| `RUN_SCHEDULE` | `0 3 * * *` | Cron expression for scheduled runs |
+| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls (0 to disable) |
+| `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
+| `APP_NAME` | `pm` | Display name in dashboard header and run reports |
+| `WEB_PORT` | `8765` | Dashboard port |
+| `LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
+
 ---
 
 ## Tests

@@ -79,7 +79,10 @@
     {% for f in files %}
     <tr>
       <td><span class="badge badge-{{ f.status }}">{{ f.status }}</span></td>
-      <td class="path">{{ f.path }}</td>
+      <td class="path">
+        {{ f.path }}
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('{{ f.path | e }}'); this.textContent='✓'; setTimeout(()=>this.textContent='⎘',1200);" title="Copy path">⎘</button>
+      </td>
       <td class="msg">{{ f.message or "" }}</td>
       <td>
         {% if f.status in ("error", "scrape_error") %}
@@ -94,6 +97,10 @@
   </tbody>
 </table>
 {% else %}
-<div class="muted">No files match the selected filter.</div>
+<div class="muted">
+  {% if status_filter %}No files with status "{{ status_filter }}" in this run.
+  {% elif run.total_scanned == 0 %}No files were scanned in this run.
+  {% else %}No file detail available.{% endif %}
+</div>
 {% endif %}
 {% endblock %}

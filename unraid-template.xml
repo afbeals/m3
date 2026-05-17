@@ -95,6 +95,10 @@
           Description="Must match the port mapping above."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
+  <Config Name="Notify URL" Target="NOTIFY_URL" Default=""
+          Description="Optional webhook URL. pm POSTs a compact JSON run summary here after every successful run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
   <!-- ── Advanced ─────────────────────────────────────────────────── -->
   <Config Name="Plugin directory (container)" Target="PLUGIN_DIR" Default="/plugins"
           Description="Container path where plugin .py files are discovered."

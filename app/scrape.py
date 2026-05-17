@@ -90,12 +90,13 @@ def fetch_html(
         - Empty response body (not retried)
         - Response body larger than _MAX_RESPONSE_BYTES / 10 MB (not retried)
     """
-    def _attempt() -> str:
-        with httpx.Client(
-            follow_redirects=True,
-            timeout=timeout,
-            headers={"User-Agent": _USER_AGENT},
-        ) as client:
+    # One client for all retry attempts — reuses the TCP connection across retries
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=timeout,
+        headers={"User-Agent": _USER_AGENT},
+    ) as client:
+        def _attempt() -> str:
             r = client.get(url)
             r.raise_for_status()
 
@@ -118,17 +119,17 @@ def fetch_html(
 
             return text
 
-    try:
-        return retry_with_backoff(
-            _attempt,
-            max_attempts=max_attempts,
-            backoff_base=_BACKOFF_BASE,
-            description=f"fetch_html {url}",
-            reraise_on=(_NoRetryError,),
-        )
-    except _NoRetryError as exc:
-        raise exc.scrape_exc
-    except ScrapeError:
-        raise
-    except Exception as exc:
-        raise ScrapeError(f"Failed to fetch {url} after {max_attempts} attempts: {exc}") from exc
+        try:
+            return retry_with_backoff(
+                _attempt,
+                max_attempts=max_attempts,
+                backoff_base=_BACKOFF_BASE,
+                description=f"fetch_html {url}",
+                reraise_on=(_NoRetryError,),
+            )
+        except _NoRetryError as exc:
+            raise exc.scrape_exc
+        except ScrapeError:
+            raise
+        except Exception as exc:
+            raise ScrapeError(f"Failed to fetch {url} after {max_attempts} attempts: {exc}") from exc

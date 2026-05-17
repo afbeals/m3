@@ -37,6 +37,10 @@ header {
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
 }
 
 header .logo {
@@ -183,6 +187,19 @@ button.primary:hover { background: #234d28; }
 
 .inline-form { display: inline; }
 .inline-form button { padding: 0.1rem 0.4rem; font-size: 0.75rem; }
+
+.copy-btn {
+  background: none;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.75rem;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+tr:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { color: var(--text); background: none; }
 
 .trigger-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .trigger-form input[type="text"] {

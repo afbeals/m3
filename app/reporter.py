@@ -82,7 +82,12 @@ class RunReport:
                            result.status, result.path)
 
 
-def write_report(report: RunReport, report_path: str, retention_days: int) -> None:
+def write_report(
+    report: RunReport,
+    report_path: str,
+    retention_days: int,
+    app_name: str = "pm",
+) -> None:
     """Write the JSON and plain-text reports, then clean up old JSON reports."""
     os.makedirs(report_path, exist_ok=True)
 
@@ -112,7 +117,7 @@ def write_report(report: RunReport, report_path: str, retention_days: int) -> No
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
     lines = [
-        f"pm run — {report.started_at}",
+        f"{app_name} run — {report.started_at}",
         "─" * 40,
         f"  Total files scanned                    : {report.total_scanned}",
         f"  Updated                                : {report.updated}",

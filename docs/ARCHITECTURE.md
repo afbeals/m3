@@ -298,8 +298,8 @@ All config via environment variables. See `config.example.yml` for the full anno
 - Web dashboard (uvicorn) runs in a daemon thread alongside the scheduler
 - `max_instances=1` prevents concurrent runs if a previous run is still in progress
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
-- Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only)
-- Plugin hot-reload: `docker exec pm kill -USR2 1` — reloads the plugin registry in-place without restarting the container or disturbing the scheduler (Unix only; Windows-guarded)
+- Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
+- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that mutates the shared `registry` dict in-place so all live references (router, web UI) see the new plugins without a container restart (Unix only; skipped on Windows)
 
 ## Run Modes
 

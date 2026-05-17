@@ -90,11 +90,17 @@ def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str =
     removed = 0
 
     for fname in os.listdir(directory):
-        # Skip files that don't match the requested suffix filter.
-        # Use `in` rather than `endswith` so rotated log files (pm.log.1,
-        # pm.log.2, …) are caught by the ".log" suffix filter.
-        if pattern_suffix and pattern_suffix not in fname:
-            continue
+        if pattern_suffix:
+            # Python's RotatingFileHandler names backups "pm.log.1", "pm.log.2", etc.
+            # — they don't end with ".log", so we need a second check for rotated files.
+            # We deliberately avoid plain `in` here: that would incorrectly match
+            # unrelated files like "pm.login_data" when filtering for ".log".
+            is_rotated_log_backup = (
+                pattern_suffix == ".log"
+                and fname.startswith("pm.log.")
+            )
+            if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
+                continue
 
         # Never delete the active log file — only rotated backups (pm.log.1, pm.log.2, ...)
         if fname == "pm.log":

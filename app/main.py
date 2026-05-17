@@ -35,6 +35,9 @@ from app.router import Router
 from app.runstate import RunState
 from app.scanner import scan_library
 from app.scrape import ScrapeError
+import json as _json
+import urllib.request
+
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
 
@@ -47,8 +50,6 @@ def _fire_webhook(url: str, report) -> None:
     Uses a short timeout so a slow/unreachable endpoint doesn't delay the
     completion log line. Non-fatal: any error is logged as a warning only.
     """
-    import json as _json
-    import urllib.request
     payload = _json.dumps({
         "started_at": report.started_at,
         "finished_at": report.finished_at,
@@ -219,7 +220,7 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         )
     else:
         # Write JSON + plain-text report files and clean up old ones
-        write_report(report, config.report_path, config.report_retention_days)
+        write_report(report, config.report_path, config.report_retention_days, app_name=config.app_name)
 
         # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
         # failure never aborts the run or prevents the report from being written.
@@ -330,9 +331,9 @@ def main() -> None:
 
     if args.list_unmatched:
         # Scan libraries, print every file the router cannot dispatch, then exit.
-        # Useful for diagnosing missing plugins or unexpected filename formats without
-        # running a full metadata pass.
-        media_files, skipped_count = scan_library(config.library_paths, force=True)
+        # Respects normal skip logic (honours --force if also passed) so the output
+        # matches the set of files that would actually be processed in a real run.
+        media_files, skipped_count = scan_library(config.library_paths, force=config.force)
         unroutable = []
         for media in media_files:
             parsed, plugin = router.dispatch(media.stem)

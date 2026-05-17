@@ -29,6 +29,11 @@ class RunState:
             self._started_at = None
 
     def snapshot(self) -> dict:
+        """Return a point-in-time view of run state.
+
+        Keys: running (bool), started_at (ISO str | None), elapsed_seconds (int | None).
+        Always safe to call from any thread without holding the lock externally.
+        """
         with self._lock:
             if not self._running or self._started_at is None:
                 return {"running": False, "started_at": None, "elapsed_seconds": None}
