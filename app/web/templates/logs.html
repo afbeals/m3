@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+  <h1>Log Viewer</h1>
+  <span class="muted" style="font-size:0.8rem;">Last {{ tail }} lines · {{ log_path }}</span>
+</div>
+
+{% if error %}
+<div class="card muted">{{ error }}</div>
+{% elif lines %}
+<div class="card" style="padding:0.75rem 1rem; overflow-x:auto;">
+  <pre style="margin:0; font-size:0.75rem; line-height:1.5; white-space:pre-wrap; word-break:break-all;">{% for line in lines %}{{ line }}
+{% endfor %}</pre>
+</div>
+{% else %}
+<div class="card muted">Log file is empty.</div>
+{% endif %}
+{% endblock %}

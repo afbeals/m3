@@ -20,6 +20,8 @@
 #   WEB_ENABLED           Enable the web dashboard (default: true)
 #   WEB_PORT              Port the web dashboard listens on (default: 8765)
 #   WEB_HOST              Host the web dashboard binds to (default: 0.0.0.0)
+#   APP_NAME              Display name in the dashboard header and page title (default: pm)
+#   PLUGIN_RATE_LIMIT_SECS  Seconds between plugin fetch() calls (default: 1.0)
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations

@@ -28,6 +28,7 @@ def _make_config(report_path: str) -> MagicMock:
     cfg.log_retention_days = 30
     cfg.report_retention_days = 90
     cfg.web_enabled = True
+    cfg.plugin_rate_limit_secs = 1.0
     return cfg
 
 
@@ -134,6 +135,8 @@ def test_run_detail_returns_404_for_missing():
         with TestClient(app) as client:
             r = client.get("/runs/run_does_not_exist.json")
     assert r.status_code == 404
+    # 404 renders an HTML error page, not a JSON body
+    assert "Not Found" in r.text or "not found" in r.text.lower()
 
 
 def test_run_detail_status_filter():
@@ -339,3 +342,79 @@ def test_run_detail_no_inline_retry_for_updated_rows():
         with TestClient(app) as client:
             r = client.get("/runs/run_20250515_030000.json")
     assert "inline-form" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /runs pagination
+# ---------------------------------------------------------------------------
+
+def test_runs_pagination_shows_page_controls():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Write 30 run files — more than one page of 25
+        for i in range(30):
+            _write_run(tmpdir, f"run_202505{i:02d}_030000.json", {
+                "started_at": f"2025-05-{i+1:02d}T03:00:00",
+                "updated": i, "skipped": 0, "errors": 0,
+                "scrape_errors": 0, "unmatched": 0, "total_scanned": i,
+            })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs")
+    assert r.status_code == 200
+    assert "Page 1 of 2" in r.text or "Next" in r.text
+
+
+def test_runs_pagination_page2():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i in range(30):
+            _write_run(tmpdir, f"run_202505{i:02d}_030000.json", {
+                "started_at": f"2025-05-{i+1:02d}T03:00:00",
+                "updated": 0, "skipped": 0, "errors": 0,
+                "scrape_errors": 0, "unmatched": 0, "total_scanned": 0,
+            })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs?page=2")
+    assert r.status_code == 200
+    assert "Page 2" in r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /logs
+# ---------------------------------------------------------------------------
+
+def test_logs_returns_200_when_no_log_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/logs")
+    assert r.status_code == 200
+    assert "not found" in r.text.lower() or "Log" in r.text
+
+
+def test_logs_shows_log_content():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.log_path = tmpdir
+        log_file = os.path.join(tmpdir, "pm.log")
+        with open(log_file, "w") as fh:
+            fh.write("INFO hello from log\nINFO second line\n")
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+        with TestClient(app) as client:
+            r = client.get("/logs")
+    assert r.status_code == 200
+    assert "hello from log" in r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /config — PLUGIN_RATE_LIMIT_SECS included
+# ---------------------------------------------------------------------------
+
+def test_config_shows_plugin_rate_limit():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert "PLUGIN_RATE_LIMIT_SECS" in r.text

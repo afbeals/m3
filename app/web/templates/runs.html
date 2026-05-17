@@ -2,7 +2,10 @@
 {% block title %}Run History{% endblock %}
 
 {% block content %}
-<h1>Run History</h1>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+  <h1>Run History</h1>
+  <span class="muted" style="font-size:0.8rem;">{{ total }} run{{ "s" if total != 1 else "" }} total</span>
+</div>
 
 {% if runs %}
 <table>
@@ -33,6 +36,23 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+    <a href="/runs?page={{ page - 1 }}" class="btn">← Prev</a>
+  {% else %}
+    <span class="btn muted" style="cursor:default;">← Prev</span>
+  {% endif %}
+  <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a href="/runs?page={{ page + 1 }}" class="btn">Next →</a>
+  {% else %}
+    <span class="btn muted" style="cursor:default;">Next →</span>
+  {% endif %}
+</div>
+{% endif %}
+
 {% else %}
 <div class="card muted">No run reports found yet.</div>
 {% endif %}

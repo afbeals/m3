@@ -65,8 +65,9 @@ A scheduled Python service that reads media filenames from Plex library director
   GET /plugins   → loaded plugin list
   GET /config    → active env var values (token masked)
   GET /api/status → HTMX-polled run-in-progress badge
+  GET /logs      → last 200 lines of pm.log (browser-accessible tail)
   POST /trigger/run   → schedule an immediate run
-  POST /trigger/file  → re-process a single file
+  POST /trigger/file  → re-process a single file (runs in a daemon thread)
   GET /healthz   → Docker HEALTHCHECK endpoint
 ```
 

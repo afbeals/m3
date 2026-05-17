@@ -224,6 +224,22 @@ button.primary:hover { background: #234d28; }
   text-decoration: none;
 }
 
+/* ---- Pagination ---- */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.pagination .btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
 footer {
   color: var(--dim);
   font-size: 0.75rem;

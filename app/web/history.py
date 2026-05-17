@@ -12,26 +12,32 @@ import os
 logger = logging.getLogger(__name__)
 
 
+_MAX_RUNS = 100  # hard cap: prevents unbounded memory use on large history directories
+
+
 def list_runs(report_path: str) -> list[dict]:
     """
-    Return a list of run summaries from all run_*.json files in report_path,
-    newest first.  Each entry is the top-level dict from the JSON file plus
-    a "filename" key for linking to the detail view.
+    Return a list of run summaries from run_*.json files in report_path,
+    newest first, capped at _MAX_RUNS entries.
+
+    Each entry is the top-level dict from the JSON file plus a "filename"
+    key for linking to the detail view. The per-file "files" array is
+    stripped to keep memory usage small — use get_run() for full detail.
     """
     if not os.path.isdir(report_path):
         return []
 
     runs = []
-    for fname in sorted(os.listdir(report_path), reverse=True):
-        if not fname.startswith("run_") or not fname.endswith(".json"):
-            continue
+    filenames = sorted(
+        (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")),
+        reverse=True,
+    )
+    for fname in filenames[:_MAX_RUNS]:
         fpath = os.path.join(report_path, fname)
         try:
             with open(fpath) as fh:
                 data = json.load(fh)
-            # Inject the filename so templates can build a link to the detail page
             data["filename"] = fname
-            # Strip the files list for the summary view — it can be large
             data.pop("files", None)
             runs.append(data)
         except Exception as exc:

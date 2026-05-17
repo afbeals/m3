@@ -16,6 +16,7 @@
       <a href="/unmatched" {% if request.url.path == "/unmatched" %}class="active"{% endif %}>Unmatched</a>
       <a href="/plugins" {% if request.url.path == "/plugins" %}class="active"{% endif %}>Plugins</a>
       <a href="/config" {% if request.url.path == "/config" %}class="active"{% endif %}>Config</a>
+      <a href="/logs" {% if request.url.path == "/logs" %}class="active"{% endif %}>Logs</a>
     </nav>
     <span class="status-slot" hx-get="/api/status" hx-trigger="load, every 2s" hx-swap="innerHTML"></span>
   </header>

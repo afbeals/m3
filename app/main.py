@@ -23,6 +23,7 @@
 
 import argparse
 import logging
+import os
 import time
 from datetime import datetime
 
@@ -202,7 +203,6 @@ def _validate_paths(config) -> None:
     Logs a clear error and raises SystemExit for each fatal misconfiguration so the
     container exits immediately with a useful message rather than silently doing nothing.
     """
-    import os
     errors: list[str] = []
 
     # At least one library path must exist and be a directory
@@ -261,6 +261,16 @@ def main() -> None:
 
     logger.info("pm starting up")
     logger.info("Library paths: %s", config.library_paths)
+
+    # Validate the cron schedule before touching the filesystem — a bad expression
+    # produces a cryptic APScheduler traceback otherwise.
+    parts = config.run_schedule.strip().split()
+    if len(parts) != 5:
+        logger.error(
+            "RUN_SCHEDULE must be a 5-field cron expression (min hour day month weekday), "
+            "got %r", config.run_schedule
+        )
+        raise SystemExit(1)
 
     # Validate critical paths before starting the scheduler so misconfigurations
     # fail immediately with a clear message rather than silently producing empty runs.

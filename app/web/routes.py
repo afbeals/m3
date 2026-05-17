@@ -1,11 +1,24 @@
 # app/web/routes.py
 #
 # FastAPI route handlers for the pm web dashboard.
+#
+# Routes:
+#   GET  /               — latest run summary + next scheduled time
+#   GET  /runs           — paginated run history
+#   GET  /runs/{ts}      — per-run file detail with status filter
+#   GET  /unmatched      — cross-run unmatched file digest
+#   GET  /plugins        — loaded plugin list
+#   GET  /config         — active env var values (token masked)
+#   GET  /api/status     — HTMX-polled run-in-progress badge
+#   GET  /logs           — last N lines of pm.log
+#   POST /trigger/run    — schedule an immediate full run
+#   POST /trigger/file   — re-process a single file by path
+#   GET  /healthz        — Docker HEALTHCHECK endpoint
 
 from __future__ import annotations
 
-import logging
 import inspect
+import logging
 import os
 
 from fastapi import APIRouter, HTTPException, Request
@@ -72,13 +85,27 @@ async def dashboard(request: Request):
 # Run history
 # ---------------------------------------------------------------------------
 
+_RUNS_PAGE_SIZE = 25
+
+
 @router.get("/runs", response_class=HTMLResponse)
-async def run_history(request: Request):
-    runs = list_runs(request.app.state.config.report_path)
+async def run_history(request: Request, page: int = 1):
+    all_runs = list_runs(request.app.state.config.report_path)
+    total = len(all_runs)
+    page = max(1, page)
+    start = (page - 1) * _RUNS_PAGE_SIZE
+    end = start + _RUNS_PAGE_SIZE
+    runs = all_runs[start:end]
+    total_pages = max(1, (total + _RUNS_PAGE_SIZE - 1) // _RUNS_PAGE_SIZE)
     return request.app.state.templates.TemplateResponse(
         request,
         "runs.html",
-        {"runs": runs},
+        {
+            "runs": runs,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
+        },
     )
 
 
@@ -86,7 +113,12 @@ async def run_history(request: Request):
 async def run_detail(request: Request, filename: str, status: str = ""):
     run = get_run(request.app.state.config.report_path, filename)
     if run is None:
-        raise HTTPException(status_code=404, detail="Run not found")
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": f"Run report not found: {filename}"},
+            status_code=404,
+        )
 
     files = run.get("files", [])
     if status:
@@ -160,6 +192,7 @@ async def config_page(request: Request):
         ("Log level",              "LOG_LEVEL",              cfg.log_level),
         ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days)),
         ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days)),
+        ("Plugin rate limit (s)",  "PLUGIN_RATE_LIMIT_SECS", str(cfg.plugin_rate_limit_secs)),
         ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled)),
         ("Web host",               "WEB_HOST",               cfg.web_host),
         ("Web port",               "WEB_PORT",               str(cfg.web_port)),
@@ -192,6 +225,11 @@ async def trigger_run(request: Request):
 @router.post("/trigger/file")
 async def trigger_file(request: Request):
     """Re-process a single file by path (form field: file_path)."""
+    from app.main import run
+    from app.scanner import MediaFile
+    from app.router import Router
+    from app.writers.plex import connect_plex
+
     form = await request.form()
     file_path = (form.get("file_path") or "").strip()
     if not file_path:
@@ -199,24 +237,82 @@ async def trigger_file(request: Request):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
-    from app.scanner import MediaFile
-    import os as _os
-
-    stem = _os.path.splitext(_os.path.basename(file_path))[0]
-    dirpath = _os.path.dirname(file_path)
-    nfo_path = _os.path.join(dirpath, f"{stem}.nfo")
+    stem = os.path.splitext(os.path.basename(file_path))[0]
+    dirpath = os.path.dirname(file_path)
+    nfo_path = os.path.join(dirpath, f"{stem}.nfo")
     media = MediaFile(path=file_path, stem=stem, nfo_path=nfo_path)
 
-    run_fn = request.app.state.run_fn
     config = request.app.state.config
+    registry = request.app.state.plugin_registry
+    router_obj = Router(registry)
 
-    from unittest.mock import patch
-    with patch("app.main.scan_library", return_value=([media], 0)):
-        original_force = config.force
-        config.force = True
+    # Build a single-file config so run() processes exactly this one file.
+    # We call run() directly rather than going through the scheduler so this
+    # request doesn't block the event loop any longer than a normal run would.
+    import dataclasses
+    single_config = dataclasses.replace(config, force=True)
+
+    from app.reporter import RunReport, FileResult, write_report
+    from app.writers.nfo import write_nfo, write_images
+    import threading
+
+    def _run_single():
+        plex_server = connect_plex(single_config.plex_url, single_config.plex_token)
+        parsed, plugin = router_obj.dispatch(media.stem)
+        if parsed is None or plugin is None:
+            logger.warning("trigger_file: could not route %s", file_path)
+            return
         try:
-            run_fn()
-        finally:
-            config.force = original_force
+            result = plugin.fetch(parsed)
+        except Exception as exc:
+            logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
+            return
+        if result is None:
+            logger.warning("trigger_file: plugin returned no result for %s", file_path)
+            return
+        try:
+            write_nfo(media, result)
+            write_images(media, result)
+        except Exception as exc:
+            logger.warning("trigger_file: write error for %s: %s", file_path, exc)
+            return
+        if plex_server is not None:
+            from app.writers.plex import push_to_plex
+            try:
+                push_to_plex(plex_server, file_path, result)
+            except Exception as exc:
+                logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
+        logger.info("trigger_file: reprocessed %s", file_path)
+
+    thread = threading.Thread(target=_run_single, daemon=True, name="pm-trigger-file")
+    thread.start()
 
     return RedirectResponse(url="/", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Log viewer
+# ---------------------------------------------------------------------------
+
+_LOG_TAIL_LINES = 200
+
+
+@router.get("/logs", response_class=HTMLResponse)
+async def log_viewer(request: Request):
+    log_path = os.path.join(request.app.state.config.log_path, "pm.log")
+    lines: list[str] = []
+    error: str | None = None
+    if not os.path.isfile(log_path):
+        error = f"Log file not found: {log_path}"
+    else:
+        try:
+            with open(log_path) as fh:
+                all_lines = fh.readlines()
+            lines = [l.rstrip("\n") for l in all_lines[-_LOG_TAIL_LINES:]]
+        except OSError as exc:
+            error = f"Could not read log file: {exc}"
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "logs.html",
+        {"lines": lines, "error": error, "tail": _LOG_TAIL_LINES, "log_path": log_path},
+    )

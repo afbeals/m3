@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Not Found{% endblock %}
+
+{% block content %}
+<h1>Not Found</h1>
+<div class="card muted">
+  {{ message or "The requested page or resource was not found." }}
+</div>
+<p style="margin-top:1rem;"><a href="/runs">← Back to history</a></p>
+{% endblock %}
