@@ -77,7 +77,12 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
         name_el = etree.SubElement(actor_el, "name")
         name_el.text = actor
 
-    # <art> block references the sidecar image filenames (relative to the media file)
+    # <art> block references the sidecar image filenames.
+    # Kodi and Jellyfin resolve bare filenames relative to the NFO file's directory,
+    # so "My Movie-poster.jpg" correctly resolves to the file sitting next to the NFO.
+    # Plex's XBMCnfoMoviesImporter also accepts bare filenames in the same directory.
+    # If you find Plex does not pick up the images automatically, the Plex push path
+    # (plex.py: uploadPoster / uploadArt) handles artwork independently via the API.
     if result.poster_url or result.fanart_url:
         art_el = etree.SubElement(root, "art")
         if result.poster_url:

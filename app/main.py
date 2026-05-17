@@ -67,6 +67,12 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
     media_files = scan_library(config.library_paths, force=config.force)
 
+    if not media_files:
+        logger.warning(
+            "No media files found to process. Check that LIBRARY_PATHS is correct "
+            "and that the directories are mounted and contain video files."
+        )
+
     for media in media_files:
         # Ask the router to parse the filename and find the right plugin
         parsed, plugin = router.dispatch(media.stem)
@@ -198,6 +204,16 @@ def main() -> None:
         # Run immediately and exit — useful for testing or docker exec one-shots
         _run()
         return
+
+    # --force only applies to the single --once run, not to recurring scheduled runs.
+    # Reset it here so if someone mistakenly passes --force without --once, the
+    # scheduler doesn't re-process every file on every nightly run.
+    if args.force:
+        logger.warning(
+            "--force was passed without --once; ignoring --force for scheduled runs. "
+            "Use --once --force to re-process files in a one-shot run."
+        )
+        config.force = False
 
     # Default mode: start the blocking APScheduler cron loop
     from app.scheduler import start_scheduler

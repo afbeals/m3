@@ -34,10 +34,13 @@ from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 
 logger = logging.getLogger(__name__)
 
-# Read your API key from the environment.
-# Set EXAMPLESITE_API_KEY in the container's environment variables.
-API_KEY = os.environ.get("EXAMPLESITE_API_KEY", "")
+# Base URL for the example API — override in your real plugin.
 BASE_URL = "https://api.example-site.com/v1"
+
+# NOTE: Do NOT read API keys at module load time (e.g. `API_KEY = os.environ.get(...)`).
+# Reading at load time means the key is captured once when the plugin is imported,
+# so key rotation or late-setting of env vars won't take effect without a restart.
+# Read from os.environ inside the method that needs it (see _api_get below).
 
 
 class ExampleSitePlugin(MetadataPlugin):
@@ -134,12 +137,14 @@ class ExampleSitePlugin(MetadataPlugin):
 
     def _api_get(self, path: str, params: dict | None = None) -> dict | list | None:
         """Make a GET request to the example API. Replace with your real logic."""
-        if not API_KEY:
+        # Read the key at call time so key rotation takes effect without restart.
+        api_key = os.environ.get("EXAMPLESITE_API_KEY", "")
+        if not api_key:
             logger.error("[examplesite] EXAMPLESITE_API_KEY is not set")
             return None
 
         url = f"{BASE_URL}{path}"
-        all_params = {"api_key": API_KEY, **(params or {})}
+        all_params = {"api_key": api_key, **(params or {})}
 
         try:
             with httpx.Client(timeout=15) as client:

@@ -21,26 +21,47 @@ from logging.handlers import RotatingFileHandler
 
 
 def setup_logging(log_path: str, log_level: str) -> None:
-    # Create the log directory if it doesn't exist yet
-    os.makedirs(log_path, exist_ok=True)
-    log_file = os.path.join(log_path, "pm.log")
+    # Create the log directory if it doesn't exist yet.
+    # If this fails (e.g. permission error) we print to stderr and fall back to
+    # stdout-only logging so startup messages are never silently swallowed.
+    try:
+        os.makedirs(log_path, exist_ok=True)
+    except OSError as exc:
+        import sys
+        print(
+            f"pm WARNING: could not create log directory {log_path!r}: {exc}. "
+            "Falling back to stdout-only logging.",
+            file=sys.stderr,
+        )
+        log_path = None  # type: ignore[assignment]
+
+    log_file = os.path.join(log_path, "pm.log") if log_path else None
 
     # Shared format: timestamp, level, logger name, message
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-
-    # Rotating file handler: max 10 MB per file, keep 5 backups (pm.log, pm.log.1, ...)
-    file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
-    file_handler.setFormatter(fmt)
 
     # Stream handler writes to stdout so `docker logs pm` captures it
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(fmt)
 
-    # Apply both handlers to the root logger so all modules inherit them
     root = logging.getLogger()
     root.setLevel(getattr(logging, log_level, logging.INFO))
-    root.addHandler(file_handler)
     root.addHandler(stream_handler)
+
+    # Rotating file handler: max 10 MB per file, keep 5 backups (pm.log, pm.log.1, ...)
+    # Only added when a writable log directory is available.
+    if log_file:
+        try:
+            file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
+            file_handler.setFormatter(fmt)
+            root.addHandler(file_handler)
+        except OSError as exc:
+            import sys
+            print(
+                f"pm WARNING: could not open log file {log_file!r}: {exc}. "
+                "Continuing with stdout-only logging.",
+                file=sys.stderr,
+            )
 
 
 def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str = "") -> int:

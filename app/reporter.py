@@ -68,6 +68,9 @@ class RunReport:
             self.add_form += 1
         elif result.status == "error":
             self.errors += 1
+        else:
+            logger.warning("Unknown FileResult status %r for %s — not counted in any bucket",
+                           result.status, result.path)
 
 
 def write_report(report: RunReport, report_path: str, retention_days: int) -> None:

@@ -3,11 +3,27 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# Environment / secrets — never commit these
 .env
+*.env
+
+# Runtime data directories (Docker volume mounts for local dev)
 data/
+
+# Log and report output files
 *.log
+
+# Test / coverage artefacts
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Build artefacts
 dist/
 build/
+
+# Real plugin files — example_plugin.py IS committed as a reference.
+# Any other .py files you create in plugins/ likely contain API keys or
+# proprietary logic. Add their names here to prevent accidental commits:
+# plugins/myplugin.py

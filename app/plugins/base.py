@@ -150,7 +150,13 @@ class MetadataPlugin(ABC):
         ...
 
     def all_ids(self) -> list[str]:
-        """Return all identifiers this plugin responds to (site_id + aliases), lowercased."""
+        """Return all identifiers this plugin responds to (site_id + aliases), lowercased.
+
+        Returns an empty list if site_id is not set — callers should treat an
+        empty result as "this plugin is not registerable".
+        """
+        if not self.site_id:
+            return []
         ids = [self.site_id.lower()]
-        ids.extend(a.lower() for a in self.aliases)
+        ids.extend(a.lower() for a in self.aliases if a)
         return ids
