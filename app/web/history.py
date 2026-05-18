@@ -151,3 +151,34 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
     result = sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
     _unmatched_cache[cache_key] = (invalidation_key, result)
     return result
+
+
+def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_RUNS) -> list[dict]:
+    """
+    Return a list of run entries where file_path appeared, newest first.
+
+    Each entry: {"run_filename": str, "started_at": str, "status": str, "message": str}
+
+    Scans all available run reports (up to max_runs). Used by the /files page
+    to show a single file's processing history across runs.
+    """
+    history = []
+    filenames = sorted(
+        (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json"))
+        if os.path.isdir(report_path) else [],
+        reverse=True,
+    )
+    for fname in filenames[:max_runs]:
+        run = get_run(report_path, fname)
+        if run is None:
+            continue
+        for f in run.get("files", []):
+            if f.get("path") == file_path:
+                history.append({
+                    "run_filename": fname,
+                    "started_at": run.get("started_at", ""),
+                    "status": f.get("status", ""),
+                    "message": f.get("message", ""),
+                })
+                break  # only one entry per run
+    return history

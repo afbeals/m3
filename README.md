@@ -97,6 +97,8 @@ class MyPlugin(MetadataPlugin):
 
 See `plugins/example_plugin.py` for a fully-commented reference implementation.
 
+Plugins are instantiated once at startup and shared across all files in every run — they must be stateless (no per-run instance variables). If you need per-run state, use local variables inside `fetch()`.
+
 ---
 
 ## Web Dashboard
@@ -115,7 +117,7 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
 | Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time and hours elapsed |
 
-**Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect.
+**Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect. If a run is already in progress, clicking Run Now shows a flash message and does not queue a second run.
 
 **Inline retry** — on the run-detail page, any `error`, `scrape_error`, or `unmatched` row has a
 ↺ button that re-queues that single file for immediate reprocessing.
@@ -150,9 +152,13 @@ python -m app.main
 python -m app.main --once
 
 # Run once, re-process files that already have .nfo sidecars
+# --force re-downloads images even if they already exist on disk; it also re-fetches
+# all metadata regardless of existing .nfo content.
 python -m app.main --once --force
 
 # Dry run — parse + route + fetch but skip all writes
+# --dry-run skips NFO writes, image downloads, AND the Plex push. A run report is
+# also NOT written (the run appears in logs only).
 python -m app.main --once --dry-run
 
 # Trigger an immediate run without restarting the container (Unix/Linux/macOS)

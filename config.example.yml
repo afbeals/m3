@@ -85,6 +85,19 @@
 # TZ=America/New_York
 
 # ---------------------------------------------------------------------------
+# Library scanning
+# ---------------------------------------------------------------------------
+
+# Comma-separated glob patterns for files or paths to exclude from scanning.
+# Matched against the full absolute path inside the container.
+# Examples:
+#   *.part             — skip incomplete downloads
+#   /media/incoming/** — skip an entire staging directory
+#   *sample*           — skip sample/trailer files
+# Default: "" (no exclusions)
+# LIBRARY_EXCLUDE_PATTERNS=*.part,/media/incoming/**
+
+# ---------------------------------------------------------------------------
 # Plugin behaviour
 # ---------------------------------------------------------------------------
 

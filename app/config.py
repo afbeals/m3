@@ -25,6 +25,7 @@
 #   PLUGIN_FETCH_TIMEOUT_SECS Max seconds one plugin.fetch() may block (default: 60)
 #   NOTIFY_URL            Optional webhook URL; pm POSTs a JSON summary after each run (default: "")
 #                         Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint
+#   LIBRARY_EXCLUDE_PATTERNS  Comma-separated glob patterns to exclude from scanning (default: "")
 # -----------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -89,6 +90,11 @@ class Config:
     # scheduled run would defeat the purpose of the skip logic).
     force: bool = False
 
+    # Comma-separated glob patterns for files/directories to skip during scanning.
+    # Matched against the full absolute path. Example: "*.part,/media/incoming/**"
+    # Useful for excluding temp files, hidden directories, or work-in-progress media.
+    library_exclude_patterns: list[str] = field(default_factory=list)
+
     def __repr__(self) -> str:
         # Redact plex_token so it never appears in logs or debug output
         return (
@@ -102,7 +108,9 @@ class Config:
             f"app_name={self.app_name!r}, "
             f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, "
             f"plugin_fetch_timeout_secs={self.plugin_fetch_timeout_secs!r}, "
-            f"notify_url={self.notify_url!r}, force={self.force!r})"
+            f"notify_url={self.notify_url!r}, "
+            f"library_exclude_patterns={self.library_exclude_patterns!r}, "
+            f"force={self.force!r})"
         )
 
 
@@ -152,6 +160,9 @@ def load_config(force: bool = False) -> Config:
     raw_paths = optional("LIBRARY_PATHS", "/media")
     library_paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
 
+    raw_exclude = optional("LIBRARY_EXCLUDE_PATTERNS", "")
+    library_exclude_patterns = [p.strip() for p in raw_exclude.split(",") if p.strip()]
+
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
     web_enabled = web_enabled_raw not in ("false", "0", "no", "off")
 
@@ -174,4 +185,5 @@ def load_config(force: bool = False) -> Config:
         plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=1.0),
         notify_url=optional("NOTIFY_URL", ""),
         force=force,
+        library_exclude_patterns=library_exclude_patterns,
     )

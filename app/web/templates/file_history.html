@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}File History{% endblock %}
+
+{% block content %}
+<h1>File History</h1>
+
+<form method="get" action="/files" style="margin-bottom:1.25rem; display:flex; gap:0.5rem;">
+  <input type="search" name="path" value="{{ file_path }}" placeholder="Paste a full file path…"
+         style="flex:1; padding:0.35rem 0.6rem; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px;">
+  <button type="submit" class="btn">Search</button>
+  {% if file_path %}<a href="/files" class="btn muted">Clear</a>{% endif %}
+</form>
+
+{% if file_path %}
+  {% if history %}
+  <p class="muted" style="margin-bottom:0.75rem; font-size:0.85rem;">
+    {{ file_path }} — {{ history|length }} run{{ "s" if history|length != 1 else "" }}
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Status</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in history %}
+      <tr>
+        <td><a href="/runs/{{ entry.run_filename }}">{{ entry.started_at or entry.run_filename }}</a></td>
+        <td><span class="badge badge-{{ entry.status }}">{{ entry.status }}</span></td>
+        <td class="msg">{{ entry.message or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card muted">No history found for this path in the available run reports.</div>
+  {% endif %}
+{% else %}
+<p class="muted">Enter a file path above to see its processing history across all runs.</p>
+<p class="muted" style="font-size:0.8rem; margin-top:0.5rem;">
+  Tip: use the ⎘ copy button on any run detail page to copy a path, then paste it here.
+</p>
+{% endif %}
+{% endblock %}

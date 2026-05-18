@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import os
 from dataclasses import dataclass
@@ -62,7 +63,7 @@ def _dedup_paths(paths: list[str]) -> list[str]:
 
 
 def scan_library(
-    library_paths: list[str], force: bool = False
+    library_paths: list[str], force: bool = False, exclude_patterns: list[str] = ()
 ) -> tuple[list[MediaFile], int]:
     """
     Walk each path in library_paths recursively and collect video files to process.
@@ -70,6 +71,8 @@ def scan_library(
     Skips files that already have a .nfo sidecar, unless force=True.
     Automatically deduplicates paths: if one configured path is a subdirectory of
     another, the child is dropped (the parent's walk already covers it).
+    Files whose full absolute path matches any pattern in exclude_patterns (fnmatch
+    glob syntax) are silently skipped regardless of force.
     Returns a tuple of:
       - list of MediaFile objects ready for routing and metadata fetching
       - count of files skipped because a sidecar already exists
@@ -93,6 +96,12 @@ def scan_library(
                     continue
 
                 full_path = os.path.join(dirpath, fname)
+
+                # Skip files matching any configured exclude pattern
+                if any(fnmatch.fnmatch(full_path, pat) for pat in exclude_patterns):
+                    logger.debug("Excluding (matches pattern): %s", full_path)
+                    continue
+
                 stem = os.path.splitext(fname)[0]  # filename without extension
                 nfo_path = os.path.join(dirpath, f"{stem}.nfo")
 

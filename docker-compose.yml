@@ -32,5 +32,7 @@ services:
       # - PLUGIN_FETCH_TIMEOUT_SECS=60.0
       # Optional: scheduler timezone — must match an IANA timezone name (default UTC)
       # - TZ=America/New_York
+      # Optional: comma-separated glob patterns to skip during scanning
+      # - LIBRARY_EXCLUDE_PATTERNS=*.part,/media/incoming/**
       # Optional: log verbosity — DEBUG, INFO, WARNING, ERROR (default INFO)
       # - LOG_LEVEL=INFO

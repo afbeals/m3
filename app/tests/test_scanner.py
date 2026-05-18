@@ -80,3 +80,27 @@ class TestScanLibrary:
             open(os.path.join(child, "movie.mp4"), "w").close()
             results, _ = scan_library([parent, child])
         assert len(results) == 1
+
+    def test_exclude_patterns_skip_matching_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "movie.mp4"), "w").close()
+            open(os.path.join(tmpdir, "movie.part"), "w").close()
+            results, _ = scan_library([tmpdir], exclude_patterns=["*.part"])
+        assert len(results) == 1
+        assert results[0].stem == "movie"
+
+    def test_exclude_patterns_skip_by_directory_glob(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            incoming = os.path.join(tmpdir, "incoming")
+            os.makedirs(incoming)
+            open(os.path.join(incoming, "wip.mp4"), "w").close()
+            open(os.path.join(tmpdir, "done.mkv"), "w").close()
+            results, _ = scan_library([tmpdir], exclude_patterns=[os.path.join(tmpdir, "incoming", "*")])
+        assert len(results) == 1
+        assert results[0].stem == "done"
+
+    def test_exclude_patterns_empty_list_scans_all(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "movie.mp4"), "w").close()
+            results, _ = scan_library([tmpdir], exclude_patterns=[])
+        assert len(results) == 1

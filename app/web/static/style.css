@@ -119,7 +119,7 @@ h2 { font-size: 0.9rem; color: var(--dim); margin: 1.5rem 0 0.5rem; text-transfo
 .stat-value { font-size: 1.4rem; font-weight: bold; }
 
 /* Clickable stat cards — used on the latest-run dashboard */
-a.stat-link { text-decoration: none; display: block; }
+a.stat-link { text-decoration: none; display: block; cursor: pointer; }
 a.stat-link:hover { border-color: var(--text); }
 .stat-value.green { color: var(--green); }
 .stat-value.red   { color: var(--red); }

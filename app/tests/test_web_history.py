@@ -183,6 +183,52 @@ def test_aggregate_unmatched_ignores_non_unmatched_statuses():
     assert result[0]["path"] == "/media/bad.mp4"
 
 
+# ---------------------------------------------------------------------------
+# get_file_history
+# ---------------------------------------------------------------------------
+
+def test_get_file_history_returns_empty_for_missing_dir():
+    from app.web.history import get_file_history
+    result = get_file_history("/nonexistent/path", "/media/movie.mp4")
+    assert result == []
+
+
+def test_get_file_history_returns_matching_entries():
+    from app.web.history import get_file_history
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 1,
+            "files": [
+                {"path": "/media/movie.mp4", "status": "updated", "message": ""},
+                {"path": "/media/other.mp4", "status": "skipped", "message": ""},
+            ],
+        })
+        _write_run(tmpdir, "run_20250102_030000.json", {
+            "started_at": "2025-01-02T03:00:00", "updated": 0,
+            "files": [{"path": "/media/movie.mp4", "status": "error", "message": "crash"}],
+        })
+        result = get_file_history(tmpdir, "/media/movie.mp4")
+
+    assert len(result) == 2
+    # Newest run first
+    assert result[0]["started_at"] == "2025-01-02T03:00:00"
+    assert result[0]["status"] == "error"
+    assert result[1]["started_at"] == "2025-01-01T03:00:00"
+    assert result[1]["status"] == "updated"
+
+
+def test_get_file_history_ignores_runs_without_path():
+    from app.web.history import get_file_history
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 0,
+            "files": [{"path": "/media/other.mp4", "status": "skipped", "message": ""}],
+        })
+        result = get_file_history(tmpdir, "/media/movie.mp4")
+
+    assert result == []
+
+
 def test_aggregate_unmatched_cache_invalidated_on_deletion():
     """Deleting a report file must invalidate the aggregate_unmatched cache so
     the deleted file's entries no longer appear in subsequent calls."""

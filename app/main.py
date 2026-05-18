@@ -160,7 +160,11 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     plex_item_cache: dict = {}
 
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
-    media_files, skipped_count = scan_library(config.library_paths, force=config.force)
+    media_files, skipped_count = scan_library(
+        config.library_paths,
+        force=config.force,
+        exclude_patterns=config.library_exclude_patterns,
+    )
 
     # Count skipped files in the report without adding per-file entries.
     # Skipped files have no path to show in the detail view, and appending
@@ -384,6 +388,11 @@ def main() -> None:
         action="store_true",
         help="Scan library paths, print files that cannot be routed to any plugin, then exit",
     )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Re-process all error and scrape_error files from the most recent run, then exit",
+    )
     args = parser.parse_args()
 
     # Load all settings from environment variables; fails fast if PLEX_URL/TOKEN missing
@@ -436,7 +445,11 @@ def main() -> None:
         # Scan libraries, print every file the router cannot dispatch, then exit.
         # Respects normal skip logic (honours --force if also passed) so the output
         # matches the set of files that would actually be processed in a real run.
-        media_files, skipped_count = scan_library(config.library_paths, force=config.force)
+        media_files, skipped_count = scan_library(
+            config.library_paths,
+            force=config.force,
+            exclude_patterns=config.library_exclude_patterns,
+        )
         unroutable = []
         for media in media_files:
             parsed, plugin = router.dispatch(media.stem)
@@ -449,6 +462,31 @@ def main() -> None:
         else:
             print("All files matched a plugin.")
         return
+
+    if args.retry_failed:
+        from app.web.history import list_runs, get_run as get_run_detail
+        runs = list_runs(config.report_path)
+        if not runs:
+            print("No run reports found. Run pm at least once first.")
+            raise SystemExit(0)
+        latest_summary = runs[0]
+        full_run = get_run_detail(config.report_path, latest_summary["filename"])
+        if full_run is None:
+            print(f"Could not read latest run report: {latest_summary['filename']}")
+            raise SystemExit(1)
+        failed_paths = [
+            f["path"] for f in full_run.get("files", [])
+            if f.get("status") in ("error", "scrape_error") and f.get("path")
+        ]
+        if not failed_paths:
+            print(f"No errors in {latest_summary['filename']}. Nothing to retry.")
+            raise SystemExit(0)
+        print(f"Retrying {len(failed_paths)} failed file(s) from {latest_summary['filename']}:")
+        for p in failed_paths:
+            print(f"  {p}")
+        config.force = True
+        run(config, router)
+        raise SystemExit(0)
 
     # Sweep any stale .tmp orphans from previous interrupted writes before running.
     _sweep_tmp_orphans(config.library_paths)

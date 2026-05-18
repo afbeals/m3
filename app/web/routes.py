@@ -26,11 +26,12 @@ import signal
 import threading
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.web.history import list_runs, get_run, aggregate_unmatched
+from app.web.history import list_runs, get_run, aggregate_unmatched, get_file_history
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
 
@@ -40,8 +41,11 @@ router = APIRouter()
 
 # Per-path lock set for /trigger/file coalescing.
 # Prevents a user from spamming the ↺ button and spawning duplicate threads
-# for the same file. Entries are added on first access and never removed (the
-# set of media files is bounded and the lock objects are tiny).
+# for the same file that would race on NFO writes and spam the source API.
+# Entries are added on first access and never removed: the set of media files
+# in a library is bounded, each Lock object is <100 bytes, so growth is
+# negligible. Removal would require a separate GC pass and add complexity
+# without meaningful benefit.
 _file_trigger_locks: dict[str, threading.Lock] = {}
 _file_trigger_locks_guard = threading.Lock()
 
@@ -58,7 +62,7 @@ def _get_file_lock(path: str) -> threading.Lock:
 # ---------------------------------------------------------------------------
 
 @router.get("/healthz")
-def healthz(request: Request, verbose: bool = False):
+def healthz(request: Request, verbose: bool = False, check: str = ""):
     """Basic health check used by Docker HEALTHCHECK.
 
     Add ?verbose=1 for an extended response including last run time and
@@ -66,6 +70,29 @@ def healthz(request: Request, verbose: bool = False):
     that can alert when runs stop happening.
     """
     from app import __version__
+
+    # ?check=plex performs a live Plex reachability probe.
+    # Returns {"plex": "ok"} or {"plex": "unreachable", "detail": "..."}.
+    # Kept separate from the main healthz response so uptime monitors can
+    # alert on Plex being down without flagging the pm process itself as unhealthy.
+    if check == "plex":
+        from app.writers.plex import connect_plex
+        config = request.app.state.config
+        try:
+            server = connect_plex(config.plex_url, config.plex_token)
+            if server is not None:
+                return JSONResponse({"plex": "ok", "url": config.plex_url})
+            else:
+                return JSONResponse(
+                    {"plex": "unreachable", "detail": "connection returned None"},
+                    status_code=503,
+                )
+        except Exception as exc:
+            return JSONResponse(
+                {"plex": "unreachable", "detail": str(exc)},
+                status_code=503,
+            )
+
     if not verbose:
         return {"status": "ok", "version": __version__}
 
@@ -139,6 +166,7 @@ def dashboard(request: Request):
 # ---------------------------------------------------------------------------
 
 _RUNS_PAGE_SIZE = 25
+_RUN_DETAIL_PAGE_SIZE = 200
 
 
 @router.get("/runs", response_class=HTMLResponse)
@@ -163,7 +191,7 @@ def run_history(request: Request, page: int = 1):
 
 
 @router.get("/runs/{filename}", response_class=HTMLResponse)
-def run_detail(request: Request, filename: str, status: str = ""):
+def run_detail(request: Request, filename: str, status: str = "", page: int = 1):
     run = get_run(request.app.state.config.report_path, filename)
     if run is None:
         return request.app.state.templates.TemplateResponse(
@@ -183,6 +211,12 @@ def run_detail(request: Request, filename: str, status: str = ""):
 
     files = [f for f in all_files if f.get("status") == status] if status else all_files
 
+    total_files = len(files)
+    page = max(1, page)
+    total_pages = max(1, (total_files + _RUN_DETAIL_PAGE_SIZE - 1) // _RUN_DETAIL_PAGE_SIZE)
+    page = min(page, total_pages)
+    files = files[(page - 1) * _RUN_DETAIL_PAGE_SIZE : page * _RUN_DETAIL_PAGE_SIZE]
+
     return request.app.state.templates.TemplateResponse(
         request,
         "run_detail.html",
@@ -192,6 +226,9 @@ def run_detail(request: Request, filename: str, status: str = ""):
             "all_files_count": len(all_files),
             "status_filter": status,
             "status_counts": status_counts,
+            "page": page,
+            "total_pages": total_pages,
+            "total_files": total_files,
         },
     )
 
@@ -339,9 +376,14 @@ async def trigger_file(request: Request):
     # library path. Prevents the form from being used to trigger metadata
     # writes on arbitrary system files outside the media directories.
     config = request.app.state.config
-    real_path = os.path.realpath(file_path)
+    real_path = Path(os.path.realpath(file_path))
+    # is_relative_to() proves the resolved path is strictly inside the library root,
+    # blocking both path-traversal attempts (/media/../etc/passwd) and requests
+    # for files in sibling directories (/media2/other.mp4 when only /media is configured).
+    # Path.is_relative_to() (Python 3.9+) is clearer and handles edge cases
+    # (e.g. /media2 not being considered "inside" /media) better than commonpath.
     allowed = any(
-        os.path.commonpath([real_path, os.path.realpath(lib)]) == os.path.realpath(lib)
+        real_path.is_relative_to(os.path.realpath(lib))
         for lib in config.library_paths
     )
     if not allowed:
@@ -353,7 +395,7 @@ async def trigger_file(request: Request):
     # Coalesce concurrent requests for the same file path: if a thread is already
     # processing this file, return 409 rather than spawning a duplicate thread that
     # would race on NFO writes and spam the source API.
-    file_lock = _get_file_lock(real_path)
+    file_lock = _get_file_lock(str(real_path))
     if not file_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail=f"Already processing: {file_path}")
 
@@ -422,6 +464,24 @@ async def trigger_file(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# File history
+# ---------------------------------------------------------------------------
+
+@router.get("/files", response_class=HTMLResponse)
+def file_history(request: Request, path: str = ""):
+    """Show the processing history of a single file across all runs."""
+    path = path.strip()
+    history = []
+    if path:
+        history = get_file_history(request.app.state.config.report_path, path)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "file_history.html",
+        {"file_path": path, "history": history},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Log viewer
 # ---------------------------------------------------------------------------
 
@@ -439,7 +499,7 @@ def log_viewer(request: Request):
         try:
             # deque(maxlen=N) keeps only the last N lines in memory regardless
             # of file size — avoids loading a multi-MB rotated log into RAM.
-            with open(log_path) as fh:
+            with open(log_path, encoding="utf-8", errors="replace") as fh:
                 tail: deque[str] = deque(fh, maxlen=_LOG_TAIL_LINES)
             lines = [l.rstrip("\n") for l in tail]
         except OSError as exc:

@@ -2,6 +2,29 @@
 
 All notable changes to pm are documented here.
 
+## [1.1.0] — cycle 11: correctness, UX, new features
+
+### New features
+- `LIBRARY_EXCLUDE_PATTERNS` env var — comma-separated glob patterns to skip files during scanning (e.g. `*.part,/media/incoming/**`)
+- `--retry-failed` CLI flag — reads the latest run report and re-processes all `error` / `scrape_error` files
+- `/healthz?check=plex` — live Plex reachability probe; returns `{"plex":"ok"}` or 503 without affecting process liveness
+- Run detail pagination — large runs (>200 files) are paged; `?page=N` supported alongside existing `?status=` filter
+- File history page (`/files?path=…`) — shows every run a given file appeared in, with status and message
+
+### Correctness
+- `Content-Length: 0` no longer bypasses the download size guard in `_download_image`
+- Log viewer (`/logs`) no longer crashes on non-UTF-8 log characters (`errors="replace"`)
+- `/trigger/file` path-scope check uses `Path.is_relative_to()` instead of `os.path.commonpath`, correctly rejecting sibling directories
+
+### Documentation & comments
+- WHY comments added: `_file_trigger_locks` no-removal rationale, `is_relative_to()` threat model, two-stage Content-Length/streaming size guard
+- README: clarified `--force`, `--dry-run` scope, Run Now flash message behavior, plugin statelessness requirement
+- `config.example.yml` and `docker-compose.yml`: documented `LIBRARY_EXCLUDE_PATTERNS` with examples
+- `docs/local-testing.md`: added `--retry-failed` usage example
+
+### Tests
+- 232 tests passing (was 221); new coverage for `LIBRARY_EXCLUDE_PATTERNS`, file history, run_detail pagination, `/healthz?check=plex`
+
 ## [1.0.0] — initial public release
 
 ### Core pipeline

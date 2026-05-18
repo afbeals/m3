@@ -259,6 +259,84 @@ def test_api_status_returns_running_when_active():
 
 
 # ---------------------------------------------------------------------------
+# /healthz?check=plex
+# ---------------------------------------------------------------------------
+
+def test_healthz_plex_check_returns_200_on_success():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with patch("app.writers.plex.connect_plex", return_value=MagicMock()):
+            with TestClient(app) as client:
+                r = client.get("/healthz?check=plex")
+    assert r.status_code == 200
+    assert r.json()["plex"] == "ok"
+
+
+def test_healthz_plex_check_returns_503_on_failure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with patch("app.writers.plex.connect_plex", side_effect=Exception("refused")):
+            with TestClient(app) as client:
+                r = client.get("/healthz?check=plex")
+    assert r.status_code == 503
+    assert "plex" in r.json()
+
+
+# ---------------------------------------------------------------------------
+# /runs/{filename} — pagination
+# ---------------------------------------------------------------------------
+
+def test_run_detail_pagination_page_2():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        files = [{"path": f"/media/f{i}.mp4", "status": "updated", "message": ""} for i in range(250)]
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 250, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 250,
+            "files": files,
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r1 = client.get("/runs/run_20250515_030000.json?page=1")
+            r2 = client.get("/runs/run_20250515_030000.json?page=2")
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    # page 1 shows f0, page 2 shows f200
+    assert "/media/f0.mp4" in r1.text
+    assert "/media/f200.mp4" in r2.text
+    assert "/media/f200.mp4" not in r1.text
+
+
+# ---------------------------------------------------------------------------
+# /files
+# ---------------------------------------------------------------------------
+
+def test_files_page_returns_200():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/files")
+    assert r.status_code == 200
+
+
+def test_files_page_shows_history_for_queried_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 1,
+            "files": [{"path": "/media/movie.mp4", "status": "updated", "message": ""}],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/files?path=%2Fmedia%2Fmovie.mp4")
+    assert r.status_code == 200
+    assert "/media/movie.mp4" in r.text
+    assert "updated" in r.text
+
+
+# ---------------------------------------------------------------------------
 # GET /unmatched
 # ---------------------------------------------------------------------------
 

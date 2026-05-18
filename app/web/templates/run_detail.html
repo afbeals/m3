@@ -113,4 +113,19 @@
   {% else %}No file detail available.{% endif %}
 </div>
 {% endif %}
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+    <a href="/runs/{{ run.filename }}?status={{ status_filter }}&page={{ page - 1 }}" class="btn">← Prev</a>
+  {% else %}
+    <span class="btn muted" style="cursor:default;">← Prev</span>
+  {% endif %}
+  <span class="muted">Page {{ page }} of {{ total_pages }} ({{ total_files }} files)</span>
+  {% if page < total_pages %}
+    <a href="/runs/{{ run.filename }}?status={{ status_filter }}&page={{ page + 1 }}" class="btn">Next →</a>
+  {% else %}
+    <span class="btn muted" style="cursor:default;">Next →</span>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

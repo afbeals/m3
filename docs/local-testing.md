@@ -339,6 +339,23 @@ plugin → parse → fetch → NFO pipeline without a Plex server.
 
 ---
 
+## Retrying failed files
+
+After a run with errors, re-process only the failed files without re-running everything:
+
+```bash
+# macOS / Linux
+source .venv/bin/activate
+PLEX_URL=... PLEX_TOKEN=... LIBRARY_PATHS=... PLUGIN_DIR=./plugins \
+REPORT_PATH=/tmp/pm-test-reports LOG_PATH=/tmp/pm-test-logs \
+python3 -m app.main --retry-failed
+```
+
+This reads the most recent run report and re-processes every file with status `error`
+or `scrape_error`. It sets `--force` automatically so existing sidecars are overwritten.
+
+---
+
 ## Windows-specific notes
 
 | Topic | Detail |

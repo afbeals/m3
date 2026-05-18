@@ -150,6 +150,11 @@ def _download_image(url: str, dest_path: str) -> bool:
                         f"Unexpected content-type {content_type!r} for image URL {url}"
                     )
 
+                # Two-stage size guard: Content-Length pre-flight avoids downloading
+                # a single byte when the server advertises an oversized body up front.
+                # The mid-stream chunk counter below catches the cases where
+                # Content-Length is absent, wrong, or omitted by a CDN — ensuring
+                # the cap is enforced even if the header is missing or lies.
                 # Content-Length pre-flight: reject before reading a single byte.
                 # Parse int() in its own try/except so a malformed header value
                 # (raises ValueError/OverflowError) doesn't silently swallow
@@ -160,7 +165,7 @@ def _download_image(url: str, dest_path: str) -> bool:
                         cl_int = int(cl)
                     except (ValueError, OverflowError):
                         cl_int = None  # malformed header; fall through to streaming check
-                    if cl_int is not None and cl_int > _DOWNLOAD_MAX_BYTES:
+                    if cl_int is not None and cl_int > 0 and cl_int > _DOWNLOAD_MAX_BYTES:
                         raise ValueError(
                             f"Image Content-Length ({cl_int} bytes) exceeds limit from {url}"
                         )
