@@ -76,6 +76,15 @@
 # REPORT_RETENTION_DAYS=90
 
 # ---------------------------------------------------------------------------
+# Timezone
+# ---------------------------------------------------------------------------
+
+# IANA timezone name for the scheduler. Affects when RUN_SCHEDULE fires.
+# Requires tzdata to be installed in the container (included by default).
+# Default: UTC
+# TZ=America/New_York
+
+# ---------------------------------------------------------------------------
 # Plugin behaviour
 # ---------------------------------------------------------------------------
 
@@ -84,6 +93,11 @@
 # Set to 0 to disable rate limiting entirely.
 # Default: 1.0
 # PLUGIN_RATE_LIMIT_SECS=1.0
+
+# Maximum seconds a single plugin fetch() may run before it is recorded as
+# status=error and the run continues with the next file.
+# Default: 60.0
+# PLUGIN_FETCH_TIMEOUT_SECS=60.0
 
 # ---------------------------------------------------------------------------
 # Web dashboard
@@ -113,8 +127,8 @@
 # Notifications (optional)
 # ---------------------------------------------------------------------------
 
-# Optional webhook URL. After every successful run pm POSTs a compact JSON
-# summary (updated, errors, unmatched, duration, timestamps) to this URL.
+# Optional webhook URL. After every completed (non-dry-run) run pm POSTs a compact JSON
+# summary (updated, errors, unmatched, duration, timestamps, first_error) to this URL.
 # Leave unset to disable. Works with:
 #   - Apprise API:  http://apprise-host/notify/myjson
 #   - Gotify:       http://gotify-host/message?token=xxx

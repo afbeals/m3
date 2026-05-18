@@ -21,7 +21,8 @@
 #   WEB_PORT              Port the web dashboard listens on (default: 8765)
 #   WEB_HOST              Host the web dashboard binds to (default: 0.0.0.0)
 #   APP_NAME              Display name in the dashboard header and page title (default: pm)
-#   PLUGIN_RATE_LIMIT_SECS  Seconds between plugin fetch() calls (default: 1.0)
+#   PLUGIN_RATE_LIMIT_SECS    Seconds between plugin fetch() calls (default: 1.0)
+#   PLUGIN_FETCH_TIMEOUT_SECS Max seconds one plugin.fetch() may block (default: 60)
 #   NOTIFY_URL            Optional webhook URL; pm POSTs a JSON summary after each run (default: "")
 #                         Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint
 # -----------------------------------------------------------------------------
@@ -73,6 +74,11 @@ class Config:
     # Set to 0 to disable throttling (not recommended for production).
     plugin_rate_limit_secs: float = 1.0
 
+    # Maximum seconds a single plugin.fetch() call may take before the run marks it
+    # as an error and moves on. Prevents a hung plugin from blocking the entire run
+    # indefinitely (scheduler max_instances=1 means a hung run blocks all future runs).
+    plugin_fetch_timeout_secs: float = 60.0
+
     # Optional webhook URL. When set, pm POSTs a JSON run summary to this URL
     # after every successful run. Leave empty to disable. Works with any HTTP
     # endpoint that accepts JSON (Apprise, Gotify, Pushover relay, custom scripts).
@@ -95,6 +101,7 @@ class Config:
             f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, "
             f"app_name={self.app_name!r}, "
             f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, "
+            f"plugin_fetch_timeout_secs={self.plugin_fetch_timeout_secs!r}, "
             f"notify_url={self.notify_url!r}, force={self.force!r})"
         )
 
@@ -164,6 +171,7 @@ def load_config(force: bool = False) -> Config:
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=optional("APP_NAME", "pm"),
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
+        plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=1.0),
         notify_url=optional("NOTIFY_URL", ""),
         force=force,
     )

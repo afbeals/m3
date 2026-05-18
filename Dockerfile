@@ -3,7 +3,9 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl (for HEALTHCHECK) and tzdata (required for non-UTC TZ= values on slim images).
+# Without tzdata, python:3.12-slim defaults to UTC regardless of the TZ env var.
+RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r requirements.txt
 

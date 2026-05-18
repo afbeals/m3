@@ -47,13 +47,18 @@ def connect_plex(plex_url: str, plex_token: str) -> PlexServer | None:
         return None
 
 
-def find_plex_item(server: PlexServer, file_path: str):
+def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | None = None):
     """
     Find the Plex library item that corresponds to a given media file path.
 
     Tries a fast filepath filter first; falls back to a full library scan
     if the filter doesn't return results (some Plex versions don't support it).
-    Returns None if the file isn't found in any library section.
+
+    _fallback_cache: optional dict (path → item | None) shared across calls for
+    the same run. The slow scan is O(library size) and runs per-file without this
+    cache, so on older Plex versions a 1000-file run would do 1000 full scans.
+    Pass an empty dict at the start of each run and reuse it for all push_to_plex
+    calls to reduce the slow path from O(n * library) to O(library + n).
     """
     try:
         # Fast path: filter by the exact file path stored in Plex's database
@@ -65,40 +70,61 @@ def find_plex_item(server: PlexServer, file_path: str):
         # O(library size) — only runs when the fast filepath filter isn't supported.
         # A 60-second wall-clock guard prevents this from hanging a run indefinitely
         # on very large libraries.
+        if _fallback_cache is not None and file_path in _fallback_cache:
+            return _fallback_cache[file_path]
+
         logger.warning(
             "Fast Plex filepath filter returned no results for %s — falling back to full "
             "library scan. This may be slow on large libraries.", file_path
         )
         deadline = time.monotonic() + 60
+        found = None
         for section in server.library.sections():
             for item in section.search():
                 if time.monotonic() > deadline:
                     logger.warning(
                         "Plex full-library scan timed out after 60s searching for %s", file_path
                     )
+                    if _fallback_cache is not None:
+                        _fallback_cache[file_path] = None
                     return None
                 for media in item.media:
                     for part in media.parts:
+                        if _fallback_cache is not None:
+                            _fallback_cache[part.file] = item
                         if part.file == file_path:
-                            return item
+                            found = item
+
+        if _fallback_cache is not None and file_path not in _fallback_cache:
+            _fallback_cache[file_path] = found
+        return found
+
     except Exception:
         logger.exception("Error searching Plex for file: %s", file_path)
 
     return None
 
 
-def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> bool:
+def push_to_plex(
+    server: PlexServer,
+    file_path: str,
+    result: MetadataResult,
+    _fallback_cache: dict | None = None,
+) -> bool:
     """
     Update the Plex item for file_path with all fields from MetadataResult.
     Each field is written with a lock (.locked = 1) to prevent Plex from
     overwriting it during the next library refresh.
 
-    Genres, labels, tags, and actors are cleared before writing so that
-    re-runs with --force don't accumulate stale values from previous metadata.
+    Genres, labels, tags, and actors are written first (add new), then old
+    values are cleared so a mid-call failure leaves the item with both old and
+    new values rather than no values at all.
+
+    _fallback_cache: optional dict for the slow-scan path; see find_plex_item.
 
     Returns True on success, False if the item wasn't found or an error occurred.
     """
-    item = find_plex_item(server, file_path)
+    item = find_plex_item(server, file_path, _fallback_cache=_fallback_cache)
     if item is None:
         logger.warning("Plex item not found for: %s", file_path)
         return False
@@ -132,14 +158,10 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
         if edits:
             item.edit(**edits)
 
-        # Clear existing list fields before writing so re-runs don't accumulate
-        # stale values alongside the new ones.
-        item.removeGenres()
-        item.removeLabels()
-        item.removeTags()
-        item.removeActors()
-
-        # Add fresh values with locks so the Plex agent can't clear them on refresh
+        # Add the new list-field values first, then remove the old ones.
+        # This ordering means a mid-call failure leaves the item with both old
+        # and new values rather than no values at all (which would be worse).
+        # Each addX / removeX is a separate HTTP round-trip to the Plex API.
         for genre in result.genres:
             item.addGenre(genre, locked=True)
         for label in result.labels:
@@ -148,6 +170,13 @@ def push_to_plex(server: PlexServer, file_path: str, result: MetadataResult) -> 
             item.addTag(tag, locked=True)
         for actor in result.actors:
             item.addActor(actor, locked=True)
+
+        # Remove stale values after the new ones are written so re-runs don't
+        # accumulate old + new values together.
+        item.removeGenres()
+        item.removeLabels()
+        item.removeTags()
+        item.removeActors()
 
         # Upload poster and background art directly to Plex from the remote URLs
         if result.poster_url:

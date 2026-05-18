@@ -28,3 +28,9 @@ services:
       # - NOTIFY_URL=
       # Optional: seconds between plugin API calls (0 to disable, default 1.0)
       # - PLUGIN_RATE_LIMIT_SECS=1.0
+      # Optional: seconds before a single plugin fetch() times out (default 60.0)
+      # - PLUGIN_FETCH_TIMEOUT_SECS=60.0
+      # Optional: scheduler timezone — must match an IANA timezone name (default UTC)
+      # - TZ=America/New_York
+      # Optional: log verbosity — DEBUG, INFO, WARNING, ERROR (default INFO)
+      # - LOG_LEVEL=INFO

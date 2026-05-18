@@ -31,8 +31,10 @@
   </tbody>
 </table>
 {% else %}
-<div class="card muted">
-  No plugins loaded. Drop a <code>.py</code> file into the plugins directory and restart the container.
+<div class="card" style="border-color: var(--yellow);">
+  <span style="color: var(--yellow);">⚠ No plugins loaded.</span>
+  <span class="muted"> Every file will be recorded as <strong>unmatched</strong> until at least one plugin is present.
+  Drop a <code>.py</code> file into the plugin directory and reload.</span>
 </div>
 {% endif %}
 

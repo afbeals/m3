@@ -195,9 +195,11 @@ docker logs pm --tail 50
 
 You should see something like:
 ```
-[pm] Starting scheduler. Next run: 2025-05-16 03:00:00
-[pm] Loaded plugins: mysite, othersite
-[pm] Watching 2 library path(s)
+INFO  app.main - pm 1.0.0 starting up
+INFO  app.main - Library paths: ['/media/Movies', '/media/TV']
+INFO  app.plugins.loader - Registered plugin MySitePlugin for id 'mysite'
+INFO  app.plugins.loader - Registered plugin OtherSitePlugin for id 'othersite'
+INFO  app.main - Web dashboard started on http://0.0.0.0:8765
 ```
 
 ### Open the web dashboard

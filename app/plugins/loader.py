@@ -47,7 +47,10 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
 
     # Process files in sorted order for deterministic loading
     for fname in sorted(os.listdir(plugin_dir)):
-        # Only load .py files; skip __init__.py and other dunder files
+        # Only load .py files; skip __init__.py and other dunder files.
+        # Files starting with "_" are intentionally skipped so the plugin dir
+        # can contain private helper modules (e.g. _shared_auth.py) without them
+        # being treated as plugins.
         if not fname.endswith(".py") or fname.startswith("_"):
             continue
 

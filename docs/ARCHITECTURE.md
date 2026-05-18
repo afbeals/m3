@@ -130,9 +130,13 @@ pm/
 │       ├── test_plex_writer.py      # 14 tests — connect, find item, push
 │       ├── test_run_integration.py  # 13 tests — run() orchestration, dry-run
 │       ├── test_scrape.py           # 11 tests — fetch_html, retry, ScrapeError
-│       ├── test_web_history.py      # 15 tests — list_runs, get_run, aggregate_unmatched
-│       ├── test_web_routes.py       # 31 tests — all routes via TestClient
-│       └── test_phase_fixes.py      # 26 tests — targeted regression tests
+│       ├── test_web_history.py      # 16 tests — list_runs, get_run, aggregate_unmatched + cache invalidation
+│       ├── test_web_routes.py       # 41 tests — all routes via TestClient; flash/scope/coalescing/version
+│       ├── test_phase_fixes.py      # 26 tests — targeted regression tests
+│       ├── test_main_dry_run.py     # 2 tests  — dry-run skips connect_plex, logs would-push
+│       ├── test_main_fetch_timeout.py # 2 tests — plugin timeout → status=error, run continues
+│       ├── test_main_webhook.py     # 4 tests  — webhook payload shape, no-url skip, network failure
+│       └── test_scheduler.py        # 3 tests  — atomic registry replace, TZ wiring
 │
 ├── plugins/                      # mounted from host at /plugins; drop .py files here
 │   ├── example_plugin.py         # reference JSON API plugin (fully commented)
@@ -289,6 +293,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `LOG_RETENTION_DAYS` | `30` | Delete log files older than N days |
 | `REPORT_RETENTION_DAYS` | `90` | Delete report files older than N days |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds to wait between plugin fetch() calls |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is marked as timed out |
 | `WEB_ENABLED` | `true` | Enable the web dashboard |
 | `WEB_PORT` | `8765` | Port the dashboard listens on |
 | `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
@@ -304,7 +309,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 - `max_instances=1` prevents concurrent runs if a previous run is still in progress
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
 - Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
-- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that mutates the shared `registry` dict in-place so all live references (router, web UI) see the new plugins without a container restart (Unix only; skipped on Windows)
+- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict (build new dict, then assign) so all live references (router, web UI) see the new plugins without a container restart (Unix only; skipped on Windows)
 
 ## Run Modes
 
@@ -361,20 +366,7 @@ File statuses:
 
 ## Docker
 
-`python:3.12-slim` base. Non-root `pm` user. Health check via `GET /healthz` on the web dashboard.
-
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN apt-get install -y curl && pip install -r requirements.txt
-COPY app/ ./app/
-RUN useradd -m pm && chown -R pm /app /config /plugins /media
-USER pm
-EXPOSE 8765
-HEALTHCHECK CMD curl -fsS http://127.0.0.1:8765/healthz || exit 1
-ENTRYPOINT ["python", "-m", "app.main"]
-```
+`python:3.12-slim` base. Non-root `pm` user. Health check via `GET /healthz` on the web dashboard. See `Dockerfile` for the authoritative build definition.
 
 ---
 

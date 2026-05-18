@@ -195,3 +195,87 @@ def test_write_images_poster_path_uses_stem(tmp_path):
         write_images(media, result)
 
     assert captured["poster_dest"].endswith("My Scene-poster.jpg")
+
+
+# ---------------------------------------------------------------------------
+# _download_image — streaming size cap
+# ---------------------------------------------------------------------------
+
+def _make_streaming_mock(content_length_header: int | None, body_bytes: int):
+    """Build a mock httpx streaming response that yields `body_bytes` of data.
+
+    iter_bytes uses a side_effect factory so retries each get a fresh iterator
+    rather than the exhausted one from the first attempt.
+    """
+    def _make_chunks():
+        remaining = body_bytes
+        while remaining > 0:
+            sz = min(remaining, 65536)
+            yield b"x" * sz
+            remaining -= sz
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.headers = {
+        "content-type": "image/jpeg",
+        **({"content-length": str(content_length_header)} if content_length_header is not None else {}),
+    }
+    # Return a fresh generator each call so retries don't see an empty iterator
+    mock_response.iter_bytes = MagicMock(side_effect=lambda chunk_size=65536: _make_chunks())
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+    return mock_response
+
+
+def _wrap_client_with_fresh_response(content_length_header, body_bytes):
+    """Return a mock httpx.Client whose .stream() yields a fresh response mock
+    on every call — needed because _download_image retries up to 3 times."""
+    def make_response():
+        return _make_streaming_mock(content_length_header, body_bytes)
+
+    mock_client = MagicMock()
+    mock_client.stream.side_effect = lambda *a, **kw: make_response()
+    mock_client.__enter__ = lambda s: s
+    mock_client.__exit__ = MagicMock(return_value=False)
+    return mock_client
+
+
+def test_download_image_aborts_on_content_length_header_exceeding_cap(tmp_path):
+    """When Content-Length header exceeds the cap the download must be rejected
+    before any bytes are streamed to disk."""
+    from app.writers.nfo import _download_image, _DOWNLOAD_MAX_BYTES
+
+    dest = str(tmp_path / "img.jpg")
+    oversized = _DOWNLOAD_MAX_BYTES + 1
+
+    mock_client = _wrap_client_with_fresh_response(
+        content_length_header=oversized, body_bytes=100
+    )
+
+    with patch("app.writers.nfo.httpx") as mock_httpx:
+        mock_httpx.Client.return_value = mock_client
+        result = _download_image("http://example.com/img.jpg", dest)
+
+    assert result is False
+    assert not os.path.exists(dest), "Destination file must not be written when Content-Length exceeds cap"
+
+
+def test_download_image_aborts_mid_stream_when_body_exceeds_cap(tmp_path):
+    """When the streamed body grows past the cap the download must abort and
+    leave no partial file at the destination path."""
+    from app.writers.nfo import _download_image, _DOWNLOAD_MAX_BYTES
+
+    dest = str(tmp_path / "img.jpg")
+    # No Content-Length header; body exceeds cap mid-stream
+    oversized_body = _DOWNLOAD_MAX_BYTES + 65536
+
+    mock_client = _wrap_client_with_fresh_response(
+        content_length_header=None, body_bytes=oversized_body
+    )
+
+    with patch("app.writers.nfo.httpx") as mock_httpx:
+        mock_httpx.Client.return_value = mock_client
+        result = _download_image("http://example.com/img.jpg", dest)
+
+    assert result is False
+    assert not os.path.exists(dest), "Partial file must be cleaned up after mid-stream abort"

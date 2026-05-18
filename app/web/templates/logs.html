@@ -6,8 +6,7 @@
   <h1>Log Viewer</h1>
   <div style="display:flex; align-items:center; gap:1rem;">
     <span class="muted" style="font-size:0.8rem;">Last {{ tail }} lines · {{ log_path }}</span>
-    <a href="/logs" class="btn" style="font-size:0.8rem; padding:0.2rem 0.6rem;"
-       hx-get="/logs" hx-target="body" hx-push-url="false">↺ Refresh</a>
+    <a href="/logs" class="btn" style="font-size:0.8rem; padding:0.2rem 0.6rem;">↺ Refresh</a>
   </div>
 </div>
 
@@ -23,6 +22,12 @@
 {% endif %}
 
 {% if lines %}
-<script>window.scrollTo(0, document.body.scrollHeight);</script>
+<script>
+  // Auto-scroll to the bottom only on the initial page load, not on HTMX refreshes,
+  // so a user who scrolled up to read older lines isn't yanked away.
+  if (!document.documentElement.hasAttribute("hx-request")) {
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+</script>
 {% endif %}
 {% endblock %}

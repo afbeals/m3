@@ -24,9 +24,11 @@
 import argparse
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 
+from app import __version__
 from app.config import load_config
 from app.logging_setup import setup_logging, cleanup_old_files
 from app.plugins.loader import load_plugins
@@ -45,14 +47,28 @@ logger = logging.getLogger(__name__)
 
 _WEBHOOK_TIMEOUT_SECS = 10
 
+# Default per-plugin fetch timeout in seconds. A plugin that never returns would
+# hang the entire run indefinitely without this guard (scheduler max_instances=1
+# means subsequent scheduled runs are silently skipped while the run is stuck).
+# Configurable via PLUGIN_FETCH_TIMEOUT_SECS env var; see config.py.
+_DEFAULT_PLUGIN_FETCH_TIMEOUT = 60
 
-def _fire_webhook(url: str, report) -> None:
+
+def _fire_webhook(url: str, report, *, app_name: str = "pm") -> None:
     """POST a compact JSON run summary to the configured NOTIFY_URL.
 
     Uses a short timeout so a slow/unreachable endpoint doesn't delay the
     completion log line. Non-fatal: any error is logged as a warning only.
     """
+    # Collect first error/scrape-error message for alert systems that display a preview
+    first_error = next(
+        (f.message for f in report.files if f.status == "error" and f.message), None
+    )
+    first_scrape_error = next(
+        (f.message for f in report.files if f.status == "scrape_error" and f.message), None
+    )
     payload = json.dumps({
+        "app_name": app_name,
         "started_at": report.started_at,
         "finished_at": report.finished_at,
         "duration_seconds": report.duration_seconds,
@@ -62,6 +78,8 @@ def _fire_webhook(url: str, report) -> None:
         "scrape_errors": report.scrape_errors,
         "errors": report.errors,
         "total_scanned": report.total_scanned,
+        "first_error": first_error,
+        "first_scrape_error": first_scrape_error,
     })
     try:
         import httpx
@@ -69,11 +87,39 @@ def _fire_webhook(url: str, report) -> None:
             r = client.post(
                 url,
                 content=payload.encode(),
-                headers={"Content-Type": "application/json", "User-Agent": "pm-metadata-agent/1.0"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": f"pm-metadata-agent/{__version__}",
+                },
             )
             logger.info("Webhook notification sent to %s (HTTP %d)", url, r.status_code)
     except Exception as exc:
         logger.warning("Webhook notification failed for %s: %s", url, exc)
+
+
+def _call_plugin_with_timeout(plugin, parsed, timeout_secs: float):
+    """Call plugin.fetch(parsed) in a thread; return result or raise on timeout/error.
+
+    The timeout is a *reporting* boundary: the plugin thread is not killed (Python
+    can't forcibly stop threads), but the run moves on and records a timeout error.
+    """
+    result_holder: list = []
+    exc_holder: list = []
+
+    def _worker():
+        try:
+            result_holder.append(plugin.fetch(parsed))
+        except Exception as exc:
+            exc_holder.append(exc)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=timeout_secs)
+    if t.is_alive():
+        raise TimeoutError(f"plugin fetch exceeded {timeout_secs:.0f}s")
+    if exc_holder:
+        raise exc_holder[0]
+    return result_holder[0] if result_holder else None
 
 
 def run(config, router: Router, dry_run: bool = False) -> None:
@@ -95,13 +141,23 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     if dry_run:
         logger.info("DRY RUN mode — no files or Plex records will be written")
 
-    # Reconnect to Plex at the start of every run (not once at startup) so that
-    # a Plex restart between scheduled runs doesn't leave us with a dead connection.
-    plex_server = connect_plex(config.plex_url, config.plex_token)
-    if plex_server is None:
-        logger.warning("Plex connection failed. Metadata will be written to sidecars only.")
+    # In dry-run mode skip the Plex connection entirely — connecting is a network
+    # side-effect that would produce confusing warnings when the intent is a zero-
+    # impact parse/route test pass.
+    plex_server = None
+    if not dry_run:
+        # Reconnect to Plex at the start of every run (not once at startup) so that
+        # a Plex restart between scheduled runs doesn't leave us with a dead connection.
+        plex_server = connect_plex(config.plex_url, config.plex_token)
+        if plex_server is None:
+            logger.warning("Plex connection failed. Metadata will be written to sidecars only.")
 
     report = RunReport(started_at=datetime.now().isoformat(timespec="seconds"))
+    # Per-run cache for the slow Plex fallback scan. On older Plex versions that
+    # don't support the fast filepath filter, without this cache each file would
+    # trigger a full O(library_size) scan. One dict shared across all push_to_plex
+    # calls reduces the slow path from O(n * library) to O(library + n).
+    plex_item_cache: dict = {}
 
     # Collect all video files that need processing (skips files with existing .nfo unless --force)
     media_files, skipped_count = scan_library(config.library_paths, force=config.force)
@@ -145,9 +201,13 @@ def run(config, router: Router, dry_run: bool = False) -> None:
             ))
             continue
 
-        # Case 4: call the plugin to fetch metadata from the external API
+        # Case 4: call the plugin to fetch metadata from the external API.
+        # A per-plugin timeout prevents a hung plugin from blocking the entire run;
+        # the watchdog thread is not killed (Python limitation) but the run moves on.
         try:
-            result = plugin.fetch(parsed)
+            result = _call_plugin_with_timeout(
+                plugin, parsed, config.plugin_fetch_timeout_secs
+            )
         except ScrapeError as exc:
             # ScrapeError means the site changed its markup or the record is gone —
             # a distinct status so the user can distinguish "my plugin is broken"
@@ -156,7 +216,7 @@ def run(config, router: Router, dry_run: bool = False) -> None:
             report.record(FileResult(path=media.path, status="scrape_error", message=str(exc)))
             continue
         except Exception as exc:
-            logger.exception("Plugin error for %s", media.path)
+            logger.warning("Plugin error for %s: %s", media.path, exc)
             report.record(FileResult(path=media.path, status="error", message=str(exc)))
             continue
 
@@ -198,15 +258,15 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         # Push the same metadata to Plex with field locks so Plex's built-in agent
         # won't overwrite our values on the next scheduled refresh.
         # This is non-fatal: if Plex is unreachable we still have the NFO sidecar.
-        if not dry_run and plex_server is not None:
+        if dry_run:
+            logger.info("[DRY RUN] Would push to Plex for: %s", media.path)
+        elif plex_server is not None:
             try:
-                ok = push_to_plex(plex_server, media.path, result)
+                ok = push_to_plex(plex_server, media.path, result, _fallback_cache=plex_item_cache)
                 if not ok:
                     logger.warning("Plex push returned failure for %s", media.path)
             except Exception as exc:
                 logger.warning("Plex push failed for %s: %s", media.path, exc)
-        elif dry_run and plex_server is not None:
-            logger.info("[DRY RUN] Would push to Plex for: %s", media.path)
 
         report.record(FileResult(path=media.path, status="updated"))
         logger.info("Updated: %s", media.path)
@@ -229,7 +289,7 @@ def run(config, router: Router, dry_run: bool = False) -> None:
         # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
         # failure never aborts the run or prevents the report from being written.
         if config.notify_url:
-            _fire_webhook(config.notify_url, report)
+            _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
     # Delete old log files beyond the retention window (runs regardless of dry_run)
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
@@ -241,11 +301,33 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     )
 
 
-def _validate_paths(config) -> None:
+def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> None:
+    """Remove stale .tmp files left by interrupted atomic writes.
+
+    Atomic writes use .tmp + os.replace(); if the process crashes after
+    creating the .tmp but before the rename, the orphan lingers forever.
+    A 30-minute threshold avoids racing with writes in progress.
+    """
+    import glob
+    cutoff = time.time() - max_age_secs
+    for lib_path in library_paths:
+        for tmp_file in glob.glob(os.path.join(lib_path, "**", "*.tmp"), recursive=True):
+            try:
+                if os.path.getmtime(tmp_file) < cutoff:
+                    os.remove(tmp_file)
+                    logger.info("Removed stale .tmp orphan: %s", tmp_file)
+            except OSError:
+                pass  # race between check and remove is harmless
+
+
+def _validate_paths(config, library_only: bool = False) -> None:
     """
     Check that critical filesystem paths are accessible before the scheduler starts.
     Logs a clear error and raises SystemExit for each fatal misconfiguration so the
     container exits immediately with a useful message rather than silently doing nothing.
+
+    When library_only=True, only library paths are checked (used for --list-unmatched
+    which doesn't need write access to report/log dirs).
     """
     errors: list[str] = []
 
@@ -262,16 +344,17 @@ def _validate_paths(config) -> None:
             "Check that volumes are mounted correctly."
         )
 
-    # report_path and log_path must be writable (create them if absent — they may not exist yet)
-    for path_name, path_val in [("REPORT_PATH", config.report_path), ("LOG_PATH", config.log_path)]:
-        try:
-            os.makedirs(path_val, exist_ok=True)
-            test = os.path.join(path_val, ".write_test")
-            with open(test, "w") as fh:
-                fh.write("")
-            os.remove(test)
-        except OSError as exc:
-            errors.append(f"{path_name} {path_val!r} is not writable: {exc}")
+    if not library_only:
+        # report_path and log_path must be writable (create them if absent — they may not exist yet)
+        for path_name, path_val in [("REPORT_PATH", config.report_path), ("LOG_PATH", config.log_path)]:
+            try:
+                os.makedirs(path_val, exist_ok=True)
+                test = os.path.join(path_val, ".write_test")
+                with open(test, "w") as fh:
+                    fh.write("")
+                os.remove(test)
+            except OSError as exc:
+                errors.append(f"{path_name} {path_val!r} is not writable: {exc}")
 
     for msg in errors:
         logger.error("Startup validation failed: %s", msg)
@@ -309,8 +392,18 @@ def main() -> None:
     # Set up logging before anything else so startup messages are captured
     setup_logging(config.log_path, config.log_level)
 
-    logger.info("pm starting up")
+    logger.info("pm %s starting up", __version__)
     logger.info("Library paths: %s", config.library_paths)
+
+    # --force without --once is almost certainly a mistake: it would re-process every
+    # file on every scheduled run, defeating the purpose of the skip logic. Warn early,
+    # before path validation, so the user sees it regardless of path issues.
+    if args.force and not args.once and not args.list_unmatched:
+        logger.warning(
+            "--force was passed without --once; ignoring --force for scheduled runs. "
+            "Use --once --force to re-process files in a one-shot run."
+        )
+        config.force = False
 
     # Validate the cron schedule before touching the filesystem — a bad expression
     # produces a cryptic APScheduler traceback otherwise.
@@ -322,9 +415,14 @@ def main() -> None:
         )
         raise SystemExit(1)
 
-    # Validate critical paths before starting the scheduler so misconfigurations
-    # fail immediately with a clear message rather than silently producing empty runs.
-    _validate_paths(config)
+    # --list-unmatched only needs library paths to exist; it doesn't write reports or
+    # logs, so skip the write-path validation that would block a diagnostic scan.
+    if args.list_unmatched:
+        _validate_paths(config, library_only=True)
+    else:
+        # Validate critical paths before starting the scheduler so misconfigurations
+        # fail immediately with a clear message rather than silently producing empty runs.
+        _validate_paths(config)
 
     # Discover plugins from the mounted plugin directory
     registry = load_plugins(config.plugin_dir)
@@ -352,6 +450,9 @@ def main() -> None:
             print("All files matched a plugin.")
         return
 
+    # Sweep any stale .tmp orphans from previous interrupted writes before running.
+    _sweep_tmp_orphans(config.library_paths)
+
     run_state = RunState()
 
     # Wrap run() so the scheduler and --once path call the same function.
@@ -368,16 +469,6 @@ def main() -> None:
         # Run immediately and exit — useful for testing or docker exec one-shots
         _run()
         return
-
-    # --force only applies to the single --once run, not to recurring scheduled runs.
-    # Reset it here so if someone mistakenly passes --force without --once, the
-    # scheduler doesn't re-process every file on every nightly run.
-    if args.force:
-        logger.warning(
-            "--force was passed without --once; ignoring --force for scheduled runs. "
-            "Use --once --force to re-process files in a one-shot run."
-        )
-        config.force = False
 
     # Build the scheduler (registers SIGUSR1 handler, adds cron job).
     # We build it before starting the web server so both share the same instance.

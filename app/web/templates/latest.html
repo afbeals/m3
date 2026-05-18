@@ -5,21 +5,24 @@
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Latest Run</h1>
   <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
-    <form method="POST" action="/trigger/run">
-      <button type="submit" class="primary"
-              hx-post="/trigger/run" hx-target="body" hx-push-url="/"
-              onclick="this.disabled=true; this.textContent='Queued…'">
-        ▶ Run now
-      </button>
-    </form>
+    <button type="button" class="primary"
+            hx-post="/trigger/run" hx-target="#latest-card" hx-select="#latest-card">
+      ▶ Run now
+    </button>
     {% if next_run %}
     <span class="muted" style="font-size:0.75rem;">Next run: {{ next_run.strftime("%Y-%m-%d %H:%M") }}</span>
     {% endif %}
   </div>
 </div>
 
+{% if request.query_params.get("msg") == "already_running" %}
+<div class="card" style="border-color:var(--yellow); margin-bottom:0.75rem;">
+  <span class="muted">⚠ A run is already in progress. Wait for it to finish before triggering another.</span>
+</div>
+{% endif %}
+
 {% if latest %}
-<div class="card">
+<div id="latest-card" class="card">
   <div class="muted" style="margin-bottom:0.75rem;">
     Started: {{ latest.started_at or "—" }}
     {% set ago = time_ago(latest.started_at) %}{% if ago %}<span style="color:var(--dim); font-size:0.8rem;">({{ ago }})</span>{% endif %}
@@ -78,10 +81,10 @@
   </p>
 </div>
 
-<!-- Auto-refresh every 10s using HTMX to pull the latest run block -->
-<div hx-get="/" hx-trigger="every 10s" hx-target="body" hx-push-url="false" style="display:none"></div>
+<!-- Auto-refresh every 10s: target only the latest-card so focus and scroll are preserved -->
+<div hx-get="/" hx-trigger="every 10s" hx-target="#latest-card" hx-select="#latest-card" hx-push-url="false" style="display:none"></div>
 
 {% else %}
-<div class="card muted">No runs found yet. Click "Run now" to start the first pass.</div>
+<div id="latest-card" class="card muted">No runs found yet. Click "Run now" to start the first pass.</div>
 {% endif %}
 {% endblock %}

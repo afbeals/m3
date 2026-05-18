@@ -14,7 +14,7 @@
       <th>Started</th>
       <th>Duration</th>
       <th>Updated</th>
-      <th>% ok</th>
+      <th>Updated %</th>
       <th>Scrape errors</th>
       <th>Errors</th>
       <th>Unmatched</th>
@@ -26,16 +26,18 @@
   <tbody>
     {% for run in runs %}
     {% set total_scanned = run.total_scanned or 0 %}
-    {% set success_pct = ((run.updated / total_scanned * 100) | int) if total_scanned > 0 else None %}
+    {% set skipped = run.get('skipped') or 0 %}
+    {% set processable = total_scanned - skipped %}
+    {% set success_pct = ((run.updated / processable * 100) | int) if processable > 0 else None %}
     {% set ago = time_ago(run.started_at) %}
     <tr>
       <td>{{ run.started_at or "—" }}{% if ago %} <span class="muted" style="font-size:0.75rem;">({{ ago }})</span>{% endif %}</td>
       <td class="muted">{{ fmt_duration(run.get('duration_seconds')) }}</td>
-      <td class="{% if run.updated > 0 %}stat-value green{% endif %}">{{ run.updated }}</td>
+      <td class="{% if run.updated > 0 %}stat-value green{% endif %}">{% if run.updated > 0 %}✓ {% endif %}{{ run.updated }}</td>
       <td class="muted">{{ success_pct ~ "%" if success_pct is not none else "—" }}</td>
-      <td class="{% if run.scrape_errors > 0 %}stat-value yellow{% endif %}">{{ run.scrape_errors }}</td>
-      <td class="{% if run.errors > 0 %}stat-value red{% endif %}">{{ run.errors }}</td>
-      <td class="{% if run.unmatched > 0 %}stat-value yellow{% endif %}">{{ run.unmatched }}</td>
+      <td class="{% if run.scrape_errors > 0 %}stat-value yellow{% endif %}">{% if run.scrape_errors > 0 %}⚠ {% endif %}{{ run.scrape_errors }}</td>
+      <td class="{% if run.errors > 0 %}stat-value red{% endif %}">{% if run.errors > 0 %}✗ {% endif %}{{ run.errors }}</td>
+      <td class="{% if run.unmatched > 0 %}stat-value yellow{% endif %}">{% if run.unmatched > 0 %}⚠ {% endif %}{{ run.unmatched }}</td>
       {% set add_form_cnt = run.get('add_form') or 0 %}
       <td class="{% if add_form_cnt > 0 %}stat-value{% endif %} muted">{{ add_form_cnt }}</td>
       <td class="muted">{{ total_scanned }}</td>

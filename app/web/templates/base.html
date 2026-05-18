@@ -28,6 +28,6 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer>{{ app_name }} — Plex Metadata Agent</footer>
+  <footer>{{ app_name }} — Plex Metadata Agent{% if version %} · v{{ version }}{% endif %}</footer>
 </body>
 </html>

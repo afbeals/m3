@@ -40,7 +40,9 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     # Jinja2 templates
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
     templates = Jinja2Templates(directory=templates_dir)
+    from app import __version__
     templates.env.globals["app_name"] = config.app_name
+    templates.env.globals["version"] = __version__
 
     # Defined inside create_app (rather than module-level) so it stays with the
     # other Jinja2 globals that are registered here. It has no external dependencies,

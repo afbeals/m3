@@ -483,3 +483,120 @@ def test_run_detail_shows_inline_retry_for_unmatched_rows():
         with TestClient(app) as client:
             r = client.get("/runs/run_20250515_030000.json")
     assert "inline-form" in r.text
+
+
+# ---------------------------------------------------------------------------
+# /trigger/run — already-running flash message
+# ---------------------------------------------------------------------------
+
+def test_trigger_run_redirects_with_flash_when_already_running():
+    """When a run is in progress the dashboard must redirect with ?msg=already_running."""
+    from app.runstate import RunState
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        run_state = RunState()
+        run_state.start()
+        app = create_app(config, {}, scheduler, run_fn, run_state)
+        with TestClient(app, follow_redirects=False) as client:
+            r = client.post("/trigger/run")
+        run_state.stop()
+    assert r.status_code == 303
+    assert "already_running" in r.headers.get("location", "")
+
+
+def test_trigger_run_does_not_schedule_when_already_running():
+    from app.runstate import RunState
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        run_state = RunState()
+        run_state.start()
+        app = create_app(config, {}, scheduler, run_fn, run_state)
+        with TestClient(app) as client:
+            client.post("/trigger/run")
+        run_state.stop()
+    scheduler.add_job.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# /trigger/file — path scope validation
+# ---------------------------------------------------------------------------
+
+def test_trigger_file_rejects_path_outside_library():
+    """Paths that don't resolve under a configured library path must return 400."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a real file, but configure the app with a *different* library path
+        outside_dir = tempfile.mkdtemp()
+        try:
+            fake_file = os.path.join(outside_dir, "evil.mp4")
+            open(fake_file, "w").close()
+
+            config = _make_config(tmpdir)
+            config.library_paths = [tmpdir]  # library is tmpdir, file is in outside_dir
+            app = create_app(config, {}, MagicMock(), MagicMock())
+            with TestClient(app) as client:
+                r = client.post("/trigger/file", data={"file_path": fake_file})
+        finally:
+            import shutil
+            shutil.rmtree(outside_dir, ignore_errors=True)
+    assert r.status_code == 400
+
+
+def test_trigger_file_accepts_path_inside_library():
+    """A valid file inside the configured library path must not return 400/403."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        real_file = os.path.join(tmpdir, "valid.mp4")
+        open(real_file, "w").close()
+
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]
+        app = create_app(config, {}, MagicMock(), MagicMock())
+        with TestClient(app, follow_redirects=True) as client:
+            r = client.post("/trigger/file", data={"file_path": real_file})
+    # Should not return 400 (may be 200 or 303 after the thread is started)
+    assert r.status_code != 400
+
+
+# ---------------------------------------------------------------------------
+# /trigger/file — per-path coalescing (409 when already in flight)
+# ---------------------------------------------------------------------------
+
+def test_trigger_file_returns_409_when_already_processing():
+    """Concurrent requests for the same path must receive 409 after the first."""
+    import app.web.routes as routes_module
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        real_file = os.path.join(tmpdir, "dup.mp4")
+        open(real_file, "w").close()
+
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]
+        app = create_app(config, {}, MagicMock(), MagicMock())
+
+        real_path = os.path.realpath(real_file)
+        # Manually acquire the per-path lock to simulate a running process
+        lock = routes_module._get_file_lock(real_path)
+        lock.acquire()
+        try:
+            with TestClient(app) as client:
+                r = client.post("/trigger/file", data={"file_path": real_file})
+        finally:
+            lock.release()
+    assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# /healthz — version field
+# ---------------------------------------------------------------------------
+
+def test_healthz_returns_version():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/healthz")
+    data = r.json()
+    assert "version" in data
+    assert data["version"]  # must be non-empty

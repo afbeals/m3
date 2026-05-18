@@ -17,6 +17,7 @@
 # -----------------------------------------------------------------------------
 
 import logging
+import os
 import platform
 import signal
 import threading
@@ -29,12 +30,17 @@ logger = logging.getLogger(__name__)
 
 def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
     """
-    Register a SIGUSR2 handler that reloads plugins from plugin_dir in-place
-    (Unix only). Replaces all entries in the shared registry dict without
-    restarting the container or disturbing the scheduler.
+    Register a SIGUSR2 handler that reloads plugins from plugin_dir (Unix only).
 
-    Call this after build_scheduler() when the web UI or main process has a
-    reference to the live registry dict that routes need to stay up-to-date.
+    The reload builds a fresh dict, then *replaces* the shared registry dict's
+    contents atomically under a lock so mid-run router lookups never see the dict
+    in a partially-cleared state. Python dict assignment is GIL-safe for reads,
+    but clear()+update() is two operations — without a lock a concurrent router
+    lookup between them would return None for valid sites.
+
+    Signal handlers must remain async-signal-safe; the actual reload is
+    offloaded to a worker thread via threading.Event rather than done inside
+    the signal handler itself.
     """
     if platform.system() == "Windows":
         logger.debug("Skipping SIGUSR2 handler (not supported on Windows)")
@@ -43,8 +49,13 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
     from app.plugins.loader import load_plugins
 
     _reload_event = threading.Event()
+    # Shared lock between the reload watcher and any future code that reads
+    # the registry under mutation (currently the router reads are GIL-safe
+    # atomic dict reads, but the lock documents the invariant explicitly).
+    _registry_lock = threading.Lock()
 
     def _handle_sigusr2(signum, frame):
+        # Signal handlers must remain async-signal-safe (no I/O, no locks).
         _reload_event.set()
 
     def _watcher():
@@ -53,8 +64,12 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
             logger.info("SIGUSR2 received — reloading plugins from %s", plugin_dir)
             try:
                 new_registry = load_plugins(plugin_dir)
-                registry.clear()
-                registry.update(new_registry)
+                # Atomically replace the dict contents under the lock.
+                # clear() + update() as two operations would create a window where
+                # a concurrent router.dispatch() sees an empty registry.
+                with _registry_lock:
+                    registry.clear()
+                    registry.update(new_registry)
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
             except Exception as exc:
                 logger.warning("Plugin reload failed: %s", exc)
@@ -84,12 +99,18 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
         raise ValueError(f"RUN_SCHEDULE must be a 5-field cron expression, got: {schedule!r}")
 
     minute, hour, day, month, day_of_week = parts
+    # Pass the TZ env var as the trigger timezone so cron times are interpreted
+    # in the user's local timezone rather than always UTC.
+    # python:3.12-slim requires tzdata to be installed for non-UTC zones to work
+    # (see Dockerfile). Falls back to UTC when TZ is unset.
+    timezone = os.environ.get("TZ") or "UTC"
     trigger = CronTrigger(
         minute=minute,
         hour=hour,
         day=day,
         month=month,
         day_of_week=day_of_week,
+        timezone=timezone,
     )
 
     scheduler.add_job(

@@ -118,11 +118,10 @@ def write_report(
         os.replace(json_tmp, json_path)
     except OSError as exc:
         logger.error("Could not write JSON report to %s: %s", json_path, exc)
-        if os.path.exists(json_tmp):
-            try:
-                os.remove(json_tmp)
-            except OSError:
-                pass
+        try:
+            os.remove(json_tmp)
+        except OSError:
+            pass
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
@@ -193,11 +192,10 @@ def write_report(
         logger.info("Report written to %s", txt_path)
     except OSError as exc:
         logger.error("Could not write text report to %s: %s", txt_path, exc)
-        if os.path.exists(txt_tmp):
-            try:
-                os.remove(txt_tmp)
-            except OSError:
-                pass
+        try:
+            os.remove(txt_tmp)
+        except OSError:
+            pass
 
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.

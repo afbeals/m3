@@ -115,7 +115,7 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
 | Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time and hours elapsed |
 
-**Run Now** — triggers an immediate run without restarting the container.
+**Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect.
 
 **Inline retry** — on the run-detail page, any `error`, `scrape_error`, or `unmatched` row has a
 ↺ button that re-queues that single file for immediate reprocessing.

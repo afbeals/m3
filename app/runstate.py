@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 class RunState:
@@ -20,6 +23,10 @@ class RunState:
 
     def start(self) -> None:
         with self._lock:
+            if self._running:
+                # Guard against double-start from concurrent /trigger/run or signal races.
+                logger.warning("RunState.start() called while already running; ignoring")
+                return
             self._running = True
             self._started_at = datetime.now(timezone.utc)
 

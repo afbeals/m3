@@ -181,3 +181,27 @@ def test_aggregate_unmatched_ignores_non_unmatched_statuses():
 
     assert len(result) == 1
     assert result[0]["path"] == "/media/bad.mp4"
+
+
+def test_aggregate_unmatched_cache_invalidated_on_deletion():
+    """Deleting a report file must invalidate the aggregate_unmatched cache so
+    the deleted file's entries no longer appear in subsequent calls."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        run_file = os.path.join(tmpdir, "run_20250101_030000.json")
+        _write_run(tmpdir, "run_20250101_030000.json", {
+            "started_at": "2025-01-01T03:00:00", "updated": 0,
+            "files": [{"path": "/media/gone.mp4", "status": "unmatched", "message": ""}],
+        })
+
+        # Warm the cache
+        result_before = aggregate_unmatched(tmpdir)
+        assert any(e["path"] == "/media/gone.mp4" for e in result_before)
+
+        # Delete the report file — the cache key includes file_count so this
+        # must produce a cache miss on the next call
+        os.remove(run_file)
+
+        result_after = aggregate_unmatched(tmpdir)
+        assert not any(e["path"] == "/media/gone.mp4" for e in result_after), (
+            "Cache was not invalidated after report file was deleted"
+        )

@@ -113,10 +113,15 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
             tree.write(fh, encoding="utf-8", xml_declaration=False)
         os.replace(tmp_path, media.nfo_path)
     except Exception:
-        # Clean up the temp file if anything went wrong before the rename
-        if os.path.exists(tmp_path):
+        # Clean up the temp file if anything went wrong before the rename.
+        # Use try/except rather than os.path.exists() + os.remove() to avoid
+        # a TOCTOU race; also prevents the cleanup error from masking the
+        # original exception.
+        try:
             os.remove(tmp_path)
-        raise
+        except FileNotFoundError:
+            pass
+        raise  # re-raise so the caller's status bucket reflects the failure
 
     logger.info("Wrote NFO: %s", media.nfo_path)
 
@@ -132,45 +137,54 @@ def _download_image(url: str, dest_path: str) -> bool:
     # One client for all attempts — reuses the connection across retries
     with httpx.Client(follow_redirects=True, timeout=30) as client:
         def _attempt() -> bool:
-            r = client.get(url)
-            r.raise_for_status()
+            # Stream the response so we can abort mid-download if the body
+            # exceeds the size cap — avoids buffering hundreds of MB for a
+            # misconfigured or malicious URL before discovering it's oversized.
+            with client.stream("GET", url) as r:
+                r.raise_for_status()
 
-            # Reject non-image content types to avoid writing HTML error pages to disk
-            content_type = r.headers.get("content-type", "")
-            if not content_type or not content_type.startswith("image/"):
-                raise ValueError(
-                    f"Unexpected content-type {content_type!r} for image URL {url}"
-                )
+                # Reject non-image content types to avoid writing HTML error pages to disk
+                content_type = r.headers.get("content-type", "")
+                if not content_type or not content_type.startswith("image/"):
+                    raise ValueError(
+                        f"Unexpected content-type {content_type!r} for image URL {url}"
+                    )
 
-            # Check Content-Length header first to avoid downloading a huge body
-            # before discovering it's oversized — important for misconfigured or
-            # malicious URLs that could send hundreds of MB.
-            cl = r.headers.get("content-length")
-            if cl is not None:
-                try:
-                    if int(cl) > _DOWNLOAD_MAX_BYTES:
+                # Content-Length pre-flight: reject before reading a single byte.
+                # Parse int() in its own try/except so a malformed header value
+                # (raises ValueError/OverflowError) doesn't silently swallow
+                # the intentional raise below.
+                cl = r.headers.get("content-length")
+                if cl is not None:
+                    try:
+                        cl_int = int(cl)
+                    except (ValueError, OverflowError):
+                        cl_int = None  # malformed header; fall through to streaming check
+                    if cl_int is not None and cl_int > _DOWNLOAD_MAX_BYTES:
                         raise ValueError(
-                            f"Image Content-Length ({cl} bytes) exceeds limit from {url}"
+                            f"Image Content-Length ({cl_int} bytes) exceeds limit from {url}"
                         )
-                except (ValueError, OverflowError):
-                    pass  # malformed Content-Length; fall through to body check
 
-            # Final size check on the actual downloaded body
-            if len(r.content) > _DOWNLOAD_MAX_BYTES:
-                raise ValueError(
-                    f"Image response too large ({len(r.content)} bytes) from {url}"
-                )
-
-            # Write atomically: .tmp then os.replace() so dest_path is never partial
-            tmp_path = dest_path + ".tmp"
-            try:
-                with open(tmp_path, "wb") as fh:
-                    fh.write(r.content)
-                os.replace(tmp_path, dest_path)
-            except Exception:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-                raise
+                # Write atomically: accumulate chunks into .tmp, abort if size cap
+                # exceeded mid-stream, then os.replace() into final path.
+                tmp_path = dest_path + ".tmp"
+                try:
+                    received = 0
+                    with open(tmp_path, "wb") as fh:
+                        for chunk in r.iter_bytes(chunk_size=65536):
+                            received += len(chunk)
+                            if received > _DOWNLOAD_MAX_BYTES:
+                                raise ValueError(
+                                    f"Image stream exceeded {_DOWNLOAD_MAX_BYTES} bytes from {url}"
+                                )
+                            fh.write(chunk)
+                    os.replace(tmp_path, dest_path)
+                except Exception:
+                    try:
+                        os.remove(tmp_path)
+                    except FileNotFoundError:
+                        pass
+                    raise
 
             logger.info("Downloaded image: %s", dest_path)
             return True

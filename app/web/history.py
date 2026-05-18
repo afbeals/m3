@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 _MAX_RUNS = 100  # hard cap: prevents unbounded memory use on large history directories
 
 # Cache for aggregate_unmatched: keyed by (report_path, max_runs).
-# Invalidated whenever the newest report file's mtime changes (i.e. a new run completed).
-_unmatched_cache: dict[tuple, tuple] = {}  # key → (mtime, result)
+# Invalidated whenever (newest_mtime, file_count) changes — i.e. a new run completed
+# OR an old report was deleted. max_runs is part of the outer key so a call with a
+# different limit doesn't return a stale narrower/wider set from a prior call.
+_unmatched_cache: dict[tuple, tuple] = {}  # key → ((newest_mtime, file_count), result)
 
 
 def list_runs(report_path: str) -> list[dict]:
@@ -86,22 +88,28 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
     """
     cache_key = (report_path, max_runs)
 
-    # Determine the mtime of the newest report file to use as a cache key
+    # Determine both the mtime of the newest report file and the total count of
+    # report files, using both as the cache invalidation key. Using only the newest
+    # mtime would miss deletions: if an old report is deleted (e.g. by the retention
+    # sweep or manually) without a new run completing, the cache would return stale
+    # aggregates that still include the deleted file's unmatched entries.
     newest_mtime: float | None = None
+    file_count: int = 0
     if os.path.isdir(report_path):
         try:
-            newest = next(
-                (f for f in sorted(os.listdir(report_path), reverse=True)
-                 if f.startswith("run_") and f.endswith(".json")),
-                None,
+            report_files = sorted(
+                (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")),
+                reverse=True,
             )
-            if newest:
-                newest_mtime = os.path.getmtime(os.path.join(report_path, newest))
+            file_count = len(report_files)
+            if report_files:
+                newest_mtime = os.path.getmtime(os.path.join(report_path, report_files[0]))
         except OSError:
             pass
 
+    invalidation_key = (newest_mtime, file_count)
     cached = _unmatched_cache.get(cache_key)
-    if cached is not None and cached[0] == newest_mtime:
+    if cached is not None and cached[0] == invalidation_key:
         return cached[1]
 
     summaries = list_runs(report_path)[:max_runs]
@@ -141,5 +149,5 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
                 entry["last_message"] = f.get("message", "")
 
     result = sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
-    _unmatched_cache[cache_key] = (newest_mtime, result)
+    _unmatched_cache[cache_key] = (invalidation_key, result)
     return result

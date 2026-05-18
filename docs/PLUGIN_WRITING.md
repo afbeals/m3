@@ -103,6 +103,16 @@ def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
     return None
 ```
 
+**Return / raise contract:**
+
+| What `fetch()` does | Status in run report | Notes |
+|---|---|---|
+| Returns a `MetadataResult` | `updated` | Normal success path |
+| Returns `None` | `unmatched` | Record not found — do not raise |
+| Raises `ScrapeError` | `scrape_error` | Network / HTTP error from site |
+| Raises `SelectorMissingError` | `scrape_error` | CSS selector broke after site redesign |
+| Raises anything else | `error` | Unexpected plugin crash |
+
 Return `None` if the API returns no usable record. Do **not** raise — returning
 `None` is the contract for "not found". Only raise (or let exceptions propagate)
 for actual errors (network failure, unexpected API response shape), which will be
@@ -137,6 +147,8 @@ return MetadataResult(
 `ValueError` immediately so you know your plugin has a mapping problem.
 
 ### Step 5 — Reading API keys
+
+> **Note:** API keys are only needed for JSON API plugins. HTML scraping plugins typically fetch public pages without authentication and can skip this step.
 
 Always read API keys inside the method that needs them — **not** at module level:
 

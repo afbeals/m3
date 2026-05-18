@@ -27,6 +27,7 @@ def retry_with_backoff(
     exception if all attempts are exhausted.
 
     reraise_on: tuple of exception types to re-raise immediately without retrying.
+    Subclasses of types in reraise_on are also re-raised (Python isinstance semantics).
 
     Note: uses time.sleep() which blocks the calling thread. This is intentional
     for pm's single-threaded run() path. Do not call from async code.

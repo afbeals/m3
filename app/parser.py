@@ -28,6 +28,7 @@ _SCENE_ID_RE = re.compile(r"^\d+$")
 
 
 def _normalise_date(token: str) -> str | None:
+    # All YY dates are interpreted as 20YY; this codebase has no pre-2000 content.
     for pat in _DATE_PATTERNS:
         m = pat.match(token.strip())
         if m:
@@ -169,10 +170,10 @@ def _parse_general_form(stem: str) -> ParsedFilename:
     def _looks_like_url_slug(tok: str) -> bool:
         # URL slugs are hyphen-separated, space-free tokens (e.g. "eager-hands",
         # "Stranger-Than-Fiction"). A token with spaces is a title or actor name,
-        # not a slug — even if it ends in a digit (e.g. "Chapter 5").
+        # not a slug — even if it ends in a digit (e.g. "Chapter 5" → NOT a slug).
         # The only exception is a slug with an embedded numeric ID at the end
-        # separated by a space (e.g. "Stranger-Than-Fiction 77675"), which is
-        # still slug-like because it contains hyphens and no internal title words.
+        # separated by a space (e.g. "Stranger-Than-Fiction 77675" → slug+id),
+        # which is still slug-like because it contains hyphens and no title words.
         if " " not in tok:
             return True
         # Space-containing token: treat as slug only if it has hyphens (slug part)

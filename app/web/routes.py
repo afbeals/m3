@@ -38,21 +38,36 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Per-path lock set for /trigger/file coalescing.
+# Prevents a user from spamming the ↺ button and spawning duplicate threads
+# for the same file. Entries are added on first access and never removed (the
+# set of media files is bounded and the lock objects are tiny).
+_file_trigger_locks: dict[str, threading.Lock] = {}
+_file_trigger_locks_guard = threading.Lock()
+
+
+def _get_file_lock(path: str) -> threading.Lock:
+    with _file_trigger_locks_guard:
+        if path not in _file_trigger_locks:
+            _file_trigger_locks[path] = threading.Lock()
+        return _file_trigger_locks[path]
+
 
 # ---------------------------------------------------------------------------
 # Health check — used by Docker HEALTHCHECK and Unraid
 # ---------------------------------------------------------------------------
 
 @router.get("/healthz")
-async def healthz(request: Request, verbose: bool = False):
+def healthz(request: Request, verbose: bool = False):
     """Basic health check used by Docker HEALTHCHECK.
 
     Add ?verbose=1 for an extended response including last run time and
     hours since the last run — useful for uptime monitors (e.g. Uptime Kuma)
     that can alert when runs stop happening.
     """
+    from app import __version__
     if not verbose:
-        return {"status": "ok"}
+        return {"status": "ok", "version": __version__}
 
     runs = list_runs(request.app.state.config.report_path)
     last_run = runs[0].get("started_at") if runs else None
@@ -71,6 +86,7 @@ async def healthz(request: Request, verbose: bool = False):
 
     return JSONResponse({
         "status": "ok",
+        "version": __version__,
         "last_run": last_run,
         "hours_since_last_run": hours_since,
         "run_count": len(runs),
@@ -82,7 +98,7 @@ async def healthz(request: Request, verbose: bool = False):
 # ---------------------------------------------------------------------------
 
 @router.get("/api/status", response_class=HTMLResponse)
-async def run_status(request: Request):
+def run_status(request: Request):
     run_state = request.app.state.run_state
     if run_state is not None:
         snap = run_state.snapshot()
@@ -100,7 +116,7 @@ async def run_status(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+def dashboard(request: Request):
     runs = list_runs(request.app.state.config.report_path)
     latest = runs[0] if runs else None
 
@@ -126,7 +142,7 @@ _RUNS_PAGE_SIZE = 25
 
 
 @router.get("/runs", response_class=HTMLResponse)
-async def run_history(request: Request, page: int = 1):
+def run_history(request: Request, page: int = 1):
     all_runs = list_runs(request.app.state.config.report_path)
     total = len(all_runs)
     page = max(1, page)
@@ -147,7 +163,7 @@ async def run_history(request: Request, page: int = 1):
 
 
 @router.get("/runs/{filename}", response_class=HTMLResponse)
-async def run_detail(request: Request, filename: str, status: str = ""):
+def run_detail(request: Request, filename: str, status: str = ""):
     run = get_run(request.app.state.config.report_path, filename)
     if run is None:
         return request.app.state.templates.TemplateResponse(
@@ -170,7 +186,13 @@ async def run_detail(request: Request, filename: str, status: str = ""):
     return request.app.state.templates.TemplateResponse(
         request,
         "run_detail.html",
-        {"run": run, "files": files, "status_filter": status, "status_counts": status_counts},
+        {
+            "run": run,
+            "files": files,
+            "all_files_count": len(all_files),
+            "status_filter": status,
+            "status_counts": status_counts,
+        },
     )
 
 
@@ -179,7 +201,7 @@ async def run_detail(request: Request, filename: str, status: str = ""):
 # ---------------------------------------------------------------------------
 
 @router.get("/unmatched", response_class=HTMLResponse)
-async def unmatched_digest(request: Request, q: str = ""):
+def unmatched_digest(request: Request, q: str = ""):
     entries = aggregate_unmatched(request.app.state.config.report_path)
     query = q.strip().lower()
     if query:
@@ -196,7 +218,7 @@ async def unmatched_digest(request: Request, q: str = ""):
 # ---------------------------------------------------------------------------
 
 @router.get("/plugins", response_class=HTMLResponse)
-async def plugin_list(request: Request):
+def plugin_list(request: Request):
     registry = request.app.state.plugin_registry
     plugins = []
     seen = set()
@@ -224,13 +246,19 @@ async def plugin_list(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.get("/config", response_class=HTMLResponse)
-async def config_page(request: Request):
+def config_page(request: Request):
     cfg = request.app.state.config
+    # Annotate each library path with its current existence status so the user
+    # can immediately spot missing mounts when debugging "0 files scanned".
+    lib_paths_annotated = ", ".join(
+        f"{p} {'✓' if os.path.isdir(p) else '✗ (missing)'}"
+        for p in cfg.library_paths
+    )
     entries = [
         ("App name",               "APP_NAME",               cfg.app_name),
         ("Plex URL",               "PLEX_URL",               cfg.plex_url),
         ("Plex token",             "PLEX_TOKEN",             "***" if cfg.plex_token else "(not set)"),
-        ("Library paths",          "LIBRARY_PATHS",          ", ".join(cfg.library_paths)),
+        ("Library paths",          "LIBRARY_PATHS",          lib_paths_annotated),
         ("Plugin directory",       "PLUGIN_DIR",             cfg.plugin_dir),
         ("Report path",            "REPORT_PATH",            cfg.report_path),
         ("Log path",               "LOG_PATH",               cfg.log_path),
@@ -256,7 +284,7 @@ async def config_page(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/trigger/reload")
-async def trigger_reload(request: Request):
+def trigger_reload(request: Request):
     """Reload plugins in-place by sending SIGUSR2 to the current process (Unix only).
 
     On Windows this is a no-op — the user must restart the container instead.
@@ -276,8 +304,13 @@ async def trigger_reload(request: Request):
 
 
 @router.post("/trigger/run")
-async def trigger_run(request: Request):
+def trigger_run(request: Request):
     """Schedule an immediate run then redirect to the dashboard."""
+    run_state = request.app.state.run_state
+    if run_state is not None and run_state.snapshot()["running"]:
+        # Don't queue a second run; redirect back with a flash message so the
+        # user gets visible feedback instead of a silent no-op.
+        return RedirectResponse(url="/?msg=already_running", status_code=303)
     scheduler = request.app.state.scheduler
     run_fn = request.app.state.run_fn
     try:
@@ -302,50 +335,88 @@ async def trigger_file(request: Request):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
+    # Security: only allow re-processing files that live inside a configured
+    # library path. Prevents the form from being used to trigger metadata
+    # writes on arbitrary system files outside the media directories.
+    config = request.app.state.config
+    real_path = os.path.realpath(file_path)
+    allowed = any(
+        os.path.commonpath([real_path, os.path.realpath(lib)]) == os.path.realpath(lib)
+        for lib in config.library_paths
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File is not inside a configured library path: {file_path}",
+        )
+
+    # Coalesce concurrent requests for the same file path: if a thread is already
+    # processing this file, return 409 rather than spawning a duplicate thread that
+    # would race on NFO writes and spam the source API.
+    file_lock = _get_file_lock(real_path)
+    if not file_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail=f"Already processing: {file_path}")
+
     stem = os.path.splitext(os.path.basename(file_path))[0]
     dirpath = os.path.dirname(file_path)
     nfo_path = os.path.join(dirpath, f"{stem}.nfo")
     media = MediaFile(path=file_path, stem=stem, nfo_path=nfo_path)
 
-    config = request.app.state.config
     registry = request.app.state.plugin_registry
     router_obj = Router(registry)
 
     def _run_single():
-        # Bypasses the normal run() path deliberately: no library scan, no run
-        # report, no rate limiting. This is a single user-initiated re-process
-        # triggered from the run-detail page — the full pipeline overhead is not
-        # needed and would produce misleading report entries.
-        plex_server = connect_plex(config.plex_url, config.plex_token)
-        parsed, plugin = router_obj.dispatch(media.stem)
-        if parsed is None or plugin is None:
-            logger.warning("trigger_file: could not route %s", file_path)
-            return
         try:
-            result = plugin.fetch(parsed)
-        except Exception as exc:
-            logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
-            return
-        if result is None:
-            logger.warning("trigger_file: plugin returned no result for %s", file_path)
-            return
-        try:
-            write_nfo(media, result)
-            write_images(media, result)
-        except Exception as exc:
-            logger.warning("trigger_file: write error for %s: %s", file_path, exc)
-            return
-        if plex_server is not None:
+            # Bypasses the normal run() path deliberately: no library scan, no run
+            # report, no rate limiting. This is a single user-initiated re-process
+            # triggered from the run-detail page — the full pipeline overhead is not
+            # needed and would produce misleading report entries.
+            plex_server = connect_plex(config.plex_url, config.plex_token)
+            parsed, plugin = router_obj.dispatch(media.stem)
+            if parsed is None or plugin is None:
+                logger.warning("trigger_file: could not route %s", file_path)
+                return
             try:
-                push_to_plex(plex_server, file_path, result)
+                result = plugin.fetch(parsed)
             except Exception as exc:
-                logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
-        logger.info("trigger_file: reprocessed %s", file_path)
+                logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
+                return
+            if result is None:
+                logger.warning("trigger_file: plugin returned no result for %s", file_path)
+                return
+            try:
+                write_nfo(media, result)
+                write_images(media, result)
+            except Exception as exc:
+                logger.warning("trigger_file: write error for %s: %s", file_path, exc)
+                return
+            if plex_server is not None:
+                try:
+                    push_to_plex(plex_server, file_path, result)
+                except Exception as exc:
+                    logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
+            logger.info("trigger_file: reprocessed %s", file_path)
+        finally:
+            # Always release the per-path lock so subsequent requests can proceed.
+            file_lock.release()
 
     # daemon=True so the thread doesn't keep the process alive if the container
     # is stopped mid-reprocess; the write is idempotent so an interrupted run is safe.
     thread = threading.Thread(target=_run_single, daemon=True, name="pm-trigger-file")
     thread.start()
+
+    # HTMX inline retry (HX-Request header present): return a "queued" badge
+    # that replaces just the action cell on the row, then fades out. Regular
+    # form POSTs (no HTMX) fall back to the full-page redirect so the behaviour
+    # is unchanged for non-JS environments.
+    if request.headers.get("HX-Request"):
+        import hashlib
+        slot_id = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "partials/queued_badge.html",
+            {"slot_id": slot_id},
+        )
 
     return RedirectResponse(url="/", status_code=303)
 
@@ -358,7 +429,7 @@ _LOG_TAIL_LINES = 200
 
 
 @router.get("/logs", response_class=HTMLResponse)
-async def log_viewer(request: Request):
+def log_viewer(request: Request):
     log_path = os.path.join(request.app.state.config.log_path, "pm.log")
     lines: list[str] = []
     error: str | None = None
