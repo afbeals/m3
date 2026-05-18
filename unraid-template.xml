@@ -69,6 +69,10 @@
           Description="When to run the metadata agent. Default: 3am every day. Cron format: minute hour day month weekday."
           Type="Variable" Display="always" Required="false" Mask="false"/>
 
+  <Config Name="Timezone" Target="TZ" Default=""
+          Description="Container timezone for cron scheduling. Leave blank for UTC. Examples: America/New_York, Europe/London, Australia/Sydney. Without this set, RUN_SCHEDULE times are in UTC."
+          Type="Variable" Display="always" Required="false" Mask="false"/>
+
   <!-- ── Logging ──────────────────────────────────────────────────── -->
   <Config Name="Log level" Target="LOG_LEVEL" Default="INFO"
           Description="Logging verbosity: DEBUG, INFO, WARNING, ERROR."
@@ -93,6 +97,10 @@
 
   <Config Name="Web UI port (env)" Target="WEB_PORT" Default="8765"
           Description="Must match the port mapping above."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Plugin rate limit (seconds)" Target="PLUGIN_RATE_LIMIT_SECS" Default="1.0"
+          Description="Seconds to wait between plugin API calls. Increase if a site blocks you; set to 0 to disable throttling (not recommended for large libraries)."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <Config Name="Notify URL" Target="NOTIFY_URL" Default=""

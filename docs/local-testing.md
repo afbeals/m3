@@ -173,6 +173,10 @@ Set environment variables and run with `--once`:
 > **Note:** `--once` runs immediately and exits. It does **not** start the web
 > dashboard. To use the dashboard locally, omit `--once` (see step 5b below).
 
+> **Tip:** Set `PLUGIN_RATE_LIMIT_SECS=0` when testing locally to disable the
+> per-plugin delay. The default 1-second wait between API calls is designed for
+> production runs over large libraries — skip it during development.
+
 ### macOS / Linux
 
 ```bash

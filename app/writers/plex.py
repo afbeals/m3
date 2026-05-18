@@ -41,7 +41,9 @@ def connect_plex(plex_url: str, plex_token: str) -> PlexServer | None:
         logger.info("Connected to Plex: %s", server.friendlyName)
         return server
     except Exception:
-        logger.exception("Failed to connect to Plex at %s", plex_url)
+        # WARNING not ERROR: a failed connection is recoverable — the run continues
+        # in sidecar-only mode and the Plex push is non-fatal by design.
+        logger.warning("Failed to connect to Plex at %s", plex_url, exc_info=True)
         return None
 
 

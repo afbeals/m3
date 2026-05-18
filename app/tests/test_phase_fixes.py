@@ -5,9 +5,11 @@ import os
 import tempfile
 import time
 import pytest
+from unittest.mock import MagicMock
 
 from app.config import load_config
 from app.logging_setup import cleanup_old_files
+from app.main import _validate_paths
 from app.parser import parse
 from app.plugins.base import MetadataResult
 from app.scheduler import build_scheduler
@@ -233,3 +235,45 @@ def test_cleanup_skips_files_within_retention():
 
         assert removed == 0
         assert os.path.exists(recent)
+
+
+# ---------------------------------------------------------------------------
+# _validate_paths: startup path validation
+# ---------------------------------------------------------------------------
+
+def test_validate_paths_passes_when_dir_exists_and_writable(monkeypatch, tmp_path):
+    lib = tmp_path / "media"
+    lib.mkdir()
+    reports = tmp_path / "reports"
+    logs = tmp_path / "logs"
+
+    cfg = MagicMock()
+    cfg.library_paths = [str(lib)]
+    cfg.report_path = str(reports)
+    cfg.log_path = str(logs)
+
+    # Should not raise
+    _validate_paths(cfg)
+
+
+def test_validate_paths_raises_when_no_library_path_exists(tmp_path):
+    cfg = MagicMock()
+    cfg.library_paths = ["/nonexistent/path/abc123"]
+    cfg.report_path = str(tmp_path / "reports")
+    cfg.log_path = str(tmp_path / "logs")
+
+    with pytest.raises(SystemExit):
+        _validate_paths(cfg)
+
+
+def test_validate_paths_raises_when_report_path_not_writable(tmp_path, monkeypatch):
+    lib = tmp_path / "media"
+    lib.mkdir()
+
+    cfg = MagicMock()
+    cfg.library_paths = [str(lib)]
+    cfg.report_path = "/nonexistent/deeply/nested/unwritable/path"
+    cfg.log_path = str(tmp_path / "logs")
+
+    with pytest.raises(SystemExit):
+        _validate_paths(cfg)

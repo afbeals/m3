@@ -39,6 +39,7 @@ Set `LOG_LEVEL=DEBUG` (restart required) for maximum detail.
 | Run report shows 0 files | `LIBRARY_PATHS` is wrong | Path must be the container-side mount path. E.g. if your Unraid media is at `/mnt/user/Media` and mounted to `/media` in the container, use `LIBRARY_PATHS=/media/Movies`. |
 | Files are "skipped" | NFO sidecars already exist | Re-run with `--force` to ignore existing sidecars: `docker exec pm python -m app.main --once --force` |
 | Files are "unmatched" | Filename doesn't parse, or no plugin registered for the site | See [Unmatched files](#unmatched-files) below |
+| Log shows "Library path X is a subdirectory of another configured path and will be skipped" | `LIBRARY_PATHS` contains both a parent path and one of its subdirectories (e.g. `/media` and `/media/Movies`) | Remove the subdirectory — the parent already covers it. Keep only `/media` and pm will scan all subdirectories automatically. |
 
 ---
 

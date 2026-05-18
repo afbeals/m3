@@ -36,12 +36,14 @@ from app.runstate import RunState
 from app.scanner import scan_library
 from app.scrape import ScrapeError
 import json
-import urllib.request
 
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
 
 logger = logging.getLogger(__name__)
+
+
+_WEBHOOK_TIMEOUT_SECS = 10
 
 
 def _fire_webhook(url: str, report) -> None:
@@ -60,16 +62,16 @@ def _fire_webhook(url: str, report) -> None:
         "scrape_errors": report.scrape_errors,
         "errors": report.errors,
         "total_scanned": report.total_scanned,
-    }).encode()
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json", "User-Agent": "pm-metadata-agent/1.0"},
-        method="POST",
-    )
+    })
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            logger.info("Webhook notification sent to %s (HTTP %d)", url, resp.status)
+        import httpx
+        with httpx.Client(timeout=_WEBHOOK_TIMEOUT_SECS) as client:
+            r = client.post(
+                url,
+                content=payload.encode(),
+                headers={"Content-Type": "application/json", "User-Agent": "pm-metadata-agent/1.0"},
+            )
+            logger.info("Webhook notification sent to %s (HTTP %d)", url, r.status_code)
     except Exception as exc:
         logger.warning("Webhook notification failed for %s: %s", url, exc)
 

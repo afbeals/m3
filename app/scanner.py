@@ -53,8 +53,8 @@ def _dedup_paths(paths: list[str]) -> list[str]:
         if dominated:
             logger.warning(
                 "Library path %r is a subdirectory of another configured path and will be "
-                "skipped to avoid processing files twice. Remove the parent path from "
-                "LIBRARY_PATHS if you only want to scan this subdirectory.", paths[i]
+                "skipped to avoid processing files twice. Remove it from LIBRARY_PATHS — "
+                "the parent path already covers it.", paths[i]
             )
         else:
             kept.append(paths[i])
