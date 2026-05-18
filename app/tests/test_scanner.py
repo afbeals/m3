@@ -3,7 +3,7 @@
 import os
 import tempfile
 
-from app.scanner import scan_library, MediaFile
+from app.scanner import scan_library, MediaFile, _dedup_paths
 
 
 class TestScanLibrary:
@@ -57,3 +57,26 @@ class TestScanLibrary:
             open(os.path.join(d2, "b.mkv"), "w").close()
             results, _ = scan_library([d1, d2])
         assert len(results) == 2
+
+    def test_dedup_removes_subdirectory_path(self):
+        # /media and /media/Movies: /media/Movies is dominated by /media
+        with tempfile.TemporaryDirectory() as parent:
+            child = os.path.join(parent, "sub")
+            os.makedirs(child)
+            kept = _dedup_paths([parent, child])
+            assert kept == [parent]
+
+    def test_dedup_keeps_sibling_paths(self):
+        with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+            kept = _dedup_paths([d1, d2])
+            assert set(kept) == {d1, d2}
+
+    def test_scan_does_not_double_process_subdirectory(self):
+        # If /media and /media/sub are both in LIBRARY_PATHS, each file in sub
+        # should appear exactly once in the results.
+        with tempfile.TemporaryDirectory() as parent:
+            child = os.path.join(parent, "sub")
+            os.makedirs(child)
+            open(os.path.join(child, "movie.mp4"), "w").close()
+            results, _ = scan_library([parent, child])
+        assert len(results) == 1

@@ -35,7 +35,7 @@ from app.router import Router
 from app.runstate import RunState
 from app.scanner import scan_library
 from app.scrape import ScrapeError
-import json as _json
+import json
 import urllib.request
 
 from app.writers.nfo import write_nfo, write_images
@@ -50,7 +50,7 @@ def _fire_webhook(url: str, report) -> None:
     Uses a short timeout so a slow/unreachable endpoint doesn't delay the
     completion log line. Non-fatal: any error is logged as a warning only.
     """
-    payload = _json.dumps({
+    payload = json.dumps({
         "started_at": report.started_at,
         "finished_at": report.finished_at,
         "duration_seconds": report.duration_seconds,

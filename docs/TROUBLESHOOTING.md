@@ -192,7 +192,7 @@ print('next run:', t.get_next_fire_time(None, __import__('datetime').datetime.no
 
 Common mistakes:
 - `RUN_SCHEDULE` must be a **5-field** cron expression (`min hour day month weekday`), not 6-field
-- Times are in the **container's timezone** (UTC by default). If you want 3am local time, either set a TZ env var or adjust the hour offset.
+- Times are in the **container's timezone** (UTC by default). To use local time, set `TZ` as an environment variable (e.g. `TZ=America/New_York`, `TZ=Europe/London`, `TZ=Australia/Sydney`). Add it alongside your other Docker env vars and restart the container.
 
 ---
 

@@ -120,19 +120,19 @@ pm/
 │   │   └── plex.py               # PlexAPI integration; field-locked updates
 │   │
 │   └── tests/
-│       ├── test_config.py           # config loading + env var parsing
-│       ├── test_parser.py           # 32 tests — all forms, subtypes, edge cases
+│       ├── test_config.py           # 6 tests — config loading + env var parsing
+│       ├── test_parser.py           # 29 tests — all forms, subtypes, edge cases
 │       ├── test_router.py           # 5 tests — dispatch, aliases, unmatched
-│       ├── test_scanner.py          # 7 tests — video detection, sidecar skip, force
+│       ├── test_scanner.py          # 10 tests — video detection, sidecar skip, force, path dedup
 │       ├── test_plugin_loader.py    # 5 tests — discovery, bad files, missing dir
-│       ├── test_reporter.py         # 9 tests — counters, file output
+│       ├── test_reporter.py         # 15 tests — counters, file output, atomic write
 │       ├── test_nfo_writer.py       # 17 tests — NFO XML, art block, atomic write, images
-│       ├── test_plex_writer.py      # 11 tests — connect, find item, push
+│       ├── test_plex_writer.py      # 14 tests — connect, find item, push
 │       ├── test_run_integration.py  # 13 tests — run() orchestration, dry-run
 │       ├── test_scrape.py           # 11 tests — fetch_html, retry, ScrapeError
 │       ├── test_web_history.py      # 15 tests — list_runs, get_run, aggregate_unmatched
-│       ├── test_web_routes.py       # 22 tests — all routes via TestClient
-│       └── test_phase_fixes.py      # 14 tests — targeted regression tests
+│       ├── test_web_routes.py       # 31 tests — all routes via TestClient
+│       └── test_phase_fixes.py      # 23 tests — targeted regression tests
 │
 ├── plugins/                      # mounted from host at /plugins; drop .py files here
 │   ├── example_plugin.py         # reference JSON API plugin (fully commented)

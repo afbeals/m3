@@ -35,6 +35,32 @@ class MediaFile:
     nfo_path: str    # where the .nfo sidecar should live, e.g. /media/Movies/My Movie.nfo
 
 
+def _dedup_paths(paths: list[str]) -> list[str]:
+    """Return paths with any entry that is a subdirectory of another entry removed.
+
+    If LIBRARY_PATHS contains both /media and /media/Movies, os.walk on /media
+    already visits /media/Movies — keeping both would process every file in
+    /media/Movies twice (once for each parent path in the list).
+    """
+    resolved = [os.path.realpath(p) for p in paths]
+    kept = []
+    for i, p in enumerate(resolved):
+        # Check whether any other path is a strict prefix of this one
+        dominated = any(
+            j != i and (p == resolved[j] or p.startswith(resolved[j] + os.sep))
+            for j in range(len(resolved))
+        )
+        if dominated:
+            logger.warning(
+                "Library path %r is a subdirectory of another configured path and will be "
+                "skipped to avoid processing files twice. Remove the parent path from "
+                "LIBRARY_PATHS if you only want to scan this subdirectory.", paths[i]
+            )
+        else:
+            kept.append(paths[i])
+    return kept
+
+
 def scan_library(
     library_paths: list[str], force: bool = False
 ) -> tuple[list[MediaFile], int]:
@@ -42,6 +68,8 @@ def scan_library(
     Walk each path in library_paths recursively and collect video files to process.
 
     Skips files that already have a .nfo sidecar, unless force=True.
+    Automatically deduplicates paths: if one configured path is a subdirectory of
+    another, the child is dropped (the parent's walk already covers it).
     Returns a tuple of:
       - list of MediaFile objects ready for routing and metadata fetching
       - count of files skipped because a sidecar already exists
@@ -49,7 +77,7 @@ def scan_library(
     results: list[MediaFile] = []
     skipped = 0
 
-    for lib_path in library_paths:
+    for lib_path in _dedup_paths(library_paths):
         # Warn and skip paths that don't exist (e.g. misconfigured volume mount)
         if not os.path.isdir(lib_path):
             logger.warning("Library path not found, skipping: %s", lib_path)

@@ -32,7 +32,7 @@ docker push yourdockerhubuser/pm:latest
 
 1. Copy the project to your Unraid server (e.g., via SMB share or `scp`):
    ```bash
-   scp -r /Users/allan_bealsgibson/Code/tmp/pm root@<unraid-ip>:/mnt/user/appdata/pm-build/
+   scp -r /path/to/pm root@<unraid-ip>:/mnt/user/appdata/pm-build/
    ```
 2. SSH into Unraid:
    ```bash

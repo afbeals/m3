@@ -19,6 +19,8 @@ import os
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
+logger = logging.getLogger(__name__)
+
 
 def setup_logging(log_path: str, log_level: str) -> None:
     # Create the log directory if it doesn't exist yet.
@@ -116,9 +118,6 @@ def cleanup_old_files(directory: str, retention_days: int, pattern_suffix: str =
                 except OSError as exc:
                     # Log but continue — a locked or unwritable file shouldn't
                     # abort cleanup of all other files
-                    import logging as _logging
-                    _logging.getLogger(__name__).warning(
-                        "Could not delete old file %s: %s", fpath, exc
-                    )
+                    logger.warning("Could not delete old file %s: %s", fpath, exc)
 
     return removed
