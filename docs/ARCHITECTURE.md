@@ -136,15 +136,15 @@ pm/
 │       ├── test_config.py           # 6 tests — config loading + env var parsing
 │       ├── test_parser.py           # 29 tests — all forms, subtypes, edge cases
 │       ├── test_router.py           # 5 tests — dispatch, aliases, unmatched
-│       ├── test_scanner.py          # 10 tests — video detection, sidecar skip, force, path dedup
+│       ├── test_scanner.py          # 18 tests — video detection, sidecar skip, force, path dedup
 │       ├── test_plugin_loader.py    # 5 tests — discovery, bad files, missing dir
-│       ├── test_reporter.py         # 15 tests — counters, file output, atomic write
-│       ├── test_nfo_writer.py       # 17 tests — NFO XML, art block, atomic write, images
-│       ├── test_plex_writer.py      # 14 tests — connect, find item, push
-│       ├── test_run_integration.py  # 13 tests — run() orchestration, dry-run
+│       ├── test_reporter.py         # 19 tests — counters, file output, atomic write
+│       ├── test_nfo_writer.py       # 19 tests — NFO XML, art block, atomic write, images
+│       ├── test_plex_writer.py      # 19 tests — connect, find item, push
+│       ├── test_run_integration.py  # 17 tests — run() orchestration, dry-run
 │       ├── test_scrape.py           # 11 tests — fetch_html, retry, ScrapeError
-│       ├── test_web_history.py      # 16 tests — list_runs, get_run, aggregate_unmatched + cache invalidation
-│       ├── test_web_routes.py       # 45 tests — all routes via TestClient; flash/scope/coalescing/version/tail/badge
+│       ├── test_web_history.py      # 19 tests — list_runs, get_run, aggregate_unmatched + cache invalidation
+│       ├── test_web_routes.py       # 47 tests — all routes via TestClient; flash/scope/coalescing/version/tail/badge
 │       ├── test_phase_fixes.py      # 26 tests — targeted regression tests
 │       ├── test_main_dry_run.py     # 2 tests  — dry-run skips connect_plex, logs would-push
 │       ├── test_main_fetch_timeout.py # 2 tests — plugin timeout → status=error, run continues

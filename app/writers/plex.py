@@ -264,23 +264,31 @@ def push_nfo_to_plex(
         # Add new list-field values first, then remove old ones — same ordering as
         # push_to_plex so a mid-call failure leaves the item with both old and new
         # values rather than no values at all (which would be worse).
-        for genre_el in root.findall("genre"):
-            if genre_el.text:
-                item.addGenre(genre_el.text.strip(), locked=True)
-        for actor_el in root.findall("actor/name"):
-            if actor_el.text:
-                item.addActor(actor_el.text.strip(), locked=True)
-        for tag_el in root.findall("tag"):
-            if tag_el.text:
-                item.addTag(tag_el.text.strip(), locked=True)
-        for label_el in root.findall("label"):
-            if label_el.text:
-                item.addLabel(label_el.text.strip(), locked=True)
+        genres = [el.text.strip() for el in root.findall("genre") if el.text]
+        actors = [el.text.strip() for el in root.findall("actor/name") if el.text]
+        tags = [el.text.strip() for el in root.findall("tag") if el.text]
+        labels = [el.text.strip() for el in root.findall("label") if el.text]
 
-        item.removeGenres()
-        item.removeActors()
-        item.removeTags()
-        item.removeLabels()
+        # Add new values first, then remove old — same add-first ordering as
+        # push_to_plex. Only call remove when we actually added something; calling
+        # removeGenres() with nothing added would wipe whatever Plex already had.
+        for genre in genres:
+            item.addGenre(genre, locked=True)
+        for actor in actors:
+            item.addActor(actor, locked=True)
+        for tag in tags:
+            item.addTag(tag, locked=True)
+        for label in labels:
+            item.addLabel(label, locked=True)
+
+        if genres:
+            item.removeGenres()
+        if actors:
+            item.removeActors()
+        if tags:
+            item.removeTags()
+        if labels:
+            item.removeLabels()
 
         # Upload images from the local renamed files — avoids a redundant network
         # round-trip to the source site since the content hasn't changed.
