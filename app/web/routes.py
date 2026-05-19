@@ -516,7 +516,7 @@ def log_viewer(request: Request):
             # of file size — avoids loading a multi-MB rotated log into RAM.
             with open(log_path, encoding="utf-8", errors="replace") as fh:
                 tail: deque[str] = deque(fh, maxlen=_LOG_TAIL_LINES)
-            lines = [l.rstrip("\n") for l in tail]
+            lines = [line.rstrip("\n") for line in tail]
         except OSError as exc:
             error = f"Could not read log file: {exc}"
     return request.app.state.templates.TemplateResponse(

@@ -43,7 +43,7 @@ All notable changes to pm are documented here.
 - `--list-unmatched` diagnostic mode — scans library, prints files no plugin claims
 
 ### Scheduler & web dashboard
-- APScheduler cron scheduler with `max_instances=1`; TZ-aware via `PLUGIN_FETCH_TIMEOUT_SECS`
+- APScheduler cron scheduler with `max_instances=1`; TZ-aware via the `TZ` env var
 - Run-in-progress badge polled via HTMX; targeted card swap preserves scroll position
 - Run history with paginated table, per-status filter tabs, inline retry buttons
 - Cross-run unmatched digest with search filter and per-row retry
@@ -54,7 +54,7 @@ All notable changes to pm are documented here.
 - Library path scope validation on `/trigger/file`
 
 ### Notifications
-- Webhook POST after every completed (non-dry-run) run; payload includes `app_name`, `first_error`, `first_scrape_error`, `report_filename`
+- Webhook POST after every completed (non-dry-run) run; payload includes `app_name`, `first_error`, `first_scrape_error`
 
 ### Infrastructure
 - `tzdata` installed in Docker image; `TZ` env var correctly wires to APScheduler

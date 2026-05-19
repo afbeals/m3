@@ -111,7 +111,7 @@ def test_webhook_payload_contains_required_fields():
     assert body["first_error"] == "oops"
 
 
-def test_webhook_payload_includes_report_filename():
+def test_webhook_payload_is_valid_json_with_required_fields():
     report = _run_report()
     captured = {}
     mock_client = _make_mock_client(captured)
@@ -119,10 +119,11 @@ def test_webhook_payload_includes_report_filename():
     with patch("httpx.Client", return_value=mock_client):
         _fire_webhook("http://localhost/hook", report, app_name="pm")
 
-    # report_filename is not in the current payload; this verifies it at least
-    # doesn't error and sends a valid body
     body = json.loads(captured["body"])
     assert "app_name" in body
+    assert "started_at" in body
+    assert "finished_at" in body
+    assert "total_scanned" in body
 
 
 def test_webhook_network_failure_does_not_raise():

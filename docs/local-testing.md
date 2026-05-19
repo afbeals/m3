@@ -352,7 +352,8 @@ python3 -m app.main --retry-failed
 ```
 
 This reads the most recent run report and re-processes every file with status `error`
-or `scrape_error`. It sets `--force` automatically so existing sidecars are overwritten.
+or `scrape_error`. It bypasses the normal skip-if-NFO-exists logic for only the targeted
+files, leaving the rest of your library untouched.
 
 ---
 
