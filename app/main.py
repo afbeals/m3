@@ -39,8 +39,8 @@ from app.scanner import scan_library
 from app.scrape import ScrapeError
 import json
 
-from app.writers.nfo import write_nfo, write_images
-from app.writers.plex import connect_plex, push_to_plex
+from app.writers.nfo import write_nfo, write_images, rename_nfo_assets
+from app.writers.plex import connect_plex, push_to_plex, push_nfo_to_plex
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,55 @@ def run(config, router: Router, dry_run: bool = False) -> None:
             "and that the directories are mounted and contain video files."
         )
 
+    # Handle renamed files first: rename sidecar assets on disk and re-push to Plex.
+    # No plugin fetch is needed — the existing NFO already has the correct metadata.
+    # Processed here (before the main loop) so the renamed file's new NFO exists on
+    # disk before the normal loop would see it as a "new" file.
+    remaining_files = []
     for media in media_files:
+        if media.renamed_from is None:
+            remaining_files.append(media)
+            continue
+
+        dirpath = os.path.dirname(media.path)
+        logger.info("Renaming assets: %r → %r in %s", media.renamed_from, media.stem, dirpath)
+
+        if dry_run:
+            logger.info(
+                "[DRY RUN] Would rename assets %r → %r and re-push Plex for: %s",
+                media.renamed_from, media.stem, media.path,
+            )
+            report.record(FileResult(
+                path=media.path,
+                status="renamed",
+                message=f"renamed from {media.renamed_from!r} (dry run)",
+            ))
+            continue
+
+        try:
+            rename_nfo_assets(dirpath, media.renamed_from, media.stem)
+        except Exception as exc:
+            logger.exception("Asset rename failed for %s", media.path)
+            report.record(FileResult(path=media.path, status="error", message=str(exc)))
+            continue
+
+        if plex_server is not None:
+            try:
+                push_nfo_to_plex(
+                    plex_server, media.path, media.nfo_path,
+                    _fallback_cache=plex_item_cache,
+                )
+            except Exception as exc:
+                logger.warning("Plex re-push failed for renamed file %s: %s", media.path, exc)
+
+        report.record(FileResult(
+            path=media.path,
+            status="renamed",
+            message=f"renamed from {media.renamed_from!r}",
+        ))
+        logger.info("Renamed: %s (was %r)", media.path, media.renamed_from)
+
+    for media in remaining_files:
         # Ask the router to parse the filename and find the right plugin
         parsed, plugin = router.dispatch(media.stem)
 
@@ -299,8 +347,8 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
 
     logger.info(
-        "Run complete. updated=%d skipped=%d unmatched=%d add_form=%d scrape_errors=%d errors=%d",
-        report.updated, report.skipped, report.unmatched, report.add_form,
+        "Run complete. updated=%d renamed=%d skipped=%d unmatched=%d add_form=%d scrape_errors=%d errors=%d",
+        report.updated, report.renamed, report.skipped, report.unmatched, report.add_form,
         report.scrape_errors, report.errors,
     )
 

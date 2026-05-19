@@ -104,3 +104,55 @@ class TestScanLibrary:
             open(os.path.join(tmpdir, "movie.mp4"), "w").close()
             results, _ = scan_library([tmpdir], exclude_patterns=[])
         assert len(results) == 1
+
+
+class TestRenameDetection:
+    def test_rename_detected_when_one_orphan_nfo_and_one_new_video(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "new name.mp4"), "w").close()
+            open(os.path.join(tmpdir, "old name.nfo"), "w").close()
+            results, skipped = scan_library([tmpdir])
+        assert len(results) == 1
+        assert results[0].stem == "new name"
+        assert results[0].renamed_from == "old name"
+        assert skipped == 0
+
+    def test_normal_files_unaffected_alongside_rename(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Matched pair (should skip) + rename pair
+            open(os.path.join(tmpdir, "existing.mp4"), "w").close()
+            open(os.path.join(tmpdir, "existing.nfo"), "w").close()
+            open(os.path.join(tmpdir, "new name.mp4"), "w").close()
+            open(os.path.join(tmpdir, "old name.nfo"), "w").close()
+            results, skipped = scan_library([tmpdir])
+        assert len(results) == 1
+        assert results[0].renamed_from == "old name"
+        assert skipped == 1
+
+    def test_ambiguous_rename_falls_through_as_new(self):
+        # Two orphan NFOs + one new video → ambiguous, treat new video as new file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "new video.mp4"), "w").close()
+            open(os.path.join(tmpdir, "old name 1.nfo"), "w").close()
+            open(os.path.join(tmpdir, "old name 2.nfo"), "w").close()
+            results, skipped = scan_library([tmpdir])
+        assert len(results) == 1
+        assert results[0].renamed_from is None
+
+    def test_force_skips_rename_detection(self):
+        # --force bypasses rename detection; new video is treated as a new file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "new name.mp4"), "w").close()
+            open(os.path.join(tmpdir, "old name.nfo"), "w").close()
+            results, skipped = scan_library([tmpdir], force=True)
+        assert len(results) == 1
+        assert results[0].renamed_from is None
+
+    def test_matched_pair_not_treated_as_rename(self):
+        # Video + matching NFO → skip, not a rename
+        with tempfile.TemporaryDirectory() as tmpdir:
+            open(os.path.join(tmpdir, "movie.mp4"), "w").close()
+            open(os.path.join(tmpdir, "movie.nfo"), "w").close()
+            results, skipped = scan_library([tmpdir])
+        assert len(results) == 0
+        assert skipped == 1

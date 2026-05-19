@@ -207,6 +207,53 @@ def _download_image(url: str, dest_path: str) -> bool:
             return False
 
 
+def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
+    """Rename all sidecar assets when a video file is renamed.
+
+    Moves <old_stem>.nfo, <old_stem>-poster.jpg, and <old_stem>-fanart.jpg to
+    the new stem names.  The NFO XML is also patched in-place: the <poster> and
+    <fanart> text nodes reference the old stem filenames and must be updated so
+    Plex / Kodi can still locate the images after the rename.
+
+    Raises OSError if the NFO rename itself fails (the NFO is required; images
+    are optional and missing images are logged as warnings, not errors).
+    """
+    old_nfo = os.path.join(dirpath, f"{old_stem}.nfo")
+    new_nfo = os.path.join(dirpath, f"{new_stem}.nfo")
+
+    # Read and patch the NFO XML before moving it so we don't leave a stale file
+    # on disk if the XML parse fails.
+    try:
+        tree = etree.parse(old_nfo)
+        root = tree.getroot()
+        art = root.find("art")
+        if art is not None:
+            for tag, suffix in (("poster", "-poster.jpg"), ("fanart", "-fanart.jpg")):
+                el = art.find(tag)
+                if el is not None and el.text:
+                    el.text = f"{new_stem}{suffix}"
+        tmp_nfo = new_nfo + ".tmp"
+        tree.write(tmp_nfo, encoding="utf-8", xml_declaration=True, pretty_print=True)
+        os.replace(tmp_nfo, new_nfo)
+        if new_nfo != old_nfo:
+            os.remove(old_nfo)
+    except Exception:
+        logger.exception("Failed to rename NFO from %r to %r", old_nfo, new_nfo)
+        raise
+
+    for suffix in ("-poster.jpg", "-fanart.jpg"):
+        old_img = os.path.join(dirpath, f"{old_stem}{suffix}")
+        new_img = os.path.join(dirpath, f"{new_stem}{suffix}")
+        if os.path.exists(old_img):
+            try:
+                os.replace(old_img, new_img)
+                logger.debug("Renamed image: %s → %s", old_img, new_img)
+            except OSError:
+                logger.warning("Could not rename image %s → %s", old_img, new_img)
+        else:
+            logger.debug("Image not present, skipping rename: %s", old_img)
+
+
 def write_images(media: MediaFile, result: MetadataResult) -> bool:
     """Download poster and fanart images into the same directory as the media file.
 

@@ -18,6 +18,7 @@
   </div>
   <div class="stats" style="margin-top:0.75rem;">
     {% set _updated      = run.get('updated', 0) %}
+    {% set _renamed      = run.get('renamed', 0) %}
     {% set _skipped      = run.get('skipped', 0) %}
     {% set _scrape_errs  = run.get('scrape_errors', 0) %}
     {% set _errors       = run.get('errors', 0) %}
@@ -26,6 +27,10 @@
     <a href="/runs/{{ run.filename }}?status=updated" class="stat stat-link">
       <div class="stat-label">Updated</div>
       <div class="stat-value {% if _updated > 0 %}green{% else %}dim{% endif %}">{{ _updated }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=renamed" class="stat stat-link">
+      <div class="stat-label">Renamed</div>
+      <div class="stat-value {% if _renamed > 0 %}blue{% else %}dim{% endif %}">{{ _renamed }}</div>
     </a>
     <a href="/runs/{{ run.filename }}?status=skipped" class="stat stat-link">
       <div class="stat-label">Skipped</div>
@@ -56,6 +61,7 @@
   <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All ({{ all_files_count }})</a>
   {% for s, label, cls in [
     ("updated",     "updated",     "badge-updated"),
+    ("renamed",     "renamed",     "badge-renamed"),
     ("scrape_error","scrape_error","badge-scrape_error"),
     ("error",       "error",       "badge-error"),
     ("unmatched",   "unmatched",   "badge-unmatched"),

@@ -11,6 +11,7 @@
 #
 # File statuses:
 #   "updated"      — metadata fetched and written successfully (NFO + Plex)
+#   "renamed"      — file was renamed; assets renamed on disk, Plex re-pushed from NFO
 #   "skipped"      — file already had a sidecar and --force was not set
 #   "unmatched"    — filename couldn't be parsed or no plugin registered for site
 #   "add_form"     — filename used the Manual Add form; needs human follow-up
@@ -52,6 +53,7 @@ class RunReport:
     # Counters — updated by record() as each file result comes in
     total_scanned: int = 0
     updated: int = 0
+    renamed: int = 0
     skipped: int = 0
     unmatched: int = 0
     add_form: int = 0
@@ -67,6 +69,8 @@ class RunReport:
         self.total_scanned += 1
         if result.status == "updated":
             self.updated += 1
+        elif result.status == "renamed":
+            self.renamed += 1
         elif result.status == "skipped":
             self.skipped += 1
         elif result.status == "unmatched":

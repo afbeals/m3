@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from plexapi.server import PlexServer
@@ -189,4 +190,100 @@ def push_to_plex(
 
     except Exception:
         logger.exception("Failed to update Plex item for: %s", file_path)
+        return False
+
+
+def push_nfo_to_plex(
+    server: PlexServer,
+    file_path: str,
+    nfo_path: str,
+    _fallback_cache: dict | None = None,
+) -> bool:
+    """Re-push metadata to Plex from an existing NFO sidecar file.
+
+    Used during the rename workflow: after assets are renamed on disk, the NFO
+    already has the correct metadata but Plex's database entry for the new file
+    path has no custom fields (Plex sees a new file path after the rename).
+    This reads the NFO and re-pushes all fields it can extract.
+
+    Scalar fields pushed: title, plot/summary, rating, content rating, year.
+    List fields pushed: genres, actors (tag elements in the NFO).
+    Images: uploaded from the local <stem>-poster.jpg / <stem>-fanart.jpg files
+    next to the NFO (avoids re-downloading).
+
+    Returns True on success, False if the item wasn't found or an error occurred.
+    """
+    try:
+        from lxml import etree
+        tree = etree.parse(nfo_path)
+        root = tree.getroot()
+    except Exception:
+        logger.exception("Could not parse NFO for Plex push: %s", nfo_path)
+        return False
+
+    def _text(tag: str) -> str:
+        el = root.find(tag)
+        return (el.text or "").strip() if el is not None else ""
+
+    item = find_plex_item(server, file_path, _fallback_cache=_fallback_cache)
+    if item is None:
+        logger.warning("Plex item not found for renamed file: %s", file_path)
+        return False
+
+    try:
+        edits: dict = {}
+        if title := _text("title"):
+            edits["title.value"] = title
+            edits["title.locked"] = 1
+        if plot := _text("plot"):
+            edits["summary.value"] = plot
+            edits["summary.locked"] = 1
+        if rating_str := _text("rating"):
+            try:
+                edits["rating.value"] = float(rating_str)
+                edits["rating.locked"] = 1
+            except ValueError:
+                pass
+        if mpaa := _text("mpaa"):
+            edits["contentRating.value"] = mpaa
+            edits["contentRating.locked"] = 1
+        if year_str := _text("year"):
+            try:
+                edits["year.value"] = int(year_str)
+                edits["year.locked"] = 1
+            except ValueError:
+                pass
+        if edits:
+            item.edit(**edits)
+
+        for genre_el in root.findall("genre"):
+            if genre_el.text:
+                item.addGenre(genre_el.text.strip(), locked=True)
+        for actor_el in root.findall("actor/name"):
+            if actor_el.text:
+                item.addActor(actor_el.text.strip(), locked=True)
+        for tag_el in root.findall("tag"):
+            if tag_el.text:
+                item.addTag(tag_el.text.strip(), locked=True)
+
+        item.removeGenres()
+        item.removeActors()
+        item.removeTags()
+
+        # Upload images from the local renamed files — avoids a redundant network
+        # round-trip to the source site since the content hasn't changed.
+        dirpath = os.path.dirname(nfo_path)
+        stem = os.path.splitext(os.path.basename(nfo_path))[0]
+        poster_path = os.path.join(dirpath, f"{stem}-poster.jpg")
+        fanart_path = os.path.join(dirpath, f"{stem}-fanart.jpg")
+        if os.path.exists(poster_path):
+            item.uploadPoster(filepath=poster_path)
+        if os.path.exists(fanart_path):
+            item.uploadArt(filepath=fanart_path)
+
+        logger.info("Re-pushed Plex metadata for renamed item: %s", item.title)
+        return True
+
+    except Exception:
+        logger.exception("Failed to re-push Plex metadata for renamed file: %s", file_path)
         return False

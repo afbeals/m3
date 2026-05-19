@@ -279,3 +279,54 @@ def test_download_image_aborts_mid_stream_when_body_exceeds_cap(tmp_path):
 
     assert result is False
     assert not os.path.exists(dest), "Partial file must be cleaned up after mid-stream abort"
+
+
+# ---------------------------------------------------------------------------
+# rename_nfo_assets
+# ---------------------------------------------------------------------------
+
+class TestRenameNfoAssets:
+    def test_renames_nfo_and_images(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+        from lxml import etree
+
+        nfo = tmp_path / "old name.nfo"
+        nfo.write_bytes(
+            b'<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
+            b'<movie><title>Test</title>'
+            b'<art><poster>old name-poster.jpg</poster>'
+            b'<fanart>old name-fanart.jpg</fanart></art></movie>'
+        )
+        (tmp_path / "old name-poster.jpg").write_bytes(b"poster")
+        (tmp_path / "old name-fanart.jpg").write_bytes(b"fanart")
+
+        rename_nfo_assets(str(tmp_path), "old name", "new name")
+
+        assert not (tmp_path / "old name.nfo").exists()
+        assert not (tmp_path / "old name-poster.jpg").exists()
+        assert not (tmp_path / "old name-fanart.jpg").exists()
+        assert (tmp_path / "new name.nfo").exists()
+        assert (tmp_path / "new name-poster.jpg").exists()
+        assert (tmp_path / "new name-fanart.jpg").exists()
+
+        tree = etree.parse(str(tmp_path / "new name.nfo"))
+        root = tree.getroot()
+        assert root.findtext("art/poster") == "new name-poster.jpg"
+        assert root.findtext("art/fanart") == "new name-fanart.jpg"
+
+    def test_rename_works_when_images_missing(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+
+        nfo = tmp_path / "old name.nfo"
+        nfo.write_bytes(b'<?xml version=\'1.0\' encoding=\'utf-8\'?>\n<movie><title>T</title></movie>')
+
+        # Should not raise even if images don't exist
+        rename_nfo_assets(str(tmp_path), "old name", "new name")
+        assert (tmp_path / "new name.nfo").exists()
+        assert not (tmp_path / "old name.nfo").exists()
+
+    def test_rename_raises_on_missing_nfo(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+        import pytest
+        with pytest.raises(Exception):
+            rename_nfo_assets(str(tmp_path), "nonexistent", "new name")

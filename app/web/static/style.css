@@ -165,6 +165,7 @@ tr:hover td { background: var(--bg3); }
 }
 
 .badge-updated      { background: #1a3a1f; color: var(--green); }
+.badge-renamed      { background: #1a2a3a; color: var(--purple); }
 .badge-skipped      { background: #1f2a3a; color: var(--blue); }
 .badge-unmatched    { background: #2a2a1a; color: var(--yellow); }
 .badge-add_form     { background: #2a1f3a; color: var(--purple); }
