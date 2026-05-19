@@ -79,9 +79,13 @@
 
 <h2>Re-process a file</h2>
 <div class="card">
-  <form method="POST" action="/trigger/file" class="trigger-form">
+  <form method="POST" action="/trigger/file" class="trigger-form"
+        hx-post="/trigger/file"
+        hx-target="#reprocess-feedback"
+        hx-swap="innerHTML">
     <input type="text" name="file_path" placeholder="/media/Movies/My Movie.mp4">
     <button type="submit">Re-process</button>
+    <span id="reprocess-feedback"></span>
   </form>
   <p class="muted" style="margin-top:0.5rem; font-size:0.8rem;">
     Forces metadata re-fetch and NFO rewrite for a single file, even if a sidecar already exists.

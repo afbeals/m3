@@ -174,8 +174,8 @@ class ParsedFilename:
     # Match payload fields (general form)
     date: str | None = None                           # normalised to YYYY-MM-DD
     scene_id: str | None = None                       # numeric string
-    studio_id: str | None = None
-    actress_id: str | None = None
+    studio_id: str | None = None    # reserved; parser never populates this
+    actress_id: str | None = None   # reserved; parser never populates this
     direct_url: str | None = None
     title: str | None = None
     extra_actors: list[str] = field(default_factory=list)  # actor tokens in payload

@@ -27,8 +27,10 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     app = FastAPI(title=f"{config.app_name} dashboard", docs_url=None, redoc_url=None)
 
     # Shared state accessible in all route handlers via request.app.state
+    from app.router import Router
     app.state.config = config
     app.state.plugin_registry = plugin_registry
+    app.state.plugin_router = Router(plugin_registry)
     app.state.scheduler = scheduler
     app.state.run_fn = run_fn
     app.state.run_state = run_state

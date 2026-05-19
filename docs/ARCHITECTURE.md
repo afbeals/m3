@@ -148,7 +148,7 @@ pm/
 │       ├── test_phase_fixes.py      # 26 tests — targeted regression tests
 │       ├── test_main_dry_run.py     # 2 tests  — dry-run skips connect_plex, logs would-push
 │       ├── test_main_fetch_timeout.py # 2 tests — plugin timeout → status=error, run continues
-│       ├── test_main_webhook.py     # 4 tests  — webhook payload shape, no-url skip, network failure
+│       ├── test_main_webhook.py     # 5 tests  — webhook payload shape, no-url skip, network failure
 │       └── test_scheduler.py        # 3 tests  — atomic registry replace, TZ wiring
 │
 ├── plugins/                      # mounted from host at /plugins; drop .py files here

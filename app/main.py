@@ -22,6 +22,7 @@
 # -----------------------------------------------------------------------------
 
 import argparse
+import glob
 import logging
 import os
 import threading
@@ -391,7 +392,6 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
     creating the .tmp but before the rename, the orphan lingers forever.
     A 30-minute threshold avoids racing with writes in progress.
     """
-    import glob
     cutoff = time.time() - max_age_secs
     for lib_path in library_paths:
         for tmp_file in glob.glob(os.path.join(lib_path, "**", "*.tmp"), recursive=True):

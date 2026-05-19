@@ -120,15 +120,16 @@
 </div>
 {% endif %}
 {% if total_pages > 1 %}
+{% set status_qs = ("status=" ~ status_filter ~ "&") if status_filter else "" %}
 <div class="pagination">
   {% if page > 1 %}
-    <a href="/runs/{{ run.filename }}?status={{ status_filter }}&page={{ page - 1 }}" class="btn">← Prev</a>
+    <a href="/runs/{{ run.filename }}?{{ status_qs }}page={{ page - 1 }}" class="btn">← Prev</a>
   {% else %}
     <span class="btn muted" style="cursor:default;">← Prev</span>
   {% endif %}
   <span class="muted">Page {{ page }} of {{ total_pages }} ({{ total_files }} files)</span>
   {% if page < total_pages %}
-    <a href="/runs/{{ run.filename }}?status={{ status_filter }}&page={{ page + 1 }}" class="btn">Next →</a>
+    <a href="/runs/{{ run.filename }}?{{ status_qs }}page={{ page + 1 }}" class="btn">Next →</a>
   {% else %}
     <span class="btn muted" style="cursor:default;">Next →</span>
   {% endif %}

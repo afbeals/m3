@@ -163,6 +163,9 @@ def push_to_plex(
         # This ordering means a mid-call failure leaves the item with both old
         # and new values rather than no values at all (which would be worse).
         # Each addX / removeX is a separate HTTP round-trip to the Plex API.
+        # Only remove stale values when we have new ones to replace them with —
+        # calling removeGenres() with an empty result.genres would clear genres
+        # that Plex already had without writing any replacement values.
         for genre in result.genres:
             item.addGenre(genre, locked=True)
         for label in result.labels:
@@ -172,12 +175,14 @@ def push_to_plex(
         for actor in result.actors:
             item.addActor(actor, locked=True)
 
-        # Remove stale values after the new ones are written so re-runs don't
-        # accumulate old + new values together.
-        item.removeGenres()
-        item.removeLabels()
-        item.removeTags()
-        item.removeActors()
+        if result.genres:
+            item.removeGenres()
+        if result.labels:
+            item.removeLabels()
+        if result.tags:
+            item.removeTags()
+        if result.actors:
+            item.removeActors()
 
         # Upload poster and background art directly to Plex from the remote URLs
         if result.poster_url:

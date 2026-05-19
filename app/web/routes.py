@@ -378,7 +378,6 @@ def trigger_run(request: Request):
 async def trigger_file(request: Request):
     """Re-process a single file by path (form field: file_path)."""
     from app.scanner import MediaFile
-    from app.router import Router
 
     form = await request.form()
     file_path = (form.get("file_path") or "").strip()
@@ -419,8 +418,7 @@ async def trigger_file(request: Request):
     nfo_path = os.path.join(dirpath, f"{stem}.nfo")
     media = MediaFile(path=file_path, stem=stem, nfo_path=nfo_path)
 
-    registry = request.app.state.plugin_registry
-    router_obj = Router(registry)
+    router_obj = request.app.state.plugin_router
 
     def _run_single():
         try:
