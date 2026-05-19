@@ -261,9 +261,6 @@ def push_nfo_to_plex(
         if edits:
             item.edit(**edits)
 
-        # Add new list-field values first, then remove old ones — same ordering as
-        # push_to_plex so a mid-call failure leaves the item with both old and new
-        # values rather than no values at all (which would be worse).
         genres = [el.text.strip() for el in root.findall("genre") if el.text]
         actors = [el.text.strip() for el in root.findall("actor/name") if el.text]
         tags = [el.text.strip() for el in root.findall("tag") if el.text]

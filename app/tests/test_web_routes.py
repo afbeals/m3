@@ -686,6 +686,48 @@ def test_trigger_file_returns_409_when_already_processing():
 
 
 # ---------------------------------------------------------------------------
+# /trigger/file — HTMX error fragment (200 with inline error badge)
+# ---------------------------------------------------------------------------
+
+def test_trigger_file_htmx_returns_200_fragment_for_missing_file():
+    """HTMX callers get a 200 HTML error fragment instead of a 404 HTTPException."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]
+        app = create_app(config, {}, MagicMock(), MagicMock())
+        with TestClient(app) as client:
+            r = client.post(
+                "/trigger/file",
+                data={"file_path": os.path.join(tmpdir, "nonexistent.mp4")},
+                headers={"HX-Request": "true"},
+            )
+    assert r.status_code == 200
+    assert "✗" in r.text
+
+
+def test_trigger_file_htmx_returns_200_fragment_for_out_of_library_path():
+    """HTMX callers get a 200 error fragment when the path is outside all library dirs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outside_dir = tempfile.mkdtemp()
+        try:
+            outside_file = os.path.join(outside_dir, "evil.mp4")
+            open(outside_file, "w").close()
+            config = _make_config(tmpdir)
+            config.library_paths = [tmpdir]
+            app = create_app(config, {}, MagicMock(), MagicMock())
+            with TestClient(app) as client:
+                r = client.post(
+                    "/trigger/file",
+                    data={"file_path": outside_file},
+                    headers={"HX-Request": "true"},
+                )
+        finally:
+            import shutil; shutil.rmtree(outside_dir, ignore_errors=True)
+    assert r.status_code == 200
+    assert "✗" in r.text
+
+
+# ---------------------------------------------------------------------------
 # /healthz — version field
 # ---------------------------------------------------------------------------
 

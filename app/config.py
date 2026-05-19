@@ -81,9 +81,14 @@ class Config:
     plugin_fetch_timeout_secs: float = 60.0
 
     # Optional webhook URL. When set, pm POSTs a JSON run summary to this URL
-    # after every successful run. Leave empty to disable. Works with any HTTP
-    # endpoint that accepts JSON (Apprise, Gotify, Pushover relay, custom scripts).
+    # after every completed (non-dry-run) run. Leave empty to disable. Works with
+    # any HTTP endpoint that accepts JSON (Apprise, Gotify, Pushover relay, etc.).
     notify_url: str = ""
+
+    # Minimum combined error count (errors + scrape_errors) required before the
+    # webhook fires. Default 0 = fire after every run. Set to 1 to only be notified
+    # when something actually broke; the dashboard is always available for clean-run history.
+    notify_min_errors: int = 0
 
     # When True, re-process files that already have .nfo sidecars.
     # Set via --force CLI flag, not an env var (running with --force every
@@ -109,6 +114,7 @@ class Config:
             f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, "
             f"plugin_fetch_timeout_secs={self.plugin_fetch_timeout_secs!r}, "
             f"notify_url={self.notify_url!r}, "
+            f"notify_min_errors={self.notify_min_errors!r}, "
             f"library_exclude_patterns={self.library_exclude_patterns!r}, "
             f"force={self.force!r})"
         )
@@ -184,6 +190,7 @@ def load_config(force: bool = False) -> Config:
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
         plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=1.0),
         notify_url=optional("NOTIFY_URL", ""),
+        notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 0),
         force=force,
         library_exclude_patterns=library_exclude_patterns,
     )

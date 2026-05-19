@@ -149,3 +149,89 @@ def test_webhook_payload_omits_first_error_when_no_errors():
     body = json.loads(captured["body"])
     assert body["first_error"] is None
     assert body["first_scrape_error"] is None
+
+
+def test_notify_min_errors_suppresses_webhook_on_clean_run():
+    """When notify_min_errors=1 and there are no errors, webhook must not fire."""
+    import tempfile, os
+    from unittest.mock import patch as _patch, MagicMock
+    from app.main import run
+    from app.plugins.base import MetadataPlugin, MetadataResult
+    from app.router import Router
+    from app.scanner import MediaFile
+
+    class _P(MetadataPlugin):
+        site_id = "ne"
+        aliases = []
+        def fetch(self, p): return MetadataResult(title="T")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "Jane Doe % ne - 1.mp4")
+        open(path, "w").close()
+        media = MediaFile(path=path, stem="Jane Doe % ne - 1",
+                          nfo_path=os.path.join(tmp, "Jane Doe % ne - 1.nfo"))
+        cfg = MagicMock()
+        cfg.library_paths = [tmp]
+        cfg.force = False
+        cfg.report_path = os.path.join(tmp, "r")
+        cfg.report_retention_days = 90
+        cfg.log_path = os.path.join(tmp, "l")
+        cfg.log_retention_days = 30
+        cfg.plex_url = "http://x"
+        cfg.plex_token = "t"
+        cfg.plugin_rate_limit_secs = 0.0
+        cfg.plugin_fetch_timeout_secs = 30.0
+        cfg.notify_url = "http://localhost/hook"
+        cfg.notify_min_errors = 1  # only fire when errors >= 1
+
+        with _patch("app.main.scan_library", return_value=([media], 0)), \
+             _patch("app.main.write_nfo"), \
+             _patch("app.main.write_images", return_value=True), \
+             _patch("app.main.connect_plex", return_value=None), \
+             _patch("app.main.write_report"), \
+             _patch("app.main._fire_webhook") as mock_webhook:
+            run(cfg, Router({"ne": _P()}))
+
+    mock_webhook.assert_not_called()
+
+
+def test_notify_min_errors_fires_webhook_when_errors_meet_threshold():
+    """When notify_min_errors=1 and errors >= 1, webhook must fire."""
+    import tempfile, os
+    from unittest.mock import patch as _patch, MagicMock
+    from app.main import run
+    from app.plugins.base import MetadataPlugin
+    from app.router import Router
+    from app.scanner import MediaFile
+
+    class _FailPlugin(MetadataPlugin):
+        site_id = "nef"
+        aliases = []
+        def fetch(self, p): raise RuntimeError("bang")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "Jane Doe % nef - 1.mp4")
+        open(path, "w").close()
+        media = MediaFile(path=path, stem="Jane Doe % nef - 1",
+                          nfo_path=os.path.join(tmp, "Jane Doe % nef - 1.nfo"))
+        cfg = MagicMock()
+        cfg.library_paths = [tmp]
+        cfg.force = False
+        cfg.report_path = os.path.join(tmp, "r")
+        cfg.report_retention_days = 90
+        cfg.log_path = os.path.join(tmp, "l")
+        cfg.log_retention_days = 30
+        cfg.plex_url = "http://x"
+        cfg.plex_token = "t"
+        cfg.plugin_rate_limit_secs = 0.0
+        cfg.plugin_fetch_timeout_secs = 30.0
+        cfg.notify_url = "http://localhost/hook"
+        cfg.notify_min_errors = 1
+
+        with _patch("app.main.scan_library", return_value=([media], 0)), \
+             _patch("app.main.connect_plex", return_value=None), \
+             _patch("app.main.write_report"), \
+             _patch("app.main._fire_webhook") as mock_webhook:
+            run(cfg, Router({"nef": _FailPlugin()}))
+
+    mock_webhook.assert_called_once()

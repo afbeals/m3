@@ -61,3 +61,18 @@ def test_web_enabled_false_variants(monkeypatch):
             monkeypatch.setenv(k, v)
         cfg = load_config()
         assert cfg.web_enabled is False, f"Expected False for WEB_ENABLED={val!r}"
+
+
+def test_notify_min_errors_defaults_to_zero(monkeypatch):
+    for k, v in _base_env().items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("NOTIFY_MIN_ERRORS", raising=False)
+    cfg = load_config()
+    assert cfg.notify_min_errors == 0
+
+
+def test_notify_min_errors_reads_from_env(monkeypatch):
+    for k, v in _base_env({"NOTIFY_MIN_ERRORS": "1"}).items():
+        monkeypatch.setenv(k, v)
+    cfg = load_config()
+    assert cfg.notify_min_errors == 1

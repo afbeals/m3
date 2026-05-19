@@ -117,6 +117,7 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 | `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
 | `APP_NAME` | `pm` | Display name in the dashboard header and page title |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) |
+| `NOTIFY_MIN_ERRORS` | `0` | Set to `1` to only notify when errors occur — silent on clean nightly runs |
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 
@@ -307,6 +308,74 @@ Plex does not need to be backed up separately; if you lose the Plex database you
 1. Restore your plugin files to `/mnt/user/appdata/pm/plugins/`
 2. Start the container — pm recreates the config directory structure automatically
 3. Run `docker exec pm python -m app.main --once --force` to re-process all media files
+
+---
+
+## Notifications (Gotify on Unraid)
+
+The easiest way to get run notifications on Unraid is **Gotify** — a lightweight self-hosted push notification server available directly from Unraid Community Apps.
+
+### Step 1 — Install Gotify
+
+1. In the Unraid web UI go to **Apps** (Community Applications plugin required)
+2. Search for **Gotify** and install it — the default settings work fine
+3. Open the Gotify UI (default port `8080`) and sign in with admin / admin
+4. Change the admin password immediately under **Users → Edit**
+
+### Step 2 — Create an app token
+
+1. In Gotify, click **Apps → Create Application**
+2. Name it `pm` and click **Create**
+3. Copy the displayed token — you'll paste it into the pm container config
+
+### Step 3 — Configure pm
+
+Add these two env vars to the pm container (Docker UI → Edit → Add variable):
+
+| Key | Value | Notes |
+|---|---|---|
+| `NOTIFY_URL` | `http://<unraid-ip>:<gotify-port>/message?token=<your-app-token>` | Replace with your Gotify host/port and token |
+| `NOTIFY_MIN_ERRORS` | `1` | Only notify when errors occurred; omit (or set to `0`) to notify after every run |
+
+> **Example:** `NOTIFY_URL=http://192.168.1.100:8080/message?token=AbCdEfGhIjKl`
+
+After the next run (or click **Run Now** to test), you should receive a push notification on any device with the Gotify app installed.
+
+### Notification payload
+
+pm POSTs a JSON body that Gotify receives as a message. The key fields:
+
+```json
+{
+  "app_name": "pm",
+  "started_at": "2025-05-17T03:00:01",
+  "finished_at": "2025-05-17T03:02:34",
+  "duration_seconds": 153,
+  "updated": 12,
+  "errors": 0,
+  "scrape_errors": 1,
+  "unmatched": 2,
+  "total_scanned": 850,
+  "first_error": null,
+  "first_scrape_error": "title element not found at h1.scene-title"
+}
+```
+
+`first_error` and `first_scrape_error` are included so alert systems that show a preview (e.g. Gotify, Apprise) can display the error message without you having to open the dashboard.
+
+### Unraid native notifications (optional)
+
+If you prefer alerts in the Unraid web UI itself rather than a push app, you can call the Unraid built-in notification script from a small wrapper script. Add a plugin that calls:
+
+```bash
+/usr/local/emhttp/webGui/scripts/notify \
+  -e "pm" \
+  -s "pm run complete" \
+  -d "Updated: 12  Errors: 0  Unmatched: 2" \
+  -i "normal"
+```
+
+Severity is `normal`, `warning`, or `alert`. This requires running a custom script inside the container or from a User Script that polls the Gotify API — the webhook approach above is simpler for most setups.
 
 ---
 

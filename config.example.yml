@@ -148,6 +148,12 @@
 #   - Pushover relay or any HTTP endpoint that accepts JSON POST
 # NOTIFY_URL=http://your-notify-endpoint/hook
 
+# Minimum combined error count (errors + scrape_errors) before the webhook fires.
+# Default 0 = fire after every completed run (including clean runs with no errors).
+# Set to 1 to only be notified when something broke — the dashboard shows clean-run
+# history at any time without requiring a notification.
+# NOTIFY_MIN_ERRORS=0
+
 # ---------------------------------------------------------------------------
 # Plugin-specific API keys
 # ---------------------------------------------------------------------------

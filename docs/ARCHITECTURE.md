@@ -102,7 +102,7 @@ pm/
 │   ├── config.py                 # loads/validates all config from env vars
 │   ├── scheduler.py              # APScheduler cron; Windows-safe SIGUSR1/SIGUSR2 handlers
 │   ├── runstate.py               # thread-safe run-in-progress flag for web UI
-│   ├── utils.py                  # shared retry_with_backoff helper
+│   ├── utils.py                  # shared retry_with_backoff and call_with_timeout helpers
 │   ├── logging_setup.py          # rotating file + stdout handlers; retention cleanup
 │   ├── parser.py                 # universal filename decoder → ParsedFilename
 │   ├── scanner.py                # walks library dirs, yields media files
@@ -133,7 +133,7 @@ pm/
 │   │   └── plex.py               # PlexAPI integration; field-locked updates
 │   │
 │   └── tests/
-│       ├── test_config.py           # 6 tests — config loading + env var parsing
+│       ├── test_config.py           # 8 tests — config loading + env var parsing
 │       ├── test_parser.py           # 29 tests — all forms, subtypes, edge cases
 │       ├── test_router.py           # 5 tests — dispatch, aliases, unmatched
 │       ├── test_scanner.py          # 18 tests — video detection, sidecar skip, force, path dedup
@@ -144,11 +144,11 @@ pm/
 │       ├── test_run_integration.py  # 17 tests — run() orchestration, dry-run
 │       ├── test_scrape.py           # 11 tests — fetch_html, retry, ScrapeError
 │       ├── test_web_history.py      # 19 tests — list_runs, get_run, aggregate_unmatched + cache invalidation
-│       ├── test_web_routes.py       # 47 tests — all routes via TestClient; flash/scope/coalescing/version/tail/badge
+│       ├── test_web_routes.py       # 51 tests — all routes via TestClient; flash/scope/coalescing/version/tail/badge/HTMX-error-fragment
 │       ├── test_phase_fixes.py      # 26 tests — targeted regression tests
 │       ├── test_main_dry_run.py     # 2 tests  — dry-run skips connect_plex, logs would-push
 │       ├── test_main_fetch_timeout.py # 2 tests — plugin timeout → status=error, run continues
-│       ├── test_main_webhook.py     # 5 tests  — webhook payload shape, no-url skip, network failure
+│       ├── test_main_webhook.py     # 7 tests  — webhook payload shape, no-url skip, network failure, NOTIFY_MIN_ERRORS threshold
 │       └── test_scheduler.py        # 3 tests  — atomic registry replace, TZ wiring
 │
 ├── plugins/                      # mounted from host at /plugins; drop .py files here
@@ -312,6 +312,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
 | `APP_NAME` | `pm` | Display name in the dashboard header and title |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to POST a JSON run summary after each run |
+| `NOTIFY_MIN_ERRORS` | `0` | Minimum combined error count before the webhook fires (0 = always fire) |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
 
 ---
@@ -397,7 +398,7 @@ File statuses:
 | `fastapi` | Web dashboard framework |
 | `uvicorn` | ASGI server for the web dashboard |
 | `jinja2` | HTML templating for the web dashboard |
-| `python-multipart` | Form parsing for `/trigger/file` endpoint |
+| `python-multipart` | Form parsing for `/trigger/file` and `/trigger/run` endpoints |
 
 ---
 

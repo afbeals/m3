@@ -203,6 +203,7 @@ Key variables:
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls (0 to disable) |
 | `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is aborted and marked as error |
 | `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
+| `NOTIFY_MIN_ERRORS` | `0` | Minimum combined error count before the webhook fires; set to `1` to only notify on failures |
 | `APP_NAME` | `pm` | Display name in dashboard header and run reports |
 | `WEB_PORT` | `8765` | Dashboard port |
 | `WEB_HOST` | `0.0.0.0` | Dashboard bind address (`127.0.0.1` to restrict to localhost) |

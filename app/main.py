@@ -337,8 +337,12 @@ def run(
 
         # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
         # failure never aborts the run or prevents the report from being written.
+        # NOTIFY_MIN_ERRORS gates the webhook: when set to 1 the webhook only fires
+        # when something broke, avoiding noise on clean nightly runs.
         if config.notify_url:
-            _fire_webhook(config.notify_url, report, app_name=config.app_name)
+            total_errors = report.errors + report.scrape_errors
+            if total_errors >= config.notify_min_errors:
+                _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
     # Delete old log files beyond the retention window (runs regardless of dry_run)
     cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")

@@ -322,6 +322,7 @@ def config_page(request: Request):
         ("Exclude patterns",       "LIBRARY_EXCLUDE_PATTERNS",
          ", ".join(cfg.library_exclude_patterns) if cfg.library_exclude_patterns else "(none)", None),
         ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)", None),
+        ("Notify min errors",      "NOTIFY_MIN_ERRORS",      str(cfg.notify_min_errors), None),
         ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled), None),
         ("Web host",               "WEB_HOST",               cfg.web_host,       None),
         ("Web port",               "WEB_PORT",               str(cfg.web_port),  None),
@@ -376,6 +377,22 @@ def trigger_run(request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 
+def _htmx_error(request: Request, message: str, status_code: int = 400) -> HTMLResponse:
+    """Return a visible inline error fragment for HTMX callers, or raise HTTPException
+    for plain-form callers.
+
+    HTMX ignores 4xx responses by default (no swap fires), so the user sees nothing.
+    Returning 200 with an error badge lets the target cell show the problem inline.
+    """
+    if request.headers.get("HX-Request"):
+        html = (
+            f'<span style="color:var(--red); font-size:0.75rem;" title="HTTP {status_code}">'
+            f'✗ {message}</span>'
+        )
+        return HTMLResponse(html, status_code=200)
+    raise HTTPException(status_code=status_code, detail=message)
+
+
 @router.post("/trigger/file")
 async def trigger_file(request: Request):
     """Re-process a single file by path (form field: file_path)."""
@@ -384,9 +401,9 @@ async def trigger_file(request: Request):
     form = await request.form()
     file_path = (form.get("file_path") or "").strip()
     if not file_path:
-        raise HTTPException(status_code=400, detail="file_path is required")
+        return _htmx_error(request, "file_path is required")
     if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        return _htmx_error(request, f"File not found: {file_path}", status_code=404)
 
     # Security: only allow re-processing files that live inside a configured
     # library path. Prevents the form from being used to trigger metadata
@@ -403,9 +420,9 @@ async def trigger_file(request: Request):
         for lib in config.library_paths
     )
     if not allowed:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File is not inside a configured library path: {file_path}",
+        return _htmx_error(
+            request,
+            f"File is not inside a configured library path: {file_path}",
         )
 
     # Coalesce concurrent requests for the same file path: if a thread is already
@@ -413,7 +430,7 @@ async def trigger_file(request: Request):
     # would race on NFO writes and spam the source API.
     file_lock = _get_file_lock(str(real_path))
     if not file_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail=f"Already processing: {file_path}")
+        return _htmx_error(request, f"Already processing: {file_path}", status_code=409)
 
     stem = os.path.splitext(os.path.basename(file_path))[0]
     dirpath = os.path.dirname(file_path)
