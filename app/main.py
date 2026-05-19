@@ -189,7 +189,11 @@ def run(
     report.skipped += skipped_count
     report.total_scanned += skipped_count
 
-    if not media_files and skipped_count == 0:
+    # Only warn about an empty library when media_files_override was not provided
+    # (i.e. this is a real library scan, not --retry-failed). A rename-only run can
+    # legitimately produce media_files=[renamed...] with no remaining_files after
+    # the rename block, so the check below happens after the rename split instead.
+    if media_files_override is None and not media_files and skipped_count == 0:
         logger.warning(
             "No media files found to process. Check that LIBRARY_PATHS is correct "
             "and that the directories are mounted and contain video files."
@@ -489,14 +493,22 @@ def main() -> None:
         )
         config.force = False
 
-    # Validate the cron schedule before touching the filesystem — a bad expression
-    # produces a cryptic APScheduler traceback otherwise.
+    # Validate the cron schedule before touching the filesystem.
+    # Check field count first (fast), then attempt a full CronTrigger parse so
+    # invalid values like "0 99 * * *" are caught with a clear message rather than
+    # a cryptic APScheduler traceback when the scheduler first fires.
     parts = config.run_schedule.strip().split()
     if len(parts) != 5:
         logger.error(
             "RUN_SCHEDULE must be a 5-field cron expression (min hour day month weekday), "
             "got %r", config.run_schedule
         )
+        raise SystemExit(1)
+    try:
+        from apscheduler.triggers.cron import CronTrigger as _CT
+        _CT.from_crontab(config.run_schedule)
+    except Exception as exc:
+        logger.error("RUN_SCHEDULE %r is not a valid cron expression: %s", config.run_schedule, exc)
         raise SystemExit(1)
 
     # --list-unmatched only needs library paths to exist; it doesn't write reports or

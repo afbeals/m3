@@ -203,7 +203,7 @@ docker logs pm --tail 50
 
 You should see something like:
 ```
-INFO  app.main - pm 1.0.0 starting up
+INFO  app.main - pm 1.1.0 starting up
 INFO  app.main - Library paths: ['/media/Movies', '/media/TV']
 INFO  app.plugins.loader - Registered plugin MySitePlugin for id 'mysite'
 INFO  app.plugins.loader - Registered plugin OtherSitePlugin for id 'othersite'

@@ -113,6 +113,12 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
         timezone=timezone,
     )
 
+    # max_instances=1 prevents concurrent runs if the previous run is still in progress
+    # when the next scheduled time arrives (the new fire is skipped, not queued).
+    # coalesce=True collapses multiple missed fires (e.g. after a container sleep) into
+    # a single catch-up run rather than firing once per missed interval.
+    # Both are needed: max_instances guards against overlap, coalesce prevents a burst
+    # of back-to-back catch-up runs after a long outage.
     scheduler.add_job(
         run_fn,
         trigger=trigger,

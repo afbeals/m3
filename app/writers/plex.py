@@ -86,8 +86,8 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                     logger.warning(
                         "Plex full-library scan timed out after 60s searching for %s", file_path
                     )
-                    if _fallback_cache is not None:
-                        _fallback_cache[file_path] = None
+                    # Do NOT cache None on timeout — a transient timeout should not
+                    # permanently prevent future retries within the same run.
                     return None
                 for media in item.media:
                     for part in media.parts:

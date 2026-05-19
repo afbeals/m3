@@ -223,6 +223,9 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
 
     # Read and patch the NFO XML before moving it so we don't leave a stale file
     # on disk if the XML parse fails.
+    # Assign tmp_nfo before the try block so the except cleanup can always reference it,
+    # even if etree.parse() raises before tmp_nfo would have been assigned inside the try.
+    tmp_nfo = new_nfo + ".tmp"
     try:
         tree = etree.parse(old_nfo)
         root = tree.getroot()
@@ -232,7 +235,6 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
                 el = art.find(tag)
                 if el is not None and el.text:
                     el.text = f"{new_stem}{suffix}"
-        tmp_nfo = new_nfo + ".tmp"
         # Use the same header format as write_nfo (double-quoted, uppercase UTF-8)
         # so the file is byte-for-byte consistent before and after a rename.
         etree.indent(tree, space="  ")
@@ -245,7 +247,7 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
     except Exception:
         try:
             os.remove(tmp_nfo)
-        except (FileNotFoundError, UnboundLocalError):
+        except FileNotFoundError:
             pass
         logger.exception("Failed to rename NFO from %r to %r", old_nfo, new_nfo)
         raise
