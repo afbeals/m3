@@ -15,14 +15,13 @@
   </div>
 </div>
 
-{% if request.query_params.get("msg") == "already_running" %}
-<div class="card" style="border-color:var(--yellow); margin-bottom:0.75rem;">
-  <span class="muted">⚠ A run is already in progress. Wait for it to finish before triggering another.</span>
-</div>
-{% endif %}
-
 {% if latest %}
 <div id="latest-card" class="card">
+{% if request.query_params.get("msg") == "already_running" %}
+<div style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
+  ⚠ A run is already in progress. Wait for it to finish before triggering another.
+</div>
+{% endif %}
   <div class="muted" style="margin-bottom:0.75rem;">
     Started: {{ latest.started_at or "—" }}
     {% set ago = time_ago(latest.started_at) %}{% if ago %}<span style="color:var(--dim); font-size:0.8rem;">({{ ago }})</span>{% endif %}
@@ -96,6 +95,12 @@
 <div hx-get="/" hx-trigger="every 10s" hx-target="#latest-card" hx-select="#latest-card" hx-push-url="false" style="display:none"></div>
 
 {% else %}
-<div id="latest-card" class="card muted">No runs found yet. Click "Run now" to start the first pass.</div>
+<div id="latest-card" class="card muted">
+{% if request.query_params.get("msg") == "already_running" %}
+<div style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
+  ⚠ A run is already in progress. Wait for it to finish before triggering another.
+</div>
+{% endif %}
+No runs found yet. Click "Run now" to start the first pass.</div>
 {% endif %}
 {% endblock %}

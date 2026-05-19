@@ -10,14 +10,14 @@
   </div>
 </div>
 
-<form method="get" action="/logs" style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
-  <label class="muted" style="font-size:0.8rem;">Lines:</label>
+<div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+  <span class="muted" style="font-size:0.8rem;">Lines:</span>
   {% for n in [200, 500, 1000, 2000] %}
   <a href="/logs?tail={{ n }}"
      class="btn{% if tail == n %} active{% endif %}"
      style="font-size:0.75rem; padding:0.2rem 0.5rem;{% if tail == n %} border-color:var(--text); color:var(--text);{% endif %}">{{ n }}</a>
   {% endfor %}
-</form>
+</div>
 
 {% if error %}
 <div class="card muted">{{ error }}</div>

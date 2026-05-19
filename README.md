@@ -119,7 +119,7 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | File history | `/files?path=…` | All runs a specific file appeared in, with status and message |
 | Plugin list | `/plugins` | All loaded plugins and their site IDs |
 | Config | `/config` | Active env var values (Plex token masked) |
-| Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
+| Log viewer | `/logs` | Last N lines of pm.log (default 200, max 2000); `?tail=N` or line-count buttons in the UI |
 | Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time, `?check=plex` to probe Plex reachability |
 
 **Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect. If a run is already in progress, clicking Run Now shows a flash message and does not queue a second run.

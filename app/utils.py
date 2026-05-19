@@ -5,12 +5,39 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str = "call") -> T:
+    """Call fn() in a daemon thread; raise TimeoutError if it doesn't return within timeout_secs.
+
+    The thread is not killed on timeout (Python limitation) — it continues until fn()'s own
+    I/O timeout fires or it returns. The timeout is a *reporting* boundary, not a kill signal.
+    Raises the exception from fn() directly if it throws before the timeout expires.
+    """
+    result_holder: list = []
+    exc_holder: list = []
+
+    def _worker():
+        try:
+            result_holder.append(fn())
+        except Exception as exc:
+            exc_holder.append(exc)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=timeout_secs)
+    if t.is_alive():
+        raise TimeoutError(f"{description} exceeded {timeout_secs:.0f}s")
+    if exc_holder:
+        raise exc_holder[0]
+    return result_holder[0] if result_holder else None  # type: ignore[return-value]
 
 
 def retry_with_backoff(

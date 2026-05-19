@@ -50,9 +50,10 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     # other Jinja2 globals that are registered here. It has no external dependencies,
     # so either location would work; keeping them together makes the template API
     # easier to find.
-    def _fmt_duration(seconds: int | None) -> str:
+    def _fmt_duration(seconds: int | float | None) -> str:
         if seconds is None:
             return "—"
+        seconds = int(seconds)
         if seconds < 60:
             return f"{seconds}s"
         return f"{seconds // 60}m {seconds % 60}s"

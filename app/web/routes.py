@@ -33,6 +33,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from app.utils import call_with_timeout
 from app.web.history import list_runs, get_run, aggregate_unmatched, get_file_history
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
@@ -435,7 +436,12 @@ async def trigger_file(request: Request):
                 logger.warning("trigger_file: could not route %s", file_path)
                 return
             try:
-                result = plugin.fetch(parsed)
+                timeout = config.plugin_fetch_timeout_secs
+                result = call_with_timeout(
+                    lambda: plugin.fetch(parsed),
+                    timeout,
+                    description="trigger_file plugin fetch",
+                )
             except Exception as exc:
                 logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
                 return

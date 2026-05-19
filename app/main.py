@@ -26,12 +26,12 @@ import glob
 import json
 import logging
 import os
-import threading
 import time
 from datetime import datetime
 
 from app import __version__
 from app.config import load_config
+from app.utils import call_with_timeout
 from app.logging_setup import setup_logging, cleanup_old_files
 from app.plugins.loader import load_plugins
 from app.reporter import RunReport, FileResult, write_report
@@ -97,33 +97,6 @@ def _fire_webhook(url: str, report, *, app_name: str = "pm") -> None:
     except Exception as exc:
         logger.warning("Webhook notification failed for %s: %s", url, exc)
 
-
-def _call_plugin_with_timeout(plugin, parsed, timeout_secs: float):
-    """Call plugin.fetch(parsed) in a thread; return result or raise on timeout/error.
-
-    The timeout is a *reporting* boundary: the plugin thread is not killed (Python
-    can't forcibly stop threads), but the run moves on and records a timeout error.
-    After the timeout, the background thread continues running until the plugin's
-    own network call times out or returns — it does not accumulate indefinitely because
-    each plugin call eventually completes (or its HTTP client times out).
-    """
-    result_holder: list = []
-    exc_holder: list = []
-
-    def _worker():
-        try:
-            result_holder.append(plugin.fetch(parsed))
-        except Exception as exc:
-            exc_holder.append(exc)
-
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-    t.join(timeout=timeout_secs)
-    if t.is_alive():
-        raise TimeoutError(f"plugin fetch exceeded {timeout_secs:.0f}s")
-    if exc_holder:
-        raise exc_holder[0]
-    return result_holder[0] if result_holder else None
 
 
 def run(
@@ -279,8 +252,10 @@ def run(
         # A per-plugin timeout prevents a hung plugin from blocking the entire run;
         # the watchdog thread is not killed (Python limitation) but the run moves on.
         try:
-            result = _call_plugin_with_timeout(
-                plugin, parsed, config.plugin_fetch_timeout_secs
+            result = call_with_timeout(
+                lambda: plugin.fetch(parsed),
+                config.plugin_fetch_timeout_secs,
+                description="plugin fetch",
             )
         except ScrapeError as exc:
             # ScrapeError means the site changed its markup or the record is gone —
