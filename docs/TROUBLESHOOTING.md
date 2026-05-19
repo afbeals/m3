@@ -221,6 +221,17 @@ Common mistakes:
 
 ---
 
+## Webhook not firing
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `NOTIFY_URL` is set but no notification arrives after a clean run | `NOTIFY_MIN_ERRORS` is `1` and the run had no errors | Expected — the webhook only fires when `errors + scrape_errors >= NOTIFY_MIN_ERRORS`. Set `NOTIFY_MIN_ERRORS=0` to fire after every run. |
+| Webhook fires but Gotify shows no message | Wrong app token or URL format | Verify with: `curl -s -X POST "http://<gotify-host>/message?token=<token>" -H 'Content-Type: application/json' -d '{"message":"test"}'` — should return `{"id":...}`. |
+| Log shows `Webhook notification failed for ...` | Network error or endpoint unreachable | Webhook failure is non-fatal; the run still completes. Test reachability: `docker exec pm curl -s -o /dev/null -w "%{http_code}" -X POST <NOTIFY_URL>`. |
+| Webhook fires but receiving service shows 400 | Payload format mismatch | pm sends raw JSON. Some services (e.g. Gotify) expect a specific schema (`"message"` key). Use an Apprise relay or a thin wrapper script to translate pm's payload. |
+
+---
+
 ## General debugging workflow
 
 1. `docker logs pm --tail 50` — look for startup errors

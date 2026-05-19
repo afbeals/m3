@@ -26,6 +26,8 @@ services:
       - APP_NAME=pm
       # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
       # - NOTIFY_URL=
+      # Optional: minimum combined errors before webhook fires (0 = always; 1 = errors only)
+      # - NOTIFY_MIN_ERRORS=0
       # Optional: seconds between plugin API calls (0 to disable, default 1.0)
       # - PLUGIN_RATE_LIMIT_SECS=1.0
       # Optional: seconds before a single plugin fetch() times out (default 60.0)
@@ -34,5 +36,3 @@ services:
       # - TZ=America/New_York
       # Optional: comma-separated glob patterns to skip during scanning
       # - LIBRARY_EXCLUDE_PATTERNS=*.part,/media/incoming/**
-      # Optional: log verbosity — DEBUG, INFO, WARNING, ERROR (default INFO)
-      # - LOG_LEVEL=INFO

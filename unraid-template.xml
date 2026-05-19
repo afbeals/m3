@@ -103,8 +103,16 @@
           Description="Seconds to wait between plugin API calls. Increase if a site blocks you; set to 0 to disable throttling (not recommended for large libraries)."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
+  <Config Name="Plugin fetch timeout (seconds)" Target="PLUGIN_FETCH_TIMEOUT_SECS" Default="60.0"
+          Description="Maximum seconds a single plugin fetch() may run before it is marked as an error and the run continues. Prevents a hung plugin from blocking all future scheduled runs."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
   <Config Name="Notify URL" Target="NOTIFY_URL" Default=""
-          Description="Optional webhook URL. pm POSTs a compact JSON run summary here after every successful run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable."
+          Description="Optional webhook URL. pm POSTs a compact JSON run summary here after each completed run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable. See docs/UNRAID_SETUP.md for a Gotify setup walkthrough."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <Config Name="Notify min errors" Target="NOTIFY_MIN_ERRORS" Default="0"
+          Description="Minimum combined error count (errors + scrape_errors) before the webhook fires. Default 0 fires after every run. Set to 1 to only notify when something broke."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <!-- ── Advanced ─────────────────────────────────────────────────── -->
