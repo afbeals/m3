@@ -144,7 +144,7 @@ def scan_library(
                             skipped += 1
                         else:
                             results.append(MediaFile(path=full_path, stem=stem, nfo_path=nfo_path))
-                    continue  # skip the normal per-stem loop below for this directory
+                    continue  # this directory's videos were all handled in the rename branch above
 
             # Normal per-stem classification (no rename candidate, or --force)
             for stem, full_path in video_stems.items():

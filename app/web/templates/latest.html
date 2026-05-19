@@ -39,6 +39,13 @@
         {{ latest.updated }}
       </div>
     </a>
+    {% set _renamed = latest.get('renamed', 0) %}
+    {% if _renamed > 0 %}
+    <a href="/runs/{{ latest.filename }}?status=renamed" class="stat stat-link">
+      <div class="stat-label">Renamed</div>
+      <div class="stat-value blue">{{ _renamed }}</div>
+    </a>
+    {% endif %}
     <a href="/runs/{{ latest.filename }}?status=skipped" class="stat stat-link">
       <div class="stat-label">Skipped</div>
       <div class="stat-value dim">{{ latest.skipped }}</div>

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FileResult:
     path: str
-    # One of: "updated", "skipped", "unmatched", "add_form", "scrape_error", "error"
+    # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error", "error"
     status: str
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
@@ -134,6 +134,7 @@ def write_report(
         "─" * 40,
         f"  Total files scanned                    : {report.total_scanned}",
         f"  Updated                                : {report.updated}",
+        f"  Renamed (assets updated, no re-fetch)  : {report.renamed}",
         f"  Skipped (up-to-date)                   : {report.skipped}",
         f"  Manual Add (pending)                   : {report.add_form}",
         f"  Unmatched                              : {report.unmatched}",

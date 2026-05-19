@@ -44,9 +44,13 @@ running pm on macOS, Linux, or Windows without Docker.
 Scheduled cron
       ↓
 Scan library dirs for video files
-      ↓
-Parse filename → structured ParsedFilename (actors, genres, site, date, IDs …)
-      ↓
+  ├─[NFO exists, stem matches] → skip (already processed)
+  ├─[1 orphan NFO + 1 new video in same dir] → rename workflow ─────────────┐
+  └─[no NFO] → new file                                                      │
+      ↓                                                          [Rename workflow]
+Parse filename → structured ParsedFilename (actors, genres,     rename .nfo + images
+  site, date, IDs …)                                            patch XML art paths
+      ↓                                                          re-push to Plex
 Route to plugin by site_id / alias  ─── no plugin found → unmatched report
       ↓
 Plugin fetches metadata from its API
@@ -54,7 +58,7 @@ Plugin fetches metadata from its API
 Write .nfo sidecar + poster/fanart images  ←── portable backup
 Write metadata to Plex with field locks    ←── fast path for Plex UI
       ↓
-Run report (updated / skipped / unmatched / errors)
+Run report (updated / renamed / skipped / unmatched / errors)
 ```
 
 Full architecture details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -110,12 +114,13 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 |---|---|---|
 | Latest run | `/` | Run status, stats, next scheduled time, Run Now button |
 | Run history | `/runs` | All past runs with duration and success rate; paginated 25/page |
-| Run detail | `/runs/<timestamp>` | Per-file status with inline ↺ retry buttons |
+| Run detail | `/runs/<timestamp>` | Per-file status with inline ↺ retry buttons; click any path to view file history |
 | Unmatched digest | `/unmatched` | Files never claimed by any plugin, across all runs; filterable by path |
+| File history | `/files?path=…` | All runs a specific file appeared in, with status and message |
 | Plugin list | `/plugins` | All loaded plugins and their site IDs |
 | Config | `/config` | Active env var values (Plex token masked) |
 | Log viewer | `/logs` | Last 200 lines of pm.log; auto-scrolls to the bottom |
-| Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time and hours elapsed |
+| Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time, `?check=plex` to probe Plex reachability |
 
 **Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect. If a run is already in progress, clicking Run Now shows a flash message and does not queue a second run.
 
@@ -170,6 +175,10 @@ docker exec pm kill -USR2 1
 # List all files that would be unmatched (no plugin claimed them)
 python -m app.main --list-unmatched
 
+# Re-process only the error/scrape_error files from the most recent run
+# (reads the latest run report and re-fetches only those specific files)
+python -m app.main --retry-failed
+
 # Test the filename parser without running a full pass (useful during plugin development)
 python -m app.tools.parse "Jane Doe with Drama % mysite - 12345"
 python -m app.tools.parse --json "Jane Doe % MS - eager-hands"   # JSON output
@@ -189,13 +198,16 @@ Key variables:
 | `PLEX_URL` | *(required)* | Plex server URL |
 | `PLEX_TOKEN` | *(required)* | Plex authentication token |
 | `LIBRARY_PATHS` | `/media` | Comma-separated container paths to scan |
+| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip (e.g. `*.part,/media/incoming/**`) |
 | `RUN_SCHEDULE` | `0 3 * * *` | Cron expression for scheduled runs |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls (0 to disable) |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is aborted and marked as error |
 | `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
 | `APP_NAME` | `pm` | Display name in dashboard header and run reports |
 | `WEB_PORT` | `8765` | Dashboard port |
 | `WEB_HOST` | `0.0.0.0` | Dashboard bind address (`127.0.0.1` to restrict to localhost) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
+| `TZ` | `UTC` | Container timezone for scheduled runs (e.g. `America/New_York`) |
 
 ---
 

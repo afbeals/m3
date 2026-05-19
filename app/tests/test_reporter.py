@@ -183,3 +183,41 @@ def test_write_report_no_tmp_file_left_behind(tmp_path):
 
     tmp_files = list(tmp_path.glob("*.tmp"))
     assert tmp_files == []
+
+# ---------------------------------------------------------------------------
+# renamed counter
+# ---------------------------------------------------------------------------
+
+def test_record_renamed_increments_counter():
+    report = RunReport()
+    report.record(FileResult(path="/new name.mp4", status="renamed", message="renamed from 'old name'"))
+    assert report.renamed == 1
+    assert report.total_scanned == 1
+
+
+def test_record_all_statuses_including_renamed():
+    report = RunReport()
+    for status in ("updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error", "error"):
+        report.record(FileResult(path=f"/{status}.mp4", status=status))
+    assert report.total_scanned == 7
+    assert report.renamed == 1
+
+
+def test_write_report_txt_includes_renamed_count(tmp_path):
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/new.mp4", status="renamed", message="renamed from 'old'"))
+    write_report(report, str(tmp_path), retention_days=90)
+    txt = (tmp_path / "run_latest.txt").read_text()
+    assert "Renamed" in txt
+    assert "1" in txt
+
+
+def test_write_report_json_includes_renamed_count(tmp_path):
+    import json
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/new.mp4", status="renamed", message="renamed from 'old'"))
+    write_report(report, str(tmp_path), retention_days=90)
+    json_files = list(tmp_path.glob("run_*.json"))
+    assert json_files
+    data = json.loads(json_files[0].read_text())
+    assert data["renamed"] == 1

@@ -284,3 +284,94 @@ def test_run_scrape_error_message_included_in_result(tmp_path):
     assert report.scrape_errors == 1
     file_result = next(f for f in report.files if f.status == "scrape_error")
     assert "HTTP 503" in file_result.message
+
+
+# ---------------------------------------------------------------------------
+# Rename workflow in run()
+# ---------------------------------------------------------------------------
+
+def test_run_handles_renamed_file(tmp_path):
+    """A MediaFile with renamed_from set should call rename_nfo_assets and
+    record status='renamed' without calling any plugin."""
+    old_stem = "Old Title % mysite - 12345"
+    new_stem = "New Title % mysite - 12345"
+    media = MediaFile(
+        path=str(tmp_path / f"{new_stem}.mp4"),
+        stem=new_stem,
+        nfo_path=str(tmp_path / f"{new_stem}.nfo"),
+        renamed_from=old_stem,
+    )
+    open(media.path, "w").close()
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.rename_nfo_assets") as mock_rename, \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    mock_rename.assert_called_once_with(str(tmp_path), old_stem, new_stem)
+    report = mock_report.call_args.args[0]
+    assert report.renamed == 1
+    assert report.updated == 0
+
+
+def test_run_renamed_dry_run_skips_rename(tmp_path):
+    """In dry-run mode, rename_nfo_assets must NOT be called."""
+    media = MediaFile(
+        path=str(tmp_path / "new.mp4"),
+        stem="new",
+        nfo_path=str(tmp_path / "new.nfo"),
+        renamed_from="old",
+    )
+    open(media.path, "w").close()
+    router = Router({})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.rename_nfo_assets") as mock_rename, \
+         patch("app.main.write_report"):
+        run(cfg, router, dry_run=True)
+
+    mock_rename.assert_not_called()
+
+
+def test_run_renamed_file_rename_failure_records_error(tmp_path):
+    """If rename_nfo_assets raises, the file is recorded as status='error'."""
+    media = MediaFile(
+        path=str(tmp_path / "new.mp4"),
+        stem="new",
+        nfo_path=str(tmp_path / "new.nfo"),
+        renamed_from="old",
+    )
+    open(media.path, "w").close()
+    router = Router({})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.rename_nfo_assets", side_effect=OSError("disk full")), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.errors == 1
+    assert report.renamed == 0
+
+
+def test_run_media_files_override_bypasses_scan(tmp_path):
+    """When media_files_override is provided, scan_library must not be called."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library") as mock_scan, \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_nfo"), \
+         patch("app.main.write_images"), \
+         patch("app.main.write_report"):
+        run(cfg, router, media_files_override=[media])
+
+    mock_scan.assert_not_called()

@@ -102,14 +102,17 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 | `PLEX_URL` | `http://<your-unraid-ip>:32400` | Your Plex server's local URL |
 | `PLEX_TOKEN` | `your-plex-token` | See below for how to find this |
 | `LIBRARY_PATHS` | `/media/Movies,/media/TV` | Comma-separated paths **inside the container** matching your `/media` mount |
+| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip (e.g. `*.part,/media/incoming/**`) |
 | `PLUGIN_DIR` | `/plugins` | Leave as-is unless you changed the container path |
 | `REPORT_PATH` | `/config/reports` | Leave as-is |
 | `LOG_PATH` | `/config/logs` | Leave as-is |
 | `RUN_SCHEDULE` | `0 3 * * *` | Cron expression — default is 3am nightly |
+| `TZ` | `UTC` | Timezone for the schedule (e.g. `America/New_York`, `Europe/London`) — times in `RUN_SCHEDULE` are in this timezone |
 | `LOG_LEVEL` | `INFO` | Use `DEBUG` for troubleshooting |
 | `LOG_RETENTION_DAYS` | `30` | Days before old log files are deleted |
 | `REPORT_RETENTION_DAYS` | `90` | Days before old report files are deleted |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls; set to `0` to disable |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a plugin fetch is aborted and marked as `error` |
 | `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard |
 | `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
 | `APP_NAME` | `pm` | Display name in the dashboard header and page title |
@@ -153,7 +156,12 @@ services:
       - LOG_RETENTION_DAYS=30
       - REPORT_RETENTION_DAYS=90
       - PLUGIN_RATE_LIMIT_SECS=1.0
+      - PLUGIN_FETCH_TIMEOUT_SECS=60.0
       - APP_NAME=pm
+      # Optional: set timezone so RUN_SCHEDULE uses local time (default UTC)
+      # - TZ=America/New_York
+      # Optional: skip files matching these glob patterns (e.g. in-progress downloads)
+      # - LIBRARY_EXCLUDE_PATTERNS=*.part,/media/incoming/**
       # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
       # - NOTIFY_URL=
       # Plugin API keys:

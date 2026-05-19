@@ -102,6 +102,9 @@ def _call_plugin_with_timeout(plugin, parsed, timeout_secs: float):
 
     The timeout is a *reporting* boundary: the plugin thread is not killed (Python
     can't forcibly stop threads), but the run moves on and records a timeout error.
+    After the timeout, the background thread continues running until the plugin's
+    own network call times out or returns — it does not accumulate indefinitely because
+    each plugin call eventually completes (or its HTTP client times out).
     """
     result_holder: list = []
     exc_holder: list = []
@@ -122,7 +125,12 @@ def _call_plugin_with_timeout(plugin, parsed, timeout_secs: float):
     return result_holder[0] if result_holder else None
 
 
-def run(config, router: Router, dry_run: bool = False) -> None:
+def run(
+    config,
+    router: Router,
+    dry_run: bool = False,
+    media_files_override: "list | None" = None,
+) -> None:
     """
     Execute one full metadata pass over all configured library paths.
 
@@ -134,6 +142,10 @@ def run(config, router: Router, dry_run: bool = False) -> None:
       - Record the outcome in the run report
 
     When dry_run=True, all writes are skipped; routing and plugin fetches still run.
+
+    media_files_override: if provided, skip the library scan entirely and process
+    only these specific MediaFile objects. Used by --retry-failed to avoid
+    re-scanning and re-processing the entire library.
 
     Plex is reconnected on every run so that long-running schedulers don't use
     a stale connection after a Plex server restart or token expiry.
@@ -159,12 +171,17 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     # calls reduces the slow path from O(n * library) to O(library + n).
     plex_item_cache: dict = {}
 
-    # Collect all video files that need processing (skips files with existing .nfo unless --force)
-    media_files, skipped_count = scan_library(
-        config.library_paths,
-        force=config.force,
-        exclude_patterns=config.library_exclude_patterns,
-    )
+    if media_files_override is not None:
+        # --retry-failed injects a pre-built list; skip the full library scan.
+        media_files = media_files_override
+        skipped_count = 0
+    else:
+        # Collect all video files that need processing (skips files with existing .nfo unless --force)
+        media_files, skipped_count = scan_library(
+            config.library_paths,
+            force=config.force,
+            exclude_patterns=config.library_exclude_patterns,
+        )
 
     # Count skipped files in the report without adding per-file entries.
     # Skipped files have no path to show in the detail view, and appending
@@ -353,6 +370,16 @@ def run(config, router: Router, dry_run: bool = False) -> None:
     )
 
 
+def _run_with_media(config, router: Router, media_files: list) -> None:
+    """Run a targeted pass over a pre-built list of MediaFile objects.
+
+    Used by --retry-failed to re-process specific files without triggering a
+    full library scan. Connects to Plex and writes the run report exactly as
+    a normal run does.
+    """
+    run(config, router, media_files_override=media_files)
+
+
 def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> None:
     """Remove stale .tmp files left by interrupted atomic writes.
 
@@ -513,6 +540,7 @@ def main() -> None:
 
     if args.retry_failed:
         from app.web.history import list_runs, get_run as get_run_detail
+        from app.scanner import MediaFile
         runs = list_runs(config.report_path)
         if not runs:
             print("No run reports found. Run pm at least once first.")
@@ -532,8 +560,20 @@ def main() -> None:
         print(f"Retrying {len(failed_paths)} failed file(s) from {latest_summary['filename']}:")
         for p in failed_paths:
             print(f"  {p}")
-        config.force = True
-        run(config, router)
+
+        # Build MediaFile objects only for the specific failed paths — do NOT call
+        # scan_library with force=True, which would re-process the entire library.
+        retry_media = []
+        for path in failed_paths:
+            if not os.path.isfile(path):
+                logger.warning("Retry target no longer exists: %s", path)
+                continue
+            stem = os.path.splitext(os.path.basename(path))[0]
+            nfo_path = os.path.join(os.path.dirname(path), f"{stem}.nfo")
+            retry_media.append(MediaFile(path=path, stem=stem, nfo_path=nfo_path))
+
+        _sweep_tmp_orphans(config.library_paths)
+        _run_with_media(config, router, retry_media)
         raise SystemExit(0)
 
     # Sweep any stale .tmp orphans from previous interrupted writes before running.

@@ -202,3 +202,86 @@ def test_push_to_plex_returns_false_on_exception():
     with patch("app.writers.plex.find_plex_item", return_value=mock_item):
         result = push_to_plex(mock_server, "/media/movie.mp4", _make_result())
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# push_nfo_to_plex
+# ---------------------------------------------------------------------------
+
+def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
+               mpaa="NR", year="2023", genres=(), actors=(), labels=()):
+    from lxml import etree
+    root = etree.Element("movie")
+    for tag, val in (("title", title), ("plot", plot), ("rating", rating),
+                     ("mpaa", mpaa), ("year", year)):
+        el = etree.SubElement(root, tag)
+        el.text = val
+    for g in genres:
+        etree.SubElement(root, "genre").text = g
+    for a in actors:
+        actor_el = etree.SubElement(root, "actor")
+        etree.SubElement(actor_el, "name").text = a
+    for lbl in labels:
+        etree.SubElement(root, "label").text = lbl
+    tree = etree.ElementTree(root)
+    with open(path, "wb") as fh:
+        fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+        tree.write(fh, encoding="utf-8", xml_declaration=False)
+
+
+def test_push_nfo_to_plex_calls_edit_with_fields(tmp_path):
+    from app.writers.plex import push_nfo_to_plex
+    nfo = str(tmp_path / "movie.nfo")
+    _write_nfo(nfo, title="Test", plot="summary", rating="8.0", year="2024")
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        result = push_nfo_to_plex(mock_server, "/media/movie.mp4", nfo)
+    assert result is True
+    call_kwargs = mock_item.edit.call_args.kwargs
+    assert call_kwargs["title.value"] == "Test"
+    assert call_kwargs["summary.value"] == "summary"
+    assert call_kwargs["year.value"] == 2024
+
+
+def test_push_nfo_to_plex_pushes_labels(tmp_path):
+    from app.writers.plex import push_nfo_to_plex
+    nfo = str(tmp_path / "movie.nfo")
+    _write_nfo(nfo, labels=["my-label"])
+    mock_item = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+    mock_item.addLabel.assert_called_once_with("my-label", locked=True)
+    mock_item.removeLabels.assert_called_once()
+
+
+def test_push_nfo_to_plex_returns_false_when_item_not_found(tmp_path):
+    from app.writers.plex import push_nfo_to_plex
+    nfo = str(tmp_path / "movie.nfo")
+    _write_nfo(nfo)
+    with patch("app.writers.plex.find_plex_item", return_value=None):
+        result = push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+    assert result is False
+
+
+def test_push_nfo_to_plex_returns_false_on_bad_nfo(tmp_path):
+    from app.writers.plex import push_nfo_to_plex
+    nfo = str(tmp_path / "bad.nfo")
+    open(nfo, "w").write("not xml <<<")
+    result = push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+    assert result is False
+
+
+def test_push_nfo_to_plex_uploads_local_images(tmp_path):
+    from app.writers.plex import push_nfo_to_plex
+    nfo = str(tmp_path / "movie.nfo")
+    _write_nfo(nfo)
+    poster = tmp_path / "movie-poster.jpg"
+    fanart = tmp_path / "movie-fanart.jpg"
+    poster.write_bytes(b"poster")
+    fanart.write_bytes(b"fanart")
+    mock_item = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+    mock_item.uploadPoster.assert_called_once_with(filepath=str(poster))
+    mock_item.uploadArt.assert_called_once_with(filepath=str(fanart))

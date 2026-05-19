@@ -21,12 +21,24 @@ A scheduled Python service that reads media filenames from Plex library director
        │
        ▼
 [Library Scanner]  (app/scanner.py)
-  - Enumerates configured library directories
-  - Collects all media files (video extensions)
-  - Skips files with up-to-date sidecar (unless --force)
+  - Enumerates configured library directories in a single O(n) per-directory pass
+  - Classifies each video file:
+      • NFO exists with matching stem → skip (already processed)
+      • NFO missing → new file (full workflow below)
+      • Exactly 1 orphan NFO + 1 new video in same directory → rename workflow
+      • Ambiguous (multiple orphans or multiple new videos) → treat all as new
+  - --force bypasses rename detection and skip logic entirely
        │
-       ▼
-[Universal Parser]  (app/parser.py)
+       ├─[renamed files]──────────────────────────────────────────────────────┐
+       │                                                                        │
+       │  [Rename Workflow]  (app/main.py, app/writers/nfo.py, plex.py)        │
+       │    - rename_nfo_assets(): renames .nfo + images, patches XML art paths│
+       │    - push_nfo_to_plex(): re-pushes fields from renamed NFO to Plex,   │
+       │      uploads local images (no redundant download from source)         │
+       │    - recorded as status="renamed" in the run report                   │
+       │                                                                        │
+       ▼                                                                       ▼
+[Universal Parser]  (app/parser.py)           [Run Report: renamed += 1]
   - Decodes filename into a structured ParsedFilename using the project grammar
   - See FILENAME_PATTERNS.md for the full DSL (two top-level forms, four match subtypes)
   - Failure to parse → add to unmatched report, skip
@@ -52,7 +64,7 @@ A scheduled Python service that reads media filenames from Plex library director
        ▼
 [Run Report]  (app/reporter.py)
   - Written to configured report path after each run (skipped on --dry-run)
-  - Lists: updated, skipped, unmatched, scrape_errors, errors, duration
+  - Lists: updated, renamed, skipped, unmatched, scrape_errors, errors, duration
 ```
 
 **Web dashboard** runs concurrently in a daemon thread (uvicorn + FastAPI):
@@ -62,13 +74,14 @@ A scheduled Python service that reads media filenames from Plex library director
   GET /runs      → run history with duration column
   GET /runs/{ts} → per-run detail with status filters + inline retry buttons
   GET /unmatched → cross-run unmatched file digest
+  GET /files     → per-file processing history across all runs (?path=…)
   GET /plugins   → loaded plugin list
   GET /config    → active env var values (token masked)
   GET /api/status → HTMX-polled run-in-progress badge
   GET /logs      → last 200 lines of pm.log (browser-accessible tail)
   POST /trigger/run   → schedule an immediate run
   POST /trigger/file  → re-process a single file (runs in a daemon thread)
-  GET /healthz   → Docker HEALTHCHECK endpoint
+  GET /healthz   → Docker HEALTHCHECK endpoint; ?check=plex for live Plex probe
 ```
 
 ---
@@ -299,6 +312,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
 | `APP_NAME` | `pm` | Display name in the dashboard header and title |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to POST a JSON run summary after each run |
+| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
 
 ---
 
@@ -356,6 +370,7 @@ File statuses:
 | Status | Meaning |
 |---|---|
 | `updated` | Metadata fetched and written (NFO + Plex) |
+| `renamed` | File renamed: sidecar assets renamed, Plex re-pushed from existing NFO; no API fetch |
 | `skipped` | Sidecar already exists and `--force` not set |
 | `unmatched` | Filename unparseable or no plugin registered for site |
 | `add_form` | Manual Add form filename — needs human follow-up |

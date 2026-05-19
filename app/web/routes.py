@@ -11,9 +11,10 @@
 #   GET  /config         — active env var values (token masked)
 #   GET  /api/status     — HTMX-polled run-in-progress badge
 #   GET  /logs           — last N lines of pm.log
+#   GET  /files          — per-file processing history across all runs
 #   POST /trigger/run    — schedule an immediate full run
 #   POST /trigger/file   — re-process a single file by path
-#   GET  /healthz        — Docker HEALTHCHECK endpoint
+#   GET  /healthz        — Docker HEALTHCHECK endpoint; ?check=plex for live Plex probe
 
 from __future__ import annotations
 
@@ -304,6 +305,9 @@ def config_page(request: Request):
         ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days)),
         ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days)),
         ("Plugin rate limit (s)",  "PLUGIN_RATE_LIMIT_SECS", str(cfg.plugin_rate_limit_secs)),
+        ("Plugin fetch timeout (s)","PLUGIN_FETCH_TIMEOUT_SECS", str(cfg.plugin_fetch_timeout_secs)),
+        ("Exclude patterns",       "LIBRARY_EXCLUDE_PATTERNS",
+         ", ".join(cfg.library_exclude_patterns) if cfg.library_exclude_patterns else "(none)"),
         ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)"),
         ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled)),
         ("Web host",               "WEB_HOST",               cfg.web_host),

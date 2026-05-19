@@ -163,9 +163,13 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
     to show a single file's processing history across runs.
     """
     history = []
+    try:
+        raw = os.listdir(report_path) if os.path.isdir(report_path) else []
+    except OSError:
+        logger.warning("Could not list report directory: %s", report_path)
+        return history
     filenames = sorted(
-        (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json"))
-        if os.path.isdir(report_path) else [],
+        (f for f in raw if f.startswith("run_") and f.endswith(".json")),
         reverse=True,
     )
     for fname in filenames[:max_runs]:

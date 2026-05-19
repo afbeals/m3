@@ -158,6 +158,25 @@ def test_run_detail_status_filter():
     assert "good.mp4" not in r.text
 
 
+def test_run_detail_status_filter_renamed():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "renamed": 1, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 2,
+            "files": [
+                {"path": "/media/updated.mp4", "status": "updated", "message": ""},
+                {"path": "/media/renamed.mp4", "status": "renamed",
+                 "message": "renamed from 'old name'"},
+            ],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/runs/run_20250515_030000.json?status=renamed")
+    assert "renamed.mp4" in r.text
+    assert "updated.mp4" not in r.text
+
+
 # ---------------------------------------------------------------------------
 # /plugins
 # ---------------------------------------------------------------------------

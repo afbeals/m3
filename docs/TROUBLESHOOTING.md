@@ -128,6 +128,27 @@ or `SelectorMissingError` — distinct from a generic plugin crash (`status=erro
 | `SelectorMissingError: title not found at h1.scene-title` | Site changed its HTML markup | Update the CSS selector in your plugin's `_parse_detail_page()` method. |
 | `ScrapeError: response too large (>10MB)` | Site returned a huge page | Unlikely for scene pages; may indicate a CDN redirect or error page. |
 
+Once the underlying issue is fixed (plugin updated, API key corrected, network restored), re-process just the failed files without a full library rescan:
+
+```bash
+docker exec pm python -m app.main --retry-failed
+```
+
+`--retry-failed` reads the most recent run report and re-runs only files with `status=error` or `status=scrape_error`. This is faster and safer than `--force`, which reprocesses everything.
+
+---
+
+## Renamed files not detected
+
+pm detects a rename when there is **exactly one orphan `.nfo`** (an NFO with no matching video) and **exactly one new video** (a video with no matching NFO) in the same directory. Both conditions must be true at the same time.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Renamed file processed as a new file (fresh API fetch instead of just rename) | Multiple new videos or multiple orphan NFOs in the same directory simultaneously | pm treats ambiguous cases as new files to avoid misattribution. Rename files one at a time between runs, or use `--retry-failed` to re-process any resulting `error` files after the situation resolves. |
+| Old NFO/images not renamed | Rename was detected but `rename_nfo_assets()` failed | Check `docker logs pm` for a file-permission error. Confirm the `/media` mount has write access. |
+| Plex not updated after rename | Plex push failed during rename workflow | Check logs for "Failed to push renamed NFO to Plex". The sidecar is renamed correctly on disk; re-run with `--retry-failed` to retry the Plex push. |
+| Rename not detected at all | Running with `--force` | `--force` bypasses rename detection and treats all files as new. Use `--force` only when you want a full re-fetch of all metadata. |
+
 ---
 
 ## Disk full / storage issues

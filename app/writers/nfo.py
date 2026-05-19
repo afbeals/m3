@@ -233,11 +233,20 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
                 if el is not None and el.text:
                     el.text = f"{new_stem}{suffix}"
         tmp_nfo = new_nfo + ".tmp"
-        tree.write(tmp_nfo, encoding="utf-8", xml_declaration=True, pretty_print=True)
+        # Use the same header format as write_nfo (double-quoted, uppercase UTF-8)
+        # so the file is byte-for-byte consistent before and after a rename.
+        etree.indent(tree, space="  ")
+        with open(tmp_nfo, "wb") as fh:
+            fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+            tree.write(fh, encoding="utf-8", xml_declaration=False)
         os.replace(tmp_nfo, new_nfo)
         if new_nfo != old_nfo:
             os.remove(old_nfo)
     except Exception:
+        try:
+            os.remove(tmp_nfo)
+        except (FileNotFoundError, UnboundLocalError):
+            pass
         logger.exception("Failed to rename NFO from %r to %r", old_nfo, new_nfo)
         raise
 

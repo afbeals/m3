@@ -256,6 +256,9 @@ def push_nfo_to_plex(
         if edits:
             item.edit(**edits)
 
+        # Add new list-field values first, then remove old ones — same ordering as
+        # push_to_plex so a mid-call failure leaves the item with both old and new
+        # values rather than no values at all (which would be worse).
         for genre_el in root.findall("genre"):
             if genre_el.text:
                 item.addGenre(genre_el.text.strip(), locked=True)
@@ -265,10 +268,14 @@ def push_nfo_to_plex(
         for tag_el in root.findall("tag"):
             if tag_el.text:
                 item.addTag(tag_el.text.strip(), locked=True)
+        for label_el in root.findall("label"):
+            if label_el.text:
+                item.addLabel(label_el.text.strip(), locked=True)
 
         item.removeGenres()
         item.removeActors()
         item.removeTags()
+        item.removeLabels()
 
         # Upload images from the local renamed files — avoids a redundant network
         # round-trip to the source site since the content hasn't changed.
