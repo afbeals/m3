@@ -697,3 +697,71 @@ def test_healthz_returns_version():
     data = r.json()
     assert "version" in data
     assert data["version"]  # must be non-empty
+
+
+# ---------------------------------------------------------------------------
+# GET /logs — ?tail=N param
+# ---------------------------------------------------------------------------
+
+def test_logs_tail_param_respected():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.log_path = tmpdir
+        log_file = os.path.join(tmpdir, "pm.log")
+        with open(log_file, "w") as fh:
+            for i in range(300):
+                fh.write(f"INFO line {i}\n")
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+        with TestClient(app) as client:
+            r_default = client.get("/logs")
+            r_500 = client.get("/logs?tail=500")
+    assert r_default.status_code == 200
+    # default 200 lines: line 100 (0-indexed) is the 101st — not shown; line 300 would be last
+    assert "line 299" in r_default.text
+    assert "line 0" not in r_default.text   # first line scrolled off in default 200
+    assert r_500.status_code == 200
+    assert "line 0" in r_500.text           # 500 lines covers all 300
+
+
+def test_logs_tail_param_capped_at_2000():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.log_path = tmpdir
+        log_file = os.path.join(tmpdir, "pm.log")
+        with open(log_file, "w") as fh:
+            fh.write("INFO test\n")
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+        with TestClient(app) as client:
+            r = client.get("/logs?tail=99999")
+    assert r.status_code == 200
+    assert "2000" in r.text   # capped value shown in the UI
+
+
+# ---------------------------------------------------------------------------
+# GET /config — library path existence badge
+# ---------------------------------------------------------------------------
+
+def test_config_shows_exists_badge_for_present_library_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]   # tmpdir definitely exists
+        app = create_app(config, {}, MagicMock(), MagicMock())
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert r.status_code == 200
+    assert "exists" in r.text
+
+
+def test_config_shows_missing_badge_for_absent_library_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        config.library_paths = ["/nonexistent/totally/fake/path"]
+        app = create_app(config, {}, MagicMock(), MagicMock())
+        with TestClient(app) as client:
+            r = client.get("/config")
+    assert r.status_code == 200
+    assert "missing" in r.text

@@ -76,8 +76,8 @@ plugins:
 | `actors` | `list[str]` | always | Actors from left side of filename |
 | `genres` | `list[str]` | always | Genres from "with ..." clause |
 | `date` | `str \| None` | enhanced | Release date (YYYY-MM-DD) |
-| `studio_id` | `str \| None` | enhanced | Studio numeric ID (multi-studio sites) |
-| `actress_id` | `str \| None` | enhanced | Actress page ID |
+| `studio_id` | `str \| None` | reserved — parser never populates this | Studio numeric ID (multi-studio sites); set manually in custom plugins if needed |
+| `actress_id` | `str \| None` | reserved — parser never populates this | Actress page ID; set manually in custom plugins if needed |
 | `raw_match_payload` | `str \| None` | always | Raw text after `%` for custom parsing |
 
 **Match subtypes:**

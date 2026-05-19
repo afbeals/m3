@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import inspect
 import logging
 import os
@@ -297,32 +298,32 @@ def plugin_list(request: Request):
 @router.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
     cfg = request.app.state.config
-    # Annotate each library path with its current existence status so the user
-    # can immediately spot missing mounts when debugging "0 files scanned".
-    lib_paths_annotated = ", ".join(
-        f"{p} {'✓' if os.path.isdir(p) else '✗ (missing)'}"
+    # Build per-path existence annotations as structured data so the template
+    # can render missing mounts with a visible badge rather than plain dim text.
+    lib_paths_annotated = [
+        {"path": p, "exists": os.path.isdir(p)}
         for p in cfg.library_paths
-    )
+    ]
     entries = [
-        ("App name",               "APP_NAME",               cfg.app_name),
-        ("Plex URL",               "PLEX_URL",               cfg.plex_url),
-        ("Plex token",             "PLEX_TOKEN",             "***" if cfg.plex_token else "(not set)"),
-        ("Library paths",          "LIBRARY_PATHS",          lib_paths_annotated),
-        ("Plugin directory",       "PLUGIN_DIR",             cfg.plugin_dir),
-        ("Report path",            "REPORT_PATH",            cfg.report_path),
-        ("Log path",               "LOG_PATH",               cfg.log_path),
-        ("Run schedule",           "RUN_SCHEDULE",           cfg.run_schedule),
-        ("Log level",              "LOG_LEVEL",              cfg.log_level),
-        ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days)),
-        ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days)),
-        ("Plugin rate limit (s)",  "PLUGIN_RATE_LIMIT_SECS", str(cfg.plugin_rate_limit_secs)),
-        ("Plugin fetch timeout (s)","PLUGIN_FETCH_TIMEOUT_SECS", str(cfg.plugin_fetch_timeout_secs)),
+        ("App name",               "APP_NAME",               cfg.app_name,      None),
+        ("Plex URL",               "PLEX_URL",               cfg.plex_url,       None),
+        ("Plex token",             "PLEX_TOKEN",             "***" if cfg.plex_token else "(not set)", None),
+        ("Library paths",          "LIBRARY_PATHS",          None,               lib_paths_annotated),
+        ("Plugin directory",       "PLUGIN_DIR",             cfg.plugin_dir,     None),
+        ("Report path",            "REPORT_PATH",            cfg.report_path,    None),
+        ("Log path",               "LOG_PATH",               cfg.log_path,       None),
+        ("Run schedule",           "RUN_SCHEDULE",           cfg.run_schedule,   None),
+        ("Log level",              "LOG_LEVEL",              cfg.log_level,      None),
+        ("Log retention (days)",   "LOG_RETENTION_DAYS",     str(cfg.log_retention_days), None),
+        ("Report retention (days)","REPORT_RETENTION_DAYS",  str(cfg.report_retention_days), None),
+        ("Plugin rate limit (s)",  "PLUGIN_RATE_LIMIT_SECS", str(cfg.plugin_rate_limit_secs), None),
+        ("Plugin fetch timeout (s)","PLUGIN_FETCH_TIMEOUT_SECS", str(cfg.plugin_fetch_timeout_secs), None),
         ("Exclude patterns",       "LIBRARY_EXCLUDE_PATTERNS",
-         ", ".join(cfg.library_exclude_patterns) if cfg.library_exclude_patterns else "(none)"),
-        ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)"),
-        ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled)),
-        ("Web host",               "WEB_HOST",               cfg.web_host),
-        ("Web port",               "WEB_PORT",               str(cfg.web_port)),
+         ", ".join(cfg.library_exclude_patterns) if cfg.library_exclude_patterns else "(none)", None),
+        ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)", None),
+        ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled), None),
+        ("Web host",               "WEB_HOST",               cfg.web_host,       None),
+        ("Web port",               "WEB_PORT",               str(cfg.web_port),  None),
     ]
     return request.app.state.templates.TemplateResponse(
         request,
@@ -427,6 +428,8 @@ async def trigger_file(request: Request):
             # triggered from the run-detail page — the full pipeline overhead is not
             # needed and would produce misleading report entries.
             plex_server = connect_plex(config.plex_url, config.plex_token)
+            if plex_server is None:
+                logger.warning("trigger_file: Plex unreachable — metadata will be written to sidecar only for %s", file_path)
             parsed, plugin = router_obj.dispatch(media.stem)
             if parsed is None or plugin is None:
                 logger.warning("trigger_file: could not route %s", file_path)
@@ -465,7 +468,6 @@ async def trigger_file(request: Request):
     # form POSTs (no HTMX) fall back to the full-page redirect so the behaviour
     # is unchanged for non-JS environments.
     if request.headers.get("HX-Request"):
-        import hashlib
         slot_id = hashlib.md5(file_path.encode()).hexdigest()[:8]
         return request.app.state.templates.TemplateResponse(
             request,
@@ -499,26 +501,28 @@ def file_history(request: Request, path: str = ""):
 # ---------------------------------------------------------------------------
 
 _LOG_TAIL_LINES = 200
+_LOG_TAIL_MAX = 2000
 
 
 @router.get("/logs", response_class=HTMLResponse)
-def log_viewer(request: Request):
+def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
+    tail = max(1, min(tail, _LOG_TAIL_MAX))
     log_path = os.path.join(request.app.state.config.log_path, "pm.log")
     lines: list[str] = []
     error: str | None = None
-    if not os.path.isfile(log_path):
-        error = f"Log file not found: {log_path}"
-    else:
-        try:
+    try:
+        if not os.path.isfile(log_path):
+            error = f"Log file not found: {log_path}"
+        else:
             # deque(maxlen=N) keeps only the last N lines in memory regardless
             # of file size — avoids loading a multi-MB rotated log into RAM.
             with open(log_path, encoding="utf-8", errors="replace") as fh:
-                tail: deque[str] = deque(fh, maxlen=_LOG_TAIL_LINES)
-            lines = [line.rstrip("\n") for line in tail]
-        except OSError as exc:
-            error = f"Could not read log file: {exc}"
+                tail_buf: deque[str] = deque(fh, maxlen=tail)
+            lines = [line.rstrip("\n") for line in tail_buf]
+    except OSError as exc:
+        error = f"Could not read log file: {exc}"
     return request.app.state.templates.TemplateResponse(
         request,
         "logs.html",
-        {"lines": lines, "error": error, "tail": _LOG_TAIL_LINES, "log_path": log_path},
+        {"lines": lines, "error": error, "tail": tail, "log_path": log_path},
     )

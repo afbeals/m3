@@ -78,7 +78,7 @@ A scheduled Python service that reads media filenames from Plex library director
   GET /plugins   → loaded plugin list
   GET /config    → active env var values (token masked)
   GET /api/status → HTMX-polled run-in-progress badge
-  GET /logs      → last 200 lines of pm.log (browser-accessible tail)
+  GET /logs      → last N lines of pm.log (?tail=N, default 200, max 2000)
   POST /trigger/run   → schedule an immediate run
   POST /trigger/file  → re-process a single file (runs in a daemon thread)
   GET /healthz   → Docker HEALTHCHECK endpoint; ?check=plex for live Plex probe
@@ -144,7 +144,7 @@ pm/
 │       ├── test_run_integration.py  # 13 tests — run() orchestration, dry-run
 │       ├── test_scrape.py           # 11 tests — fetch_html, retry, ScrapeError
 │       ├── test_web_history.py      # 16 tests — list_runs, get_run, aggregate_unmatched + cache invalidation
-│       ├── test_web_routes.py       # 41 tests — all routes via TestClient; flash/scope/coalescing/version
+│       ├── test_web_routes.py       # 45 tests — all routes via TestClient; flash/scope/coalescing/version/tail/badge
 │       ├── test_phase_fixes.py      # 26 tests — targeted regression tests
 │       ├── test_main_dry_run.py     # 2 tests  — dry-run skips connect_plex, logs would-push
 │       ├── test_main_fetch_timeout.py # 2 tests — plugin timeout → status=error, run continues
@@ -323,7 +323,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 - `max_instances=1` prevents concurrent runs if a previous run is still in progress
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
 - Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
-- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict (build new dict, then assign) so all live references (router, web UI) see the new plugins without a container restart (Unix only; skipped on Windows)
+- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict contents (clear + update under a lock) so all live references see the new plugins without a container restart. `app.state.plugin_router` (the `Router` wrapping the registry in the web app) reads the same dict, so the web UI's plugin list and dispatch also reflect the reload automatically (Unix only; skipped on Windows)
 
 ## Run Modes
 

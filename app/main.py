@@ -23,6 +23,7 @@
 
 import argparse
 import glob
+import json
 import logging
 import os
 import threading
@@ -38,7 +39,6 @@ from app.router import Router
 from app.runstate import RunState
 from app.scanner import scan_library
 from app.scrape import ScrapeError
-import json
 
 from app.writers.nfo import write_nfo, write_images, rename_nfo_assets
 from app.writers.plex import connect_plex, push_to_plex, push_nfo_to_plex

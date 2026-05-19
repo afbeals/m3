@@ -19,7 +19,7 @@
   ("Web dashboard", ["Web enabled", "Web host", "Web port"]),
 ] %}
 {% set entry_map = {} %}
-{% for label, env_var, value in entries %}{% set _ = entry_map.update({label: (env_var, value)}) %}{% endfor %}
+{% for label, env_var, value, paths in entries %}{% set _ = entry_map.update({label: (env_var, value, paths)}) %}{% endfor %}
 
 {% for section_name, labels in sections %}
 <h2>{{ section_name }}</h2>
@@ -34,11 +34,26 @@
   <tbody>
     {% for label in labels %}
     {% if label in entry_map %}
-    {% set env_var, value = entry_map[label] %}
+    {% set env_var, value, paths = entry_map[label] %}
     <tr>
       <td>{{ label }}</td>
       <td class="muted">{{ env_var }}</td>
-      <td class="path">{{ value }}</td>
+      <td class="path">
+        {% if paths %}
+          {% for p in paths %}
+          <div>
+            {{ p.path }}
+            {% if p.exists %}
+              <span class="badge badge-updated" style="font-size:0.7rem; padding:0.05rem 0.35rem;">✓ exists</span>
+            {% else %}
+              <span class="badge badge-error" style="font-size:0.7rem; padding:0.05rem 0.35rem;">✗ missing</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          {{ value }}
+        {% endif %}
+      </td>
     </tr>
     {% endif %}
     {% endfor %}

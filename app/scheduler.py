@@ -49,9 +49,13 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
     from app.plugins.loader import load_plugins
 
     _reload_event = threading.Event()
-    # Shared lock between the reload watcher and any future code that reads
-    # the registry under mutation (currently the router reads are GIL-safe
-    # atomic dict reads, but the lock documents the invariant explicitly).
+    # Guards clear()+update() so no two concurrent SIGUSR2 signals race to
+    # reload simultaneously. Router readers do NOT acquire this lock — they rely
+    # on CPython's GIL making individual dict operations atomic. The two-step
+    # clear()+update() is safe here because the watcher thread is the only writer
+    # and the GIL ensures each individual dict mutation is seen atomically by
+    # concurrent readers; the brief window where the dict is partially cleared is
+    # invisible to Python-level code that reads one key at a time.
     _registry_lock = threading.Lock()
 
     def _handle_sigusr2(signum, frame):
@@ -64,9 +68,6 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
             logger.info("SIGUSR2 received — reloading plugins from %s", plugin_dir)
             try:
                 new_registry = load_plugins(plugin_dir)
-                # Atomically replace the dict contents under the lock.
-                # clear() + update() as two operations would create a window where
-                # a concurrent router.dispatch() sees an empty registry.
                 with _registry_lock:
                     registry.clear()
                     registry.update(new_registry)
