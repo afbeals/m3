@@ -204,11 +204,14 @@ Note: only files **without** an existing `.nfo` sidecar are processed. Once all 
 ## Schedule not running
 
 ```bash
-# Verify your cron expression parses correctly
+# Verify your cron expression parses correctly (replace values with your actual settings)
 python3 -c "
+import os, datetime
 from apscheduler.triggers.cron import CronTrigger
-t = CronTrigger.from_crontab('0 3 * * *')  # replace with your RUN_SCHEDULE
-print('next run:', t.get_next_fire_time(None, __import__('datetime').datetime.now()))
+tz = os.environ.get('TZ') or 'UTC'
+t = CronTrigger.from_crontab('0 3 * * *', timezone=tz)  # replace with your RUN_SCHEDULE
+print('timezone:', tz)
+print('next run:', t.get_next_fire_time(None, datetime.datetime.now()))
 "
 ```
 

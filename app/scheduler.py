@@ -95,6 +95,8 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     scheduler = BlockingScheduler()
 
     parts = schedule.strip().split()
+    # Belt-and-suspenders check for callers that bypass main() (e.g. tests).
+    # main() already validates fully via CronTrigger.from_crontab() before calling here.
     if len(parts) != 5:
         raise ValueError(f"RUN_SCHEDULE must be a 5-field cron expression, got: {schedule!r}")
 

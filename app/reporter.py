@@ -185,7 +185,8 @@ def write_report(
                 lines.append(f"    → {f.message}")
         lines.append("")
     else:
-        lines.append("Errors:\n  (none)")
+        lines.append("Errors:")
+        lines.append("  (none)")
 
     # Write atomically via .tmp + os.replace() so a crash mid-write never
     # leaves run_latest.txt in a corrupt/truncated state.

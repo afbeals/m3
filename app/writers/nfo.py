@@ -242,8 +242,7 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
             fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
             tree.write(fh, encoding="utf-8", xml_declaration=False)
         os.replace(tmp_nfo, new_nfo)
-        if new_nfo != old_nfo:
-            os.remove(old_nfo)
+        os.remove(old_nfo)
     except Exception:
         try:
             os.remove(tmp_nfo)

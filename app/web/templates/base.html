@@ -9,6 +9,17 @@
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
           integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2uoICbeVVCcHvz0Ljr4LiGHl0sWVIbCEslA"
           crossorigin="anonymous" defer></script>
+  <!-- Fallback: if unpkg.com is unreachable (air-gapped home lab), place htmx.min.js
+       in app/web/static/ and it will be served from /static/htmx.min.js instead. -->
+  <script>
+    window.addEventListener('load', function() {
+      if (typeof htmx === 'undefined') {
+        var s = document.createElement('script');
+        s.src = '/static/htmx.min.js';
+        document.head.appendChild(s);
+      }
+    });
+  </script>
 </head>
 <body>
   <header>

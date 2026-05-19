@@ -78,9 +78,15 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
     # alert on Plex being down without flagging the pm process itself as unhealthy.
     if check == "plex":
         from app.writers.plex import connect_plex
+        import concurrent.futures
         config = request.app.state.config
+        # Run connect_plex in a thread with a hard 5-second deadline so a slow or
+        # hung Plex server can't block the async event loop long enough for Docker's
+        # HEALTHCHECK (--timeout=5s) to declare the container unhealthy.
         try:
-            server = connect_plex(config.plex_url, config.plex_token)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(connect_plex, config.plex_url, config.plex_token)
+                server = future.result(timeout=5)
             if server is not None:
                 return JSONResponse({"plex": "ok", "url": config.plex_url})
             else:
@@ -88,6 +94,11 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
                     {"plex": "unreachable", "detail": "connection returned None"},
                     status_code=503,
                 )
+        except concurrent.futures.TimeoutError:
+            return JSONResponse(
+                {"plex": "unreachable", "detail": "connection timed out after 5s"},
+                status_code=503,
+            )
         except Exception as exc:
             return JSONResponse(
                 {"plex": "unreachable", "detail": str(exc)},
