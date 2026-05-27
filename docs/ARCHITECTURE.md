@@ -1,4 +1,4 @@
-# pm — Architecture
+# m3 — Architecture
 
 A scheduled Python service that reads media filenames from Plex library directories, routes each file to a matching metadata plugin, retrieves metadata from external APIs/sites, writes NFO sidecar files + posters to disk, and pushes the same metadata to Plex via its API with field locks. A built-in web dashboard provides run history, plugin inspection, manual triggers, and live run status.
 
@@ -78,7 +78,7 @@ A scheduled Python service that reads media filenames from Plex library director
   GET /plugins   → loaded plugin list
   GET /config    → active env var values (token masked)
   GET /api/status → HTMX-polled run-in-progress badge
-  GET /logs      → last N lines of pm.log (?tail=N, default 200, max 2000)
+  GET /logs      → last N lines of m3.log (?tail=N, default 200, max 2000)
   POST /trigger/run   → schedule an immediate run
   POST /trigger/file  → re-process a single file (runs in a daemon thread)
   GET /healthz   → Docker HEALTHCHECK endpoint; ?check=plex for live Plex probe
@@ -89,7 +89,7 @@ A scheduled Python service that reads media filenames from Plex library director
 ## Directory Layout
 
 ```
-pm/
+m3/
 ├── Dockerfile
 ├── docker-compose.yml            # example Unraid-compatible compose
 ├── unraid-template.xml           # Unraid Community Apps XML template
@@ -161,6 +161,7 @@ pm/
     ├── UNRAID_SETUP.md           # Docker build + Unraid deployment guide
     ├── PLUGIN_WRITING.md         # step-by-step plugin authoring guide
     ├── TROUBLESHOOTING.md        # common issues + fixes
+    ├── FUTURE_UPDATES.md         # planned improvements (SQLite history, auth, orphan cleanup)
     ├── local-testing.md          # local dev testing guide (macOS, Linux, Windows)
     └── NOTE_filename_grammar_source.md
 ```
@@ -254,7 +255,7 @@ Follows the [Kodi NFO spec](https://kodi.wiki/view/NFO_files/Movies) so the side
     <fanart>My Movie-fanart.jpg</fanart>
   </art>
   <source>https://mysite.com/item/12345</source>
-  <uniqueid type="pm">12345</uniqueid>
+  <uniqueid type="m3">12345</uniqueid>
 </movie>
 ```
 
@@ -310,7 +311,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `WEB_ENABLED` | `true` | Enable the web dashboard |
 | `WEB_PORT` | `8765` | Port the dashboard listens on |
 | `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
-| `APP_NAME` | `pm` | Display name in the dashboard header and title |
+| `APP_NAME` | `m3` | Display name in the dashboard header and title |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to POST a JSON run summary after each run |
 | `NOTIFY_MIN_ERRORS` | `0` | Minimum combined error count before the webhook fires (0 = always fire) |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
@@ -323,26 +324,26 @@ All config via environment variables. See `config.example.yml` for the full anno
 - Web dashboard (uvicorn) runs in a daemon thread alongside the scheduler
 - `max_instances=1` prevents concurrent runs if a previous run is still in progress
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
-- Manual trigger via signal: `docker exec pm kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
-- Plugin hot-reload via signal: `docker exec pm kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict contents (clear + update under a lock) so all live references see the new plugins without a container restart. `app.state.plugin_router` (the `Router` wrapping the registry in the web app) reads the same dict, so the web UI's plugin list and dispatch also reflect the reload automatically (Unix only; skipped on Windows)
+- Manual trigger via signal: `docker exec m3 kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
+- Plugin hot-reload via signal: `docker exec m3 kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict contents (clear + update under a lock) so all live references see the new plugins without a container restart. `app.state.plugin_router` (the `Router` wrapping the registry in the web app) reads the same dict, so the web UI's plugin list and dispatch also reflect the reload automatically (Unix only; skipped on Windows)
 
 ## Run Modes
 
 ```bash
 # Default — start scheduler + web dashboard, run nightly per RUN_SCHEDULE
-docker run pm
+docker run m3
 
 # Manual one-shot — run immediately and exit (web dashboard does NOT start)
-docker exec pm python -m app.main --once
+docker exec m3 python -m app.main --once
 
 # Force re-process — ignore existing sidecars, re-fetch everything
-docker exec pm python -m app.main --once --force
+docker exec m3 python -m app.main --once --force
 
 # Dry run — parse + route + fetch but skip all writes and report
-docker exec pm python -m app.main --once --dry-run
+docker exec m3 python -m app.main --once --dry-run
 
 # Diagnose unmatched files — scan library, print files no plugin claims, exit
-docker exec pm python -m app.main --list-unmatched
+docker exec m3 python -m app.main --list-unmatched
 ```
 
 `--force` only applies to the run it's passed to. Scheduled runs always use normal skip logic.
@@ -352,7 +353,7 @@ docker exec pm python -m app.main --list-unmatched
 ## Logging
 
 - `app/logging_setup.py` configures Python `logging` with two handlers:
-  - `RotatingFileHandler` → `/config/logs/pm.log` (10 MB × 5 files) for history
+  - `RotatingFileHandler` → `/config/logs/m3.log` (10 MB × 5 files) for history
   - `StreamHandler` → stdout for `docker logs` visibility
 - `LOG_LEVEL` env var controls verbosity (default `INFO`)
 - Log files older than `LOG_RETENTION_DAYS` (default 30) are deleted at the end of each run
@@ -382,7 +383,7 @@ File statuses:
 
 ## Docker
 
-`python:3.12-slim` base. Non-root `pm` user. Health check via `GET /healthz` on the web dashboard. See `Dockerfile` for the authoritative build definition.
+`python:3.12-slim` base. Non-root `m3` user. Health check via `GET /healthz` on the web dashboard. See `Dockerfile` for the authoritative build definition.
 
 ---
 

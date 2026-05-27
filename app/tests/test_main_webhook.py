@@ -102,12 +102,12 @@ def test_webhook_payload_contains_required_fields():
     mock_client = _make_mock_client(captured)
 
     with patch("httpx.Client", return_value=mock_client):
-        _fire_webhook("http://localhost/hook", report, app_name="pm")
+        _fire_webhook("http://localhost/hook", report, app_name="m3")
 
     body = json.loads(captured["body"])
     assert body["updated"] == 3
     assert body["errors"] == 1
-    assert body["app_name"] == "pm"
+    assert body["app_name"] == "m3"
     assert body["first_error"] == "oops"
 
 
@@ -117,7 +117,7 @@ def test_webhook_payload_is_valid_json_with_required_fields():
     mock_client = _make_mock_client(captured)
 
     with patch("httpx.Client", return_value=mock_client):
-        _fire_webhook("http://localhost/hook", report, app_name="pm")
+        _fire_webhook("http://localhost/hook", report, app_name="m3")
 
     body = json.loads(captured["body"])
     assert "app_name" in body
@@ -135,7 +135,7 @@ def test_webhook_network_failure_does_not_raise():
     mock_client.post.side_effect = Exception("network down")
 
     with patch("httpx.Client", return_value=mock_client):
-        _fire_webhook("http://localhost/hook", report, app_name="pm")
+        _fire_webhook("http://localhost/hook", report, app_name="m3")
 
 
 def test_webhook_payload_omits_first_error_when_no_errors():
@@ -144,7 +144,7 @@ def test_webhook_payload_omits_first_error_when_no_errors():
     mock_client = _make_mock_client(captured)
 
     with patch("httpx.Client", return_value=mock_client):
-        _fire_webhook("http://localhost/hook", report, app_name="pm")
+        _fire_webhook("http://localhost/hook", report, app_name="m3")
 
     body = json.loads(captured["body"])
     assert body["first_error"] is None

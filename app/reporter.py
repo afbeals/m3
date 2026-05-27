@@ -17,6 +17,7 @@
 #   "add_form"     — filename used the Manual Add form; needs human follow-up
 #   "scrape_error" — plugin raised ScrapeError/SelectorMissingError; site may
 #                    have changed its markup or the record no longer exists
+#   "image_error"  — NFO written successfully but one or more images failed to download
 #   "error"        — plugin or writer raised an unexpected exception
 # -----------------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FileResult:
     path: str
-    # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error", "error"
+    # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error", "image_error", "error"
     status: str
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
@@ -58,6 +59,7 @@ class RunReport:
     unmatched: int = 0
     add_form: int = 0
     scrape_errors: int = 0
+    image_errors: int = 0
     errors: int = 0
 
     # Full per-file results list (written verbatim to the JSON report)
@@ -79,6 +81,8 @@ class RunReport:
             self.add_form += 1
         elif result.status == "scrape_error":
             self.scrape_errors += 1
+        elif result.status == "image_error":
+            self.image_errors += 1
         elif result.status == "error":
             self.errors += 1
         else:
@@ -90,7 +94,7 @@ def write_report(
     report: RunReport,
     report_path: str,
     retention_days: int,
-    app_name: str = "pm",
+    app_name: str = "m3",
 ) -> None:
     """Write the JSON and plain-text reports, then clean up old JSON reports."""
     os.makedirs(report_path, exist_ok=True)
@@ -139,6 +143,7 @@ def write_report(
         f"  Manual Add (pending)                   : {report.add_form}",
         f"  Unmatched                              : {report.unmatched}",
         f"  Scrape errors (site change / not found): {report.scrape_errors}",
+        f"  Image errors (NFO ok, images failed)   : {report.image_errors}",
         f"  Errors (unexpected)                    : {report.errors}",
         "",
     ]
@@ -159,6 +164,16 @@ def write_report(
     if unmatched_files:
         lines.append("Unmatched files:")
         for f in unmatched_files:
+            lines.append(f"  {f.path}")
+            if f.message:
+                lines.append(f"    → {f.message}")
+        lines.append("")
+
+    # Image errors — NFO was written but image download failed
+    image_error_files = [f for f in report.files if f.status == "image_error"]
+    if image_error_files:
+        lines.append("Image errors (NFO written, images missing):")
+        for f in image_error_files:
             lines.append(f"  {f.path}")
             if f.message:
                 lines.append(f"    → {f.message}")

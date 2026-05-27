@@ -157,10 +157,12 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
     """
     Return a list of run entries where file_path appeared, newest first.
 
-    Each entry: {"run_filename": str, "started_at": str, "status": str, "message": str}
+    Each entry: {"run_filename": str, "started_at": str, "status": str, "message": str,
+                 "trigger": bool}
 
-    Scans all available run reports (up to max_runs). Used by the /files page
-    to show a single file's processing history across runs.
+    Scans both regular run reports (run_*.json) and manual trigger records
+    (trigger_*.json written by /trigger/file). Used by the /files page to show
+    a single file's full processing history — including manual retriggering — across runs.
     """
     history = []
     try:
@@ -168,11 +170,17 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
     except OSError:
         logger.warning("Could not list report directory: %s", report_path)
         return history
-    filenames = sorted(
+
+    run_files = sorted(
         (f for f in raw if f.startswith("run_") and f.endswith(".json")),
         reverse=True,
     )
-    for fname in filenames[:max_runs]:
+    trigger_files = sorted(
+        (f for f in raw if f.startswith("trigger_") and f.endswith(".json")),
+        reverse=True,
+    )
+
+    for fname in run_files[:max_runs]:
         run = get_run(report_path, fname)
         if run is None:
             continue
@@ -183,6 +191,28 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
                     "started_at": run.get("started_at", ""),
                     "status": f.get("status", ""),
                     "message": f.get("message", ""),
+                    "trigger": False,
                 })
                 break  # only one entry per run
+
+    for fname in trigger_files[:max_runs]:
+        fpath = os.path.join(report_path, fname)
+        try:
+            with open(fpath) as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            logger.warning("Could not read trigger record %s: %s", fpath, exc)
+            continue
+        for f in data.get("files", []):
+            if f.get("path") == file_path:
+                history.append({
+                    "run_filename": fname,
+                    "started_at": data.get("started_at", ""),
+                    "status": f.get("status", ""),
+                    "message": f.get("message", ""),
+                    "trigger": True,
+                })
+                break
+
+    history.sort(key=lambda e: e.get("started_at", ""), reverse=True)
     return history

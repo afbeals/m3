@@ -1,6 +1,6 @@
 # app/web/__init__.py
 #
-# FastAPI application factory for the pm web dashboard.
+# FastAPI application factory for the m3 web dashboard.
 
 from __future__ import annotations
 

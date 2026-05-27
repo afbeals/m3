@@ -21,6 +21,7 @@
     {% set _renamed      = run.get('renamed', 0) %}
     {% set _skipped      = run.get('skipped', 0) %}
     {% set _scrape_errs  = run.get('scrape_errors', 0) %}
+    {% set _img_errs     = run.get('image_errors', 0) %}
     {% set _errors       = run.get('errors', 0) %}
     {% set _unmatched    = run.get('unmatched', 0) %}
     {% set _total        = run.get('total_scanned', 0) %}
@@ -39,6 +40,10 @@
     <a href="/runs/{{ run.filename }}?status=scrape_error" class="stat stat-link">
       <div class="stat-label">Scrape errors</div>
       <div class="stat-value {% if _scrape_errs > 0 %}yellow{% else %}dim{% endif %}">{{ _scrape_errs }}</div>
+    </a>
+    <a href="/runs/{{ run.filename }}?status=image_error" class="stat stat-link">
+      <div class="stat-label">Image errors</div>
+      <div class="stat-value {% if _img_errs > 0 %}yellow{% else %}dim{% endif %}">{{ _img_errs }}</div>
     </a>
     <a href="/runs/{{ run.filename }}?status=error" class="stat stat-link">
       <div class="stat-label">Errors</div>
@@ -63,6 +68,7 @@
     ("updated",     "updated",     "badge-updated"),
     ("renamed",     "renamed",     "badge-renamed"),
     ("scrape_error","scrape_error","badge-scrape_error"),
+    ("image_error", "image_error", "badge-image_error"),
     ("error",       "error",       "badge-error"),
     ("unmatched",   "unmatched",   "badge-unmatched"),
     ("add_form",    "add_form",    "badge-add_form"),
@@ -97,7 +103,7 @@
       </td>
       <td class="msg">{{ f.message or "" }}</td>
       <td id="retry-{{ loop.index }}">
-        {% if f.status in ("error", "scrape_error", "unmatched") and f.path %}
+        {% if f.status in ("error", "scrape_error", "image_error", "unmatched") and f.path %}
         <form method="POST" action="/trigger/file" class="inline-form"
               hx-post="/trigger/file"
               hx-target="#retry-{{ loop.index }}"

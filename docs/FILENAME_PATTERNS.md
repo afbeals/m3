@@ -1,6 +1,6 @@
 # Filename Patterns
 
-`pm` uses a **universal parser** (`app/parser.py`) to decode media filenames into structured tokens before routing to a plugin. This document is the canonical grammar reference.
+`m3` uses a **universal parser** (`app/parser.py`) to decode media filenames into structured tokens before routing to a plugin. This document is the canonical grammar reference.
 
 The raw source note this was derived from is at `NOTE_filename_grammar_source.md`.
 

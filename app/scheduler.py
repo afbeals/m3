@@ -13,7 +13,7 @@
 # Manual trigger:
 #   Sending SIGUSR1 to the container process triggers an immediate run without
 #   restarting the container or disturbing the schedule:
-#     docker exec pm kill -USR1 1
+#     docker exec m3 kill -USR1 1
 # -----------------------------------------------------------------------------
 
 import logging

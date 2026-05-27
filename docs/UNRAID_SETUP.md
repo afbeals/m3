@@ -19,20 +19,33 @@ You have two options: build the image on your local machine and push it, or buil
 
 ### Option A — Build on your local machine and push to Docker Hub
 
-```bash
-# From the root of this project
-docker build -t yourdockerhubuser/pm:latest .
+Tag both `:latest` and a version tag so you can roll back to a known-good image
+if a new build has problems:
 
-# Push to Docker Hub (create a free account at hub.docker.com if needed)
+```bash
+# Read the current version from app/__init__.py
+VERSION=$(python3 -c "from app import __version__; print(__version__)")
+
+# From the root of this project
+docker build -t yourdockerhubuser/m3:latest -t yourdockerhubuser/m3:${VERSION} .
+
+# Push both tags to Docker Hub (create a free account at hub.docker.com if needed)
 docker login
-docker push yourdockerhubuser/pm:latest
+docker push yourdockerhubuser/m3:latest
+docker push yourdockerhubuser/m3:${VERSION}
 ```
+
+Pinning the container to `yourdockerhubuser/m3:1.1.0` (for example) in Unraid
+gives you a stable reference you can manually upgrade rather than having `:latest`
+change unexpectedly. Unraid's "Check for Updates" button compares the local image
+digest to the remote `:latest` tag — it does **not** auto-pull; you must click the
+button to download and restart with the new image.
 
 ### Option B — Build directly on Unraid
 
 1. Copy the project to your Unraid server (e.g., via SMB share or `scp`):
    ```bash
-   scp -r /path/to/pm root@<unraid-ip>:/mnt/user/appdata/pm-build/
+   scp -r /path/to/m3 root@<unraid-ip>:/mnt/user/appdata/m3-build/
    ```
 2. SSH into Unraid:
    ```bash
@@ -40,8 +53,9 @@ docker push yourdockerhubuser/pm:latest
    ```
 3. Build the image:
    ```bash
-   cd /mnt/user/appdata/pm-build
-   docker build -t pm:latest .
+   cd /mnt/user/appdata/m3-build
+   VERSION=$(python3 -c "from app import __version__; print(__version__)")
+   docker build -t m3:latest -t m3:${VERSION} .
    ```
 
 > **Note:** Images built directly on Unraid are stored locally and won't survive an Unraid OS upgrade unless you rebuild them. Option A (Docker Hub) is more durable.
@@ -53,12 +67,12 @@ docker push yourdockerhubuser/pm:latest
 On your Unraid server (via SSH or the terminal in the Unraid UI), create the directories the container will use:
 
 ```bash
-mkdir -p /mnt/user/appdata/pm/plugins
-mkdir -p /mnt/user/appdata/pm/config/logs
-mkdir -p /mnt/user/appdata/pm/config/reports
+mkdir -p /mnt/user/appdata/m3/plugins
+mkdir -p /mnt/user/appdata/m3/config/logs
+mkdir -p /mnt/user/appdata/m3/config/reports
 ```
 
-Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plugin Setup section below.
+Drop any plugin `.py` files into `/mnt/user/appdata/m3/plugins/` — see the Plugin Setup section below.
 
 ---
 
@@ -74,8 +88,8 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 
 | Field | Value |
 |---|---|
-| Name | `pm` |
-| Repository | `yourdockerhubuser/pm:latest` (or `pm:latest` if built locally) |
+| Name | `m3` |
+| Repository | `yourdockerhubuser/m3:latest` (or `m3:latest` if built locally) |
 | Network Type | `Bridge` |
 | Restart Policy | `Unless Stopped` |
 
@@ -83,8 +97,8 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 
 | Container Path | Host Path | Access Mode |
 |---|---|---|
-| `/plugins` | `/mnt/user/appdata/pm/plugins` | Read/Write |
-| `/config` | `/mnt/user/appdata/pm/config` | Read/Write |
+| `/plugins` | `/mnt/user/appdata/m3/plugins` | Read/Write |
+| `/config` | `/mnt/user/appdata/m3/config` | Read/Write |
 | `/media` | `/mnt/user/<your-media-share>` | Read/Write |
 
 > Replace `/mnt/user/<your-media-share>` with the actual path to your media on Unraid (e.g., `/mnt/user/Media` or `/mnt/user/data/media`). The container needs read access to scan files and write access to create sidecar files.
@@ -97,27 +111,39 @@ Drop any plugin `.py` files into `/mnt/user/appdata/pm/plugins/` — see the Plu
 
 **Environment variables** (click `Add another Variable` for each):
 
-| Key | Value | Notes |
+**Required — the container will refuse to start without these:**
+
+| Key | Example Value | Notes |
 |---|---|---|
-| `PLEX_URL` | `http://<your-unraid-ip>:32400` | Your Plex server's local URL |
-| `PLEX_TOKEN` | `your-plex-token` | See below for how to find this |
-| `LIBRARY_PATHS` | `/media/Movies,/media/TV` | Comma-separated paths **inside the container** matching your `/media` mount |
-| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip (e.g. `*.part,/media/incoming/**`) |
+| `PLEX_URL` | `http://192.168.1.100:32400` | Your Plex server's local URL, reachable from inside the container |
+| `PLEX_TOKEN` | `xxxxxxxxxxxxxxxxxxxx` | See [Finding Your Plex Token](#finding-your-plex-token) below |
+
+**Strongly recommended — set these to match your setup:**
+
+| Key | Default | Notes |
+|---|---|---|
+| `LIBRARY_PATHS` | `/media` | Comma-separated paths **inside the container** matching your `/media` mount (e.g. `/media/Movies,/media/TV`) |
+| `TZ` | `UTC` | Timezone for the schedule — times in `RUN_SCHEDULE` are interpreted in this timezone. Examples: `America/New_York`, `Europe/London`, `Australia/Sydney` |
+
+**Optional — the defaults work fine; change only if needed:**
+
+| Key | Default | Notes |
+|---|---|---|
+| `RUN_SCHEDULE` | `0 3 * * *` | Cron expression for scheduled runs — default is 3am nightly in the container's timezone |
 | `PLUGIN_DIR` | `/plugins` | Leave as-is unless you changed the container path |
 | `REPORT_PATH` | `/config/reports` | Leave as-is |
 | `LOG_PATH` | `/config/logs` | Leave as-is |
-| `RUN_SCHEDULE` | `0 3 * * *` | Cron expression — default is 3am nightly |
-| `TZ` | `UTC` | Timezone for the schedule (e.g. `America/New_York`, `Europe/London`) — times in `RUN_SCHEDULE` are in this timezone |
-| `LOG_LEVEL` | `INFO` | Use `DEBUG` for troubleshooting |
-| `LOG_RETENTION_DAYS` | `30` | Days before old log files are deleted |
-| `REPORT_RETENTION_DAYS` | `90` | Days before old report files are deleted |
-| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls; set to `0` to disable |
-| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a plugin fetch is aborted and marked as `error` |
-| `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard |
+| `LOG_LEVEL` | `INFO` | Use `DEBUG` for troubleshooting; switch back to `INFO` when done (verbose logs fill disk faster) |
+| `LOG_RETENTION_DAYS` | `30` | Days before old log files are auto-deleted |
+| `REPORT_RETENTION_DAYS` | `90` | Days before old run report files are auto-deleted |
+| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds to wait between plugin API calls; set to `0` to disable throttling |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch is aborted and marked as `error` |
+| `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard entirely |
 | `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
-| `APP_NAME` | `pm` | Display name in the dashboard header and page title |
-| `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) |
-| `NOTIFY_MIN_ERRORS` | `0` | Set to `1` to only notify when errors occur — silent on clean nightly runs |
+| `APP_NAME` | `m3` | Display name in the dashboard header and page title |
+| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
+| `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) — leave empty to disable |
+| `NOTIFY_MIN_ERRORS` | `0` | Set to `1` to only notify when errors occur; `0` notifies after every run |
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 
@@ -129,19 +155,19 @@ Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`
 
 ### Via docker-compose (alternative)
 
-If you prefer to manage containers with Compose (e.g., using the Unraid **Docker Compose Manager** plugin), create `/mnt/user/appdata/pm/docker-compose.yml`:
+If you prefer to manage containers with Compose (e.g., using the Unraid **Docker Compose Manager** plugin), create `/mnt/user/appdata/m3/docker-compose.yml`:
 
 ```yaml
 version: "3.8"
 
 services:
-  pm:
-    image: yourdockerhubuser/pm:latest
-    container_name: pm
+  m3:
+    image: yourdockerhubuser/m3:latest
+    container_name: m3
     restart: unless-stopped
     volumes:
-      - /mnt/user/appdata/pm/plugins:/plugins
-      - /mnt/user/appdata/pm/config:/config
+      - /mnt/user/appdata/m3/plugins:/plugins
+      - /mnt/user/appdata/m3/config:/config
       - /mnt/user/Media:/media          # replace with your actual media path
     ports:
       - "8765:8765"
@@ -158,7 +184,7 @@ services:
       - REPORT_RETENTION_DAYS=90
       - PLUGIN_RATE_LIMIT_SECS=1.0
       - PLUGIN_FETCH_TIMEOUT_SECS=60.0
-      - APP_NAME=pm
+      - APP_NAME=m3
       # Optional: set timezone so RUN_SCHEDULE uses local time (default UTC)
       # - TZ=America/New_York
       # Optional: skip files matching these glob patterns (e.g. in-progress downloads)
@@ -171,7 +197,7 @@ services:
 
 Then start it:
 ```bash
-cd /mnt/user/appdata/pm
+cd /mnt/user/appdata/m3
 docker compose up -d
 ```
 
@@ -179,13 +205,13 @@ docker compose up -d
 
 ## Step 4 — Plugin Setup
 
-Plugins are `.py` files dropped into the plugins directory (`/mnt/user/appdata/pm/plugins/` on the host). The container discovers them automatically on startup.
+Plugins are `.py` files dropped into the plugins directory (`/mnt/user/appdata/m3/plugins/` on the host). The container discovers them automatically on startup.
 
-1. Copy your plugin file(s) into `/mnt/user/appdata/pm/plugins/`
+1. Copy your plugin file(s) into `/mnt/user/appdata/m3/plugins/`
 2. Add any required API keys as environment variables on the container
 3. Restart the container to pick up the new plugin:
    - In the Unraid Docker UI: click the container icon → **Restart**
-   - Or via SSH: `docker restart pm`
+   - Or via SSH: `docker restart m3`
 
 See `plugins/example_plugin.py` in the project root for a reference implementation.
 
@@ -195,16 +221,16 @@ See `plugins/example_plugin.py` in the project root for a reference implementati
 
 ### Check the container is up
 
-In the Unraid Docker UI, the `pm` container should show a green icon. Click the icon → **Logs** to see startup output.
+In the Unraid Docker UI, the `m3` container should show a green icon. Click the icon → **Logs** to see startup output.
 
 Or via SSH:
 ```bash
-docker logs pm --tail 50
+docker logs m3 --tail 50
 ```
 
 You should see something like:
 ```
-INFO  app.main - pm 1.1.0 starting up
+INFO  app.main - m3 1.1.0 starting up
 INFO  app.main - Library paths: ['/media/Movies', '/media/TV']
 INFO  app.plugins.loader - Registered plugin MySitePlugin for id 'mysite'
 INFO  app.plugins.loader - Registered plugin OtherSitePlugin for id 'othersite'
@@ -213,7 +239,7 @@ INFO  app.main - Web dashboard started on http://0.0.0.0:8765
 
 ### Open the web dashboard
 
-Navigate to `http://<your-unraid-ip>:8765` in your browser. You should see the pm dashboard with the latest run summary and a "Run Now" button.
+Navigate to `http://<your-unraid-ip>:8765` in your browser. You should see the m3 dashboard with the latest run summary and a "Run Now" button.
 
 If you changed `WEB_PORT`, use that port number instead.
 
@@ -227,8 +253,8 @@ After that, a small "WebUI" button appears next to the container icon in the Doc
 ### Check log files
 
 ```bash
-ls /mnt/user/appdata/pm/config/logs/
-cat /mnt/user/appdata/pm/config/logs/pm.log
+ls /mnt/user/appdata/m3/config/logs/
+cat /mnt/user/appdata/m3/config/logs/m3.log
 ```
 
 ### Trigger a manual run (without waiting for the schedule)
@@ -237,12 +263,12 @@ Via the web dashboard: click **Run Now** on the main page.
 
 Via SSH:
 ```bash
-docker exec pm python -m app.main --once
+docker exec m3 python -m app.main --once
 ```
 
 Force re-process all files (ignores existing sidecars):
 ```bash
-docker exec pm python -m app.main --once --force
+docker exec m3 python -m app.main --once --force
 ```
 
 ### Check the run report
@@ -252,7 +278,7 @@ After a run completes, either:
 - Or read the text summary directly:
 
 ```bash
-cat /mnt/user/appdata/pm/config/reports/run_latest.txt
+cat /mnt/user/appdata/m3/config/reports/run_latest.txt
 ```
 
 ---
@@ -271,19 +297,19 @@ Alternatively, follow the [official Plex guide](https://support.plex.tv/articles
 ## Updating the Container
 
 ### If using Docker Hub:
-1. Pull the new image: `docker pull yourdockerhubuser/pm:latest`
+1. Pull the new image: `docker pull yourdockerhubuser/m3:latest`
 2. In the Unraid Docker UI: click the container icon → **Update** (or Force Update)
 3. The container restarts automatically with the new image
 
 ### If built locally on Unraid:
 ```bash
-cd /mnt/user/appdata/pm-build
+cd /mnt/user/appdata/m3-build
 git pull   # or re-copy the updated source
-docker build -t pm:latest .
-docker restart pm
+docker build -t m3:latest .
+docker restart m3
 ```
 
-No data migration is needed between versions — pm stores all state in the config directory (`/mnt/user/appdata/pm/config/`) which is mounted from the host and survives container restarts and updates.
+No data migration is needed between versions — m3 stores all state in the config directory (`/mnt/user/appdata/m3/config/`) which is mounted from the host and survives container restarts and updates.
 
 ---
 
@@ -291,23 +317,28 @@ No data migration is needed between versions — pm stores all state in the conf
 
 ### What to back up
 
-The only persistent state pm writes is in `/mnt/user/appdata/pm/`:
+| Path | Priority | Contents | Notes |
+|---|---|---|---|
+| `plugins/` | **Essential** | Your plugin `.py` files | The only thing that cannot be recovered from anywhere else — lose these and you must rewrite your site integrations |
+| Your media share (NFO sidecars) | **Essential** | `*.nfo`, `*-poster.jpg`, `*-fanart.jpg` next to each media file | Portable backup of all fetched metadata. If the Plex database is lost, m3 can rebuild everything from these files. Back them up with your media. |
+| `docker-compose.yml` / env var notes | **Recommended** | Container configuration | Saves time reconstructing your `PLEX_URL`, `PLEX_TOKEN`, `LIBRARY_PATHS`, plugin API keys, etc. |
+| `config/reports/` | Optional | Run history JSON + summary text | Useful for audit history; auto-purged after `REPORT_RETENTION_DAYS`. Safe to omit from backups. |
+| `config/logs/` | Skip | Rotating log files | Transient; m3 recreates them on the next run |
 
-| Path | Contents | Notes |
-|---|---|---|
-| `config/reports/` | Run history JSON + summary text | Safe to delete old ones; they only affect dashboard history |
-| `config/logs/` | Rotating log files | Safe to delete; pm recreates them on next run |
-| `plugins/` | Your plugin `.py` files | **Back these up** — they are not recoverable from the container |
+**Why the NFO sidecars matter:** m3 pushes metadata directly to Plex's database (fast path), but the Plex database is not portable — it is lost if you rebuild Plex, migrate to a new server, or switch to Jellyfin. The NFO sidecar files on disk are the permanent backup that travels with your media files regardless of which media server you use.
 
-NFO sidecars and poster images live **next to your media files** in your media share — they are already backed up with your media.
-
-Plex does not need to be backed up separately; if you lose the Plex database you can always re-run pm with `--force` to rebuild all metadata.
+**Plex database:** You do not need to back up the Plex database for m3's purposes. If the Plex database is lost, run:
+```bash
+docker exec m3 python -m app.main --once --force
+```
+m3 re-reads the NFO sidecars (via the rename workflow) and re-pushes all metadata to Plex. A full re-fetch from source sites is only needed if the sidecar files are also lost.
 
 ### Restore after data loss
 
-1. Restore your plugin files to `/mnt/user/appdata/pm/plugins/`
-2. Start the container — pm recreates the config directory structure automatically
-3. Run `docker exec pm python -m app.main --once --force` to re-process all media files
+1. Restore your plugin files to `/mnt/user/appdata/m3/plugins/`
+2. Start the container — m3 recreates the config directory structure automatically
+3. If NFO sidecars are intact, run a normal scheduled pass — m3 will skip files that already have sidecars. Plex will pick up the sidecars on its next scan.
+4. If NFO sidecars are lost too, run `docker exec m3 python -m app.main --once --force` to re-fetch all metadata from source sites.
 
 ---
 
@@ -325,12 +356,12 @@ The easiest way to get run notifications on Unraid is **Gotify** — a lightweig
 ### Step 2 — Create an app token
 
 1. In Gotify, click **Apps → Create Application**
-2. Name it `pm` and click **Create**
-3. Copy the displayed token — you'll paste it into the pm container config
+2. Name it `m3` and click **Create**
+3. Copy the displayed token — you'll paste it into the m3 container config
 
-### Step 3 — Configure pm
+### Step 3 — Configure m3
 
-Add these two env vars to the pm container (Docker UI → Edit → Add variable):
+Add these two env vars to the m3 container (Docker UI → Edit → Add variable):
 
 | Key | Value | Notes |
 |---|---|---|
@@ -343,11 +374,11 @@ After the next run (or click **Run Now** to test), you should receive a push not
 
 ### Notification payload
 
-pm POSTs a JSON body that Gotify receives as a message. The key fields:
+m3 POSTs a JSON body that Gotify receives as a message. The key fields:
 
 ```json
 {
-  "app_name": "pm",
+  "app_name": "m3",
   "started_at": "2025-05-17T03:00:01",
   "finished_at": "2025-05-17T03:02:34",
   "duration_seconds": 153,
@@ -369,8 +400,8 @@ If you prefer alerts in the Unraid web UI itself rather than a push app, you can
 
 ```bash
 /usr/local/emhttp/webGui/scripts/notify \
-  -e "pm" \
-  -s "pm run complete" \
+  -e "m3" \
+  -s "m3 run complete" \
   -d "Updated: 12  Errors: 0  Unmatched: 2" \
   -i "normal"
 ```
@@ -383,9 +414,9 @@ Severity is `normal`, `warning`, or `alert`. This requires running a custom scri
 
 | Symptom | Check |
 |---|---|
-| Container exits immediately | `docker logs pm` — likely a missing required env var or bad `PLEX_TOKEN` |
+| Container exits immediately | `docker logs m3` — likely a missing required env var or bad `PLEX_TOKEN` |
 | No files being processed | Verify `LIBRARY_PATHS` values match the container-side mount paths, not the host paths |
-| Plex not updating | Confirm `PLEX_URL` is reachable from inside the container: `docker exec pm curl -s "$PLEX_URL/identity"` |
-| Plugin not loading | Check plugin file is in `/mnt/user/appdata/pm/plugins/`; check logs for import errors |
-| Sidecar files not appearing | Confirm `/media` mount has write permissions; check `docker logs pm` for permission errors |
+| Plex not updating | Confirm `PLEX_URL` is reachable from inside the container: `docker exec m3 curl -s "$PLEX_URL/identity"` |
+| Plugin not loading | Check plugin file is in `/mnt/user/appdata/m3/plugins/`; check logs for import errors |
+| Sidecar files not appearing | Confirm `/media` mount has write permissions; check `docker logs m3` for permission errors |
 | Schedule not running | Verify `RUN_SCHEDULE` is a valid cron expression (5 fields: min hour day month weekday) |

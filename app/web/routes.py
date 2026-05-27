@@ -1,6 +1,6 @@
 # app/web/routes.py
 #
-# FastAPI route handlers for the pm web dashboard.
+# FastAPI route handlers for the m3 web dashboard.
 #
 # Routes:
 #   GET  /               — latest run summary + next scheduled time
@@ -10,7 +10,7 @@
 #   GET  /plugins        — loaded plugin list
 #   GET  /config         — active env var values (token masked)
 #   GET  /api/status     — HTMX-polled run-in-progress badge
-#   GET  /logs           — last N lines of pm.log
+#   GET  /logs           — last N lines of <app_name>.log
 #   GET  /files          — per-file processing history across all runs
 #   POST /trigger/run    — schedule an immediate full run
 #   POST /trigger/file   — re-process a single file by path
@@ -77,7 +77,7 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
     # ?check=plex performs a live Plex reachability probe.
     # Returns {"plex": "ok"} or {"plex": "unreachable", "detail": "..."}.
     # Kept separate from the main healthz response so uptime monitors can
-    # alert on Plex being down without flagging the pm process itself as unhealthy.
+    # alert on Plex being down without flagging the m3 process itself as unhealthy.
     if check == "plex":
         from app.writers.plex import connect_plex
         import concurrent.futures
@@ -363,9 +363,14 @@ def trigger_run(request: Request):
     """Schedule an immediate run then redirect to the dashboard."""
     run_state = request.app.state.run_state
     if run_state is not None and run_state.snapshot()["running"]:
-        # Don't queue a second run; redirect back with a flash message so the
-        # user gets visible feedback instead of a silent no-op.
+        # Don't queue a second run — return feedback appropriate to the caller.
+        if request.headers.get("HX-Request"):
+            return HTMLResponse(
+                '<span style="color:var(--yellow); font-size:0.85rem;">⚠ Already running</span>',
+                status_code=200,
+            )
         return RedirectResponse(url="/?msg=already_running", status_code=303)
+
     scheduler = request.app.state.scheduler
     run_fn = request.app.state.run_fn
     try:
@@ -374,6 +379,15 @@ def trigger_run(request: Request):
     except Exception as exc:
         logger.warning("Could not schedule manual run: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+    # HTMX callers: return an inline confirmation badge instead of a redirect.
+    # A 303 redirect causes HTMX to do a full-page navigation rather than a
+    # partial swap, leaving the user with no visible feedback.
+    if request.headers.get("HX-Request"):
+        return HTMLResponse(
+            '<span style="color:var(--green); font-size:0.85rem;">✓ Queued — stats update shortly</span>',
+            status_code=200,
+        )
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -440,6 +454,11 @@ async def trigger_file(request: Request):
     router_obj = request.app.state.plugin_router
 
     def _run_single():
+        import json as _json
+        from datetime import datetime as _dt
+        outcome_status = "error"
+        outcome_message = ""
+        started_at = _dt.now().isoformat(timespec="seconds")
         try:
             # Bypasses the normal run() path deliberately: no library scan, no run
             # report, no rate limiting. This is a single user-initiated re-process
@@ -451,6 +470,8 @@ async def trigger_file(request: Request):
             parsed, plugin = router_obj.dispatch(media.stem)
             if parsed is None or plugin is None:
                 logger.warning("trigger_file: could not route %s", file_path)
+                outcome_status = "unmatched"
+                outcome_message = "no plugin registered for this file"
                 return
             try:
                 timeout = config.plugin_fetch_timeout_secs
@@ -461,29 +482,61 @@ async def trigger_file(request: Request):
                 )
             except Exception as exc:
                 logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
+                outcome_status = "error"
+                outcome_message = str(exc)
                 return
             if result is None:
                 logger.warning("trigger_file: plugin returned no result for %s", file_path)
+                outcome_status = "unmatched"
+                outcome_message = "plugin returned no result"
                 return
             try:
                 write_nfo(media, result)
-                write_images(media, result)
+                images_ok = write_images(media, result)
             except Exception as exc:
                 logger.warning("trigger_file: write error for %s: %s", file_path, exc)
+                outcome_status = "error"
+                outcome_message = str(exc)
                 return
+            if not images_ok:
+                outcome_status = "image_error"
+                outcome_message = "NFO written but one or more images failed to download"
+            else:
+                outcome_status = "updated"
             if plex_server is not None:
                 try:
                     push_to_plex(plex_server, file_path, result)
                 except Exception as exc:
                     logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
-            logger.info("trigger_file: reprocessed %s", file_path)
+            logger.info("trigger_file: reprocessed %s (status=%s)", file_path, outcome_status)
         finally:
+            # Write a lightweight trigger record so the file history page shows
+            # the manual retrigger outcome alongside regular scheduled runs.
+            finished_at = _dt.now().isoformat(timespec="seconds")
+            try:
+                ts = started_at.replace(":", "").replace("-", "").replace("T", "_")[:15]
+                record = {
+                    "trigger": True,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "files": [{"path": file_path, "status": outcome_status, "message": outcome_message}],
+                }
+                report_path = config.report_path
+                os.makedirs(report_path, exist_ok=True)
+                fname = f"trigger_{ts}_{media.stem[:40]}.json"
+                fpath = os.path.join(report_path, fname)
+                tmp = fpath + ".tmp"
+                with open(tmp, "w") as fh:
+                    _json.dump(record, fh)
+                os.replace(tmp, fpath)
+            except Exception as exc:
+                logger.warning("trigger_file: could not write trigger record: %s", exc)
             # Always release the per-path lock so subsequent requests can proceed.
             file_lock.release()
 
     # daemon=True so the thread doesn't keep the process alive if the container
     # is stopped mid-reprocess; the write is idempotent so an interrupted run is safe.
-    thread = threading.Thread(target=_run_single, daemon=True, name="pm-trigger-file")
+    thread = threading.Thread(target=_run_single, daemon=True, name="m3-trigger-file")
     thread.start()
 
     # HTMX inline retry (HX-Request header present): return a "queued" badge
@@ -530,7 +583,8 @@ _LOG_TAIL_MAX = 2000
 @router.get("/logs", response_class=HTMLResponse)
 def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
     tail = max(1, min(tail, _LOG_TAIL_MAX))
-    log_path = os.path.join(request.app.state.config.log_path, "pm.log")
+    config = request.app.state.config
+    log_path = os.path.join(config.log_path, f"{config.app_name}.log")
     lines: list[str] = []
     error: str | None = None
     try:

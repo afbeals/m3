@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # app/main.py
 #
-# Entrypoint for the pm metadata agent.
+# Entrypoint for the m3 metadata agent.
 #
 # Usage:
 #   python -m app.main                        # start the scheduler (normal container mode)
@@ -29,6 +29,16 @@ import os
 import time
 from datetime import datetime
 
+# Load .env file if present (local development convenience).
+# Only applied when the file exists — production containers set env vars directly
+# and should not have a .env file, so this is a no-op in production.
+try:
+    from dotenv import load_dotenv
+    if os.path.isfile(".env"):
+        load_dotenv(override=False)  # override=False: container env vars take precedence
+except ImportError:
+    pass  # python-dotenv not installed — silently skip
+
 from app import __version__
 from app.config import load_config
 from app.utils import call_with_timeout
@@ -55,7 +65,7 @@ _WEBHOOK_TIMEOUT_SECS = 10
 _DEFAULT_PLUGIN_FETCH_TIMEOUT = 60
 
 
-def _fire_webhook(url: str, report, *, app_name: str = "pm") -> None:
+def _fire_webhook(url: str, report, *, app_name: str = "m3") -> None:
     """POST a compact JSON run summary to the configured NOTIFY_URL.
 
     Uses a short timeout so a slow/unreachable endpoint doesn't delay the
@@ -90,7 +100,7 @@ def _fire_webhook(url: str, report, *, app_name: str = "pm") -> None:
                 content=payload.encode(),
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": f"pm-metadata-agent/{__version__}",
+                    "User-Agent": f"m3-metadata-agent/{__version__}",
                 },
             )
             logger.info("Webhook notification sent to %s (HTTP %d)", url, r.status_code)
@@ -124,6 +134,7 @@ def run(
     Plex is reconnected on every run so that long-running schedulers don't use
     a stale connection after a Plex server restart or token expiry.
     """
+    logger.info("Run started%s", " [DRY RUN]" if dry_run else "")
     if dry_run:
         logger.info("DRY RUN mode — no files or Plex records will be written")
 
@@ -298,10 +309,22 @@ def run(
                 continue
 
             try:
-                write_images(media, result)
+                images_ok = write_images(media, result)
             except Exception as exc:
                 logger.exception("Image write error for %s", media.path)
                 report.record(FileResult(path=media.path, status="error", message=str(exc)))
+                continue
+            if not images_ok:
+                logger.warning(
+                    "Image download failed for %s — NFO written, images missing. "
+                    "Recording as image_error.",
+                    media.path,
+                )
+                report.record(FileResult(
+                    path=media.path,
+                    status="image_error",
+                    message="NFO written but one or more images failed to download",
+                ))
                 continue
 
         # Push the same metadata to Plex with field locks so Plex's built-in agent
@@ -345,12 +368,13 @@ def run(
                 _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
     # Delete old log files beyond the retention window (runs regardless of dry_run)
-    cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log")
+    cleanup_old_files(config.log_path, config.log_retention_days, pattern_suffix=".log", app_name=config.app_name)
 
     logger.info(
-        "Run complete. updated=%d renamed=%d skipped=%d unmatched=%d add_form=%d scrape_errors=%d errors=%d",
+        "Run complete. updated=%d renamed=%d skipped=%d unmatched=%d add_form=%d "
+        "scrape_errors=%d image_errors=%d errors=%d",
         report.updated, report.renamed, report.skipped, report.unmatched, report.add_form,
-        report.scrape_errors, report.errors,
+        report.scrape_errors, report.image_errors, report.errors,
     )
 
 
@@ -425,7 +449,7 @@ def _validate_paths(config, library_only: bool = False) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="pm — Plex Metadata Agent")
+    parser = argparse.ArgumentParser(description="m3 — Plex Metadata Agent")
     parser.add_argument(
         "--once",
         action="store_true",
@@ -448,8 +472,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--retry-failed",
-        action="store_true",
-        help="Re-process all error and scrape_error files from the most recent run, then exit",
+        nargs="?",
+        const="1",
+        default=None,
+        metavar="N",
+        help=(
+            "Re-process error and scrape_error files from the N most recent runs "
+            "(default: 1 = most recent run only), then exit"
+        ),
     )
     args = parser.parse_args()
 
@@ -457,9 +487,9 @@ def main() -> None:
     config = load_config(force=args.force)
 
     # Set up logging before anything else so startup messages are captured
-    setup_logging(config.log_path, config.log_level)
+    setup_logging(config.log_path, config.log_level, app_name=config.app_name)
 
-    logger.info("pm %s starting up", __version__)
+    logger.info("m3 %s starting up", __version__)
     logger.info("Library paths: %s", config.library_paths)
 
     # --force without --once is almost certainly a mistake: it would re-process every
@@ -529,26 +559,43 @@ def main() -> None:
             print("All files matched a plugin.")
         return
 
-    if args.retry_failed:
+    if args.retry_failed is not None:
         from app.web.history import list_runs, get_run as get_run_detail
         from app.scanner import MediaFile
+
+        try:
+            num_runs = max(1, int(args.retry_failed))
+        except (ValueError, TypeError):
+            logger.error("--retry-failed requires a positive integer, got %r", args.retry_failed)
+            raise SystemExit(1)
+
         runs = list_runs(config.report_path)
         if not runs:
-            print("No run reports found. Run pm at least once first.")
+            print("No run reports found. Run m3 at least once first.")
             raise SystemExit(0)
-        latest_summary = runs[0]
-        full_run = get_run_detail(config.report_path, latest_summary["filename"])
-        if full_run is None:
-            print(f"Could not read latest run report: {latest_summary['filename']}")
-            raise SystemExit(1)
-        failed_paths = [
-            f["path"] for f in full_run.get("files", [])
-            if f.get("status") in ("error", "scrape_error") and f.get("path")
-        ]
+
+        target_runs = runs[:num_runs]
+        failed_paths: list[str] = []
+        seen_paths: set[str] = set()
+        for summary in target_runs:
+            full_run = get_run_detail(config.report_path, summary["filename"])
+            if full_run is None:
+                print(f"Could not read run report: {summary['filename']}")
+                continue
+            for f in full_run.get("files", []):
+                if f.get("status") in ("error", "scrape_error") and f.get("path"):
+                    p = f["path"]
+                    if p not in seen_paths:
+                        seen_paths.add(p)
+                        failed_paths.append(p)
+
         if not failed_paths:
-            print(f"No errors in {latest_summary['filename']}. Nothing to retry.")
+            label = "most recent run" if num_runs == 1 else f"{num_runs} most recent runs"
+            print(f"No errors in the {label}. Nothing to retry.")
             raise SystemExit(0)
-        print(f"Retrying {len(failed_paths)} failed file(s) from {latest_summary['filename']}:")
+
+        label = target_runs[0]["filename"] if num_runs == 1 else f"{num_runs} runs"
+        print(f"Retrying {len(failed_paths)} failed file(s) from {label}:")
         for p in failed_paths:
             print(f"  {p}")
 
@@ -617,7 +664,7 @@ def main() -> None:
         web_thread = threading.Thread(
             target=web_server.run,
             daemon=True,
-            name="pm-web",
+            name="m3-web",
         )
         web_thread.start()
         logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)

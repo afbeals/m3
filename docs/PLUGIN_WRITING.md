@@ -1,4 +1,4 @@
-# Writing a pm Plugin
+# Writing a m3 Plugin
 
 This guide walks through writing a new metadata plugin from scratch — both the
 common JSON API case and the HTML scraping case.
@@ -8,7 +8,7 @@ common JSON API case and the HTML scraping case.
 ## Overview
 
 A plugin is a single `.py` file dropped into the `plugins/` directory (mounted
-at `/plugins` in the container). pm discovers and loads it automatically on
+at `/plugins` in the container). m3 discovers and loads it automatically on
 startup — no core code changes needed.
 
 Each plugin:
@@ -33,12 +33,12 @@ Edit `plugins/mysite.py`:
 
 Restart the container:
 ```bash
-docker restart pm
+docker restart m3
 ```
 
 Your plugin is live. Test it with a one-shot run:
 ```bash
-docker exec pm python -m app.main --once --force
+docker exec m3 python -m app.main --once --force
 ```
 
 ---
@@ -202,7 +202,7 @@ from bs4 import BeautifulSoup
 
 `fetch_html(url)` handles retries, browser-like User-Agent headers, and content
 validation. It raises `ScrapeError` on network or HTTP errors — let these
-propagate so pm records them as `status="scrape_error"` (distinct from
+propagate so m3 records them as `status="scrape_error"` (distinct from
 `status="error"`, which means your plugin code crashed).
 
 ```python
@@ -244,10 +244,10 @@ Before writing a single line of plugin code, verify your filenames route to your
 ```bash
 # List every file in your library that currently has no plugin — shows you exactly
 # what you need to cover before your plugin can process anything.
-docker exec pm python -m app.main --list-unmatched
+docker exec m3 python -m app.main --list-unmatched
 
 # Or locally after activating the venv:
-PLEX_URL=x PLEX_TOKEN=x LIBRARY_PATHS=/tmp/pm-test-media PLUGIN_DIR=./plugins \
+PLEX_URL=x PLEX_TOKEN=x LIBRARY_PATHS=/tmp/m3-test-media PLUGIN_DIR=./plugins \
 REPORT_PATH=/tmp NOTIFY_URL= LOG_PATH=/tmp \
 python3 -m app.main --list-unmatched
 ```
@@ -299,14 +299,14 @@ EOF
 
 ```bash
 PLEX_URL=... PLEX_TOKEN=... LIBRARY_PATHS=/path/to/media \
-PLUGIN_DIR=./plugins REPORT_PATH=/tmp/pm-reports LOG_PATH=/tmp/pm-logs \
+PLUGIN_DIR=./plugins REPORT_PATH=/tmp/m3-reports LOG_PATH=/tmp/m3-logs \
 MYSITE_API_KEY=your-key \
 python3 -m app.main --once --force
 ```
 
 Check the output:
 ```bash
-cat /tmp/pm-reports/run_latest.txt
+cat /tmp/m3-reports/run_latest.txt
 ```
 
 Look for your file under `updated` (success) or `error`/`scrape_error` (check
@@ -347,10 +347,10 @@ python3 -m pytest app/tests/test_plugin_mysite.py -v
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Plugin not loaded at startup | File not in plugin dir, or has a Python syntax error | Check `docker logs pm` for an import error traceback |
+| Plugin not loaded at startup | File not in plugin dir, or has a Python syntax error | Check `docker logs m3` for an import error traceback |
 | Files route to "unmatched" | `site_id` doesn't match the filename token | Verify `site_id` exactly matches what's after `%` in filenames |
 | `fetch()` called but returns None | API returned empty results | Add logging in `_fetch_*` methods; run with `LOG_LEVEL=DEBUG` |
-| `status=error` in run report | Unhandled exception in plugin | Check `docker logs pm` for the full traceback |
+| `status=error` in run report | Unhandled exception in plugin | Check `docker logs m3` for the full traceback |
 | `status=scrape_error` in run report | `ScrapeError` or `SelectorMissingError` raised | HTTP error from the site, or a CSS selector broke after a site redesign |
 | API key not found | Key not set as env var on the container | Add the key as an environment variable in the Docker/Unraid config |
 

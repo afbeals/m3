@@ -1,6 +1,6 @@
 # Local Testing Guide
 
-How to run and test `pm` locally on macOS, Linux, or Windows before deploying
+How to run and test `m3` locally on macOS, Linux, or Windows before deploying
 to Docker/Unraid.
 
 ---
@@ -20,7 +20,7 @@ to Docker/Unraid.
 ### macOS / Linux
 
 ```bash
-cd /path/to/pm
+cd /path/to/m3
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 ### Windows (Command Prompt)
 
 ```cmd
-cd C:\path\to\pm
+cd C:\path\to\m3
 
 python -m venv .venv
 .venv\Scripts\activate.bat
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 ### Windows (PowerShell)
 
 ```powershell
-cd C:\path\to\pm
+cd C:\path\to\m3
 
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -63,32 +63,32 @@ exactly as you'd name a real media file — the filename stem is what gets parse
 ### macOS / Linux
 
 ```bash
-mkdir -p /tmp/pm-test-media
+mkdir -p /tmp/m3-test-media
 
 # General form with site token
-touch "/tmp/pm-test-media/Jane Doe with Drama % examplesite - 12345.mp4"
+touch "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 12345.mp4"
 
 # Enhanced search with date and scene ID
-touch "/tmp/pm-test-media/Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot.mp4"
+touch "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot.mp4"
 
 # Manual Add form
-touch "/tmp/pm-test-media/Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
+touch "/tmp/m3-test-media/Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
 ```
 
 ### Windows (Command Prompt)
 
 ```cmd
-mkdir C:\pm-test-media
+mkdir C:\m3-test-media
 
-type nul > "C:\pm-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
+type nul > "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\pm-test-media
+New-Item -ItemType Directory -Force -Path C:\m3-test-media
 
-New-Item "C:\pm-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
+New-Item "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
 ```
 
 ---
@@ -184,10 +184,10 @@ source .venv/bin/activate
 
 PLEX_URL=http://your-plex-ip:32400 \
 PLEX_TOKEN=your-plex-token \
-LIBRARY_PATHS=/tmp/pm-test-media \
+LIBRARY_PATHS=/tmp/m3-test-media \
 PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/pm-test-reports \
-LOG_PATH=/tmp/pm-test-logs \
+REPORT_PATH=/tmp/m3-test-reports \
+LOG_PATH=/tmp/m3-test-logs \
 LOG_LEVEL=DEBUG \
 EXAMPLESITE_API_KEY=your-api-key \
 python3 -m app.main --once
@@ -204,10 +204,10 @@ Add `--force` to re-process files that already have a `.nfo` sidecar:
 ```cmd
 set PLEX_URL=http://your-plex-ip:32400
 set PLEX_TOKEN=your-plex-token
-set LIBRARY_PATHS=C:\pm-test-media
+set LIBRARY_PATHS=C:\m3-test-media
 set PLUGIN_DIR=plugins
-set REPORT_PATH=C:\pm-test-reports
-set LOG_PATH=C:\pm-test-logs
+set REPORT_PATH=C:\m3-test-reports
+set LOG_PATH=C:\m3-test-logs
 set LOG_LEVEL=DEBUG
 set EXAMPLESITE_API_KEY=your-api-key
 
@@ -219,10 +219,10 @@ python -m app.main --once
 ```powershell
 $env:PLEX_URL       = "http://your-plex-ip:32400"
 $env:PLEX_TOKEN     = "your-plex-token"
-$env:LIBRARY_PATHS  = "C:\pm-test-media"
+$env:LIBRARY_PATHS  = "C:\m3-test-media"
 $env:PLUGIN_DIR     = "plugins"
-$env:REPORT_PATH    = "C:\pm-test-reports"
-$env:LOG_PATH       = "C:\pm-test-logs"
+$env:REPORT_PATH    = "C:\m3-test-reports"
+$env:LOG_PATH       = "C:\m3-test-logs"
 $env:LOG_LEVEL      = "DEBUG"
 $env:EXAMPLESITE_API_KEY = "your-api-key"
 
@@ -240,10 +240,10 @@ source .venv/bin/activate
 
 PLEX_URL=http://your-plex-ip:32400 \
 PLEX_TOKEN=your-plex-token \
-LIBRARY_PATHS=/tmp/pm-test-media \
+LIBRARY_PATHS=/tmp/m3-test-media \
 PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/pm-test-reports \
-LOG_PATH=/tmp/pm-test-logs \
+REPORT_PATH=/tmp/m3-test-reports \
+LOG_PATH=/tmp/m3-test-logs \
 LOG_LEVEL=DEBUG \
 EXAMPLESITE_API_KEY=your-api-key \
 python3 -m app.main
@@ -261,32 +261,32 @@ cron schedule. Press Ctrl+C to stop.
 
 ```bash
 # List what was written next to the media file
-ls /tmp/pm-test-media/
+ls /tmp/m3-test-media/
 
 # Read the NFO sidecar
-cat "/tmp/pm-test-media/Jane Doe with Drama % examplesite - 12345.nfo"
+cat "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 12345.nfo"
 
 # Read the run summary report
-cat /tmp/pm-test-reports/run_latest.txt
+cat /tmp/m3-test-reports/run_latest.txt
 
 # Tail the log for detail
-tail -50 /tmp/pm-test-logs/pm.log
+tail -50 /tmp/m3-test-logs/m3.log
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 # List output files
-Get-ChildItem C:\pm-test-media\
+Get-ChildItem C:\m3-test-media\
 
 # Read the NFO
-Get-Content "C:\pm-test-media\Jane Doe with Drama % examplesite - 12345.nfo"
+Get-Content "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.nfo"
 
 # Read the run summary
-Get-Content C:\pm-test-reports\run_latest.txt
+Get-Content C:\m3-test-reports\run_latest.txt
 
 # Tail the log
-Get-Content C:\pm-test-logs\pm.log -Tail 50
+Get-Content C:\m3-test-logs\m3.log -Tail 50
 ```
 
 ---
@@ -333,7 +333,7 @@ plugin → parse → fetch → NFO pipeline without a Plex server.
 2. Run: python -m app.main --once --force
 3. Check: run_latest.txt  →  see if the file was "updated" or "unmatched"
 4. Check: the .nfo file   →  verify the fields look correct
-5. Check: pm.log          →  see the full detail trace
+5. Check: m3.log          →  see the full detail trace
 6. Repeat
 ```
 
@@ -347,7 +347,7 @@ After a run with errors, re-process only the failed files without re-running eve
 # macOS / Linux
 source .venv/bin/activate
 PLEX_URL=... PLEX_TOKEN=... LIBRARY_PATHS=... PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/pm-test-reports LOG_PATH=/tmp/pm-test-logs \
+REPORT_PATH=/tmp/m3-test-reports LOG_PATH=/tmp/m3-test-logs \
 python3 -m app.main --retry-failed
 ```
 
@@ -363,7 +363,7 @@ files, leaving the rest of your library untouched.
 |---|---|
 | Manual run trigger | `SIGUSR1` (trigger immediate run) and `SIGUSR2` (hot-reload plugins) are Unix signals and are not supported on Windows. Use `--once` locally, or the **Run Now** button / `docker exec` in a Docker/Unraid environment instead. |
 | Diagnosing unmatched files | `--list-unmatched` works normally on Windows: `python -m app.main --list-unmatched` |
-| Path separators | Use backslashes (`C:\pm-test-media`) for `LIBRARY_PATHS` on Windows when running locally. Inside Docker the paths are always Linux-style (`/media`). |
+| Path separators | Use backslashes (`C:\m3-test-media`) for `LIBRARY_PATHS` on Windows when running locally. Inside Docker the paths are always Linux-style (`/media`). |
 | Python command | Use `python` (not `python3`) on most Windows installs. |
 | Line endings | The app writes NFO files in UTF-8. If you open them in Notepad and see no line breaks, use Notepad++ or VS Code instead. |
 | RotatingFileHandler | Python's rotating log handler can occasionally fail to rotate on Windows if another process has the log file open (e.g., VS Code). This is a known Python limitation. If you see a rotation warning in logs, close any open log file viewers and it will recover on the next rotation. |

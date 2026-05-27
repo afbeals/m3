@@ -1,7 +1,7 @@
 """
 Example Plugin — ExampleSite
 
-This file demonstrates how to write a plugin for pm. Copy it, rename it to
+This file demonstrates how to write a plugin for m3. Copy it, rename it to
 your site's name (e.g., warnerbros.py), and fill in the real API logic.
 
 Drop the finished file into the plugins/ directory (mounted at /plugins in

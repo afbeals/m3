@@ -1,10 +1,10 @@
 # config.example.yml
 #
-# Reference list of all environment variables supported by pm.
+# Reference list of all environment variables supported by m3.
 # Copy the relevant lines into your Docker run command, docker-compose.yml,
 # or Unraid Docker template.
 #
-# NOTE: pm reads configuration exclusively from environment variables.
+# NOTE: m3 reads configuration exclusively from environment variables.
 # There is no YAML config file loader — this file is documentation only.
 #
 # Secret values (PLEX_TOKEN, API keys) should be set as env vars directly
@@ -26,7 +26,7 @@
 # ---------------------------------------------------------------------------
 
 # Comma-separated list of container paths that contain your media files.
-# These must be mounted read-write so pm can write .nfo sidecars and images.
+# These must be mounted read-write so m3 can write .nfo sidecars and images.
 # LIBRARY_PATHS=/media/movies,/media/adult
 
 # ---------------------------------------------------------------------------
@@ -133,14 +133,14 @@
 
 # Display name shown in the dashboard header, page title, and footer.
 # Change this if you've renamed the project or run multiple instances.
-# Default: pm
-# APP_NAME=pm
+# Default: m3
+# APP_NAME=m3
 
 # ---------------------------------------------------------------------------
 # Notifications (optional)
 # ---------------------------------------------------------------------------
 
-# Optional webhook URL. After every completed (non-dry-run) run pm POSTs a compact JSON
+# Optional webhook URL. After every completed (non-dry-run) run m3 POSTs a compact JSON
 # summary (updated, errors, unmatched, duration, timestamps, first_error) to this URL.
 # Leave unset to disable. Works with:
 #   - Apprise API:  http://apprise-host/notify/myjson

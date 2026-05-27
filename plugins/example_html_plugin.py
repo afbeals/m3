@@ -1,7 +1,7 @@
 """
 Example HTML Plugin — ExampleHTMLSite
 
-This file demonstrates how to write a plugin for pm when the target site
+This file demonstrates how to write a plugin for m3 when the target site
 does NOT have a JSON API — you have to scrape the HTML page directly.
 
 Copy it, rename it to your site's name (e.g., mysite_scraper.py), and fill

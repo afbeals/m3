@@ -17,7 +17,7 @@ def _make_config(report_path: str) -> MagicMock:
     cfg.report_path = report_path
     cfg.web_host = "127.0.0.1"
     cfg.web_port = 8765
-    cfg.app_name = "pm"
+    cfg.app_name = "m3"
     cfg.plex_url = "http://localhost:32400"
     cfg.plex_token = "fake-token"
     cfg.library_paths = ["/media"]
@@ -494,7 +494,7 @@ def test_logs_shows_log_content():
     with tempfile.TemporaryDirectory() as tmpdir:
         config = _make_config(tmpdir)
         config.log_path = tmpdir
-        log_file = os.path.join(tmpdir, "pm.log")
+        log_file = os.path.join(tmpdir, "m3.log")
         with open(log_file, "w") as fh:
             fh.write("INFO hello from log\nINFO second line\n")
         scheduler = MagicMock()
@@ -583,11 +583,11 @@ def test_run_detail_shows_inline_retry_for_unmatched_rows():
 
 
 # ---------------------------------------------------------------------------
-# /trigger/run — already-running flash message
+# /trigger/run — already-running flash message (non-HTMX callers)
 # ---------------------------------------------------------------------------
 
 def test_trigger_run_redirects_with_flash_when_already_running():
-    """When a run is in progress the dashboard must redirect with ?msg=already_running."""
+    """Non-HTMX caller: 303 redirect with ?msg=already_running when a run is in progress."""
     from app.runstate import RunState
     with tempfile.TemporaryDirectory() as tmpdir:
         config = _make_config(tmpdir)
@@ -616,6 +616,55 @@ def test_trigger_run_does_not_schedule_when_already_running():
             client.post("/trigger/run")
         run_state.stop()
     scheduler.add_job.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# /trigger/run — HTMX-aware responses
+# ---------------------------------------------------------------------------
+
+def test_trigger_run_htmx_returns_warning_fragment_when_already_running():
+    """HTMX caller: 200 + warning HTML fragment (no redirect) when already running."""
+    from app.runstate import RunState
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        run_state = RunState()
+        run_state.start()
+        app = create_app(config, {}, scheduler, run_fn, run_state)
+        with TestClient(app, follow_redirects=False) as client:
+            r = client.post("/trigger/run", headers={"HX-Request": "true"})
+        run_state.stop()
+    assert r.status_code == 200
+    assert "Already running" in r.text or "already" in r.text.lower()
+    scheduler.add_job.assert_not_called()
+
+
+def test_trigger_run_htmx_returns_success_fragment_when_queued():
+    """HTMX caller: 200 + success HTML fragment (no redirect) when run is queued."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+        with TestClient(app, follow_redirects=False) as client:
+            r = client.post("/trigger/run", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "Queued" in r.text or "queued" in r.text.lower()
+    scheduler.add_job.assert_called_once()
+
+
+def test_trigger_run_non_htmx_redirects_after_queuing():
+    """Non-HTMX caller: 303 redirect to / after successfully queuing a run."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = _make_config(tmpdir)
+        scheduler = MagicMock()
+        run_fn = MagicMock()
+        app = create_app(config, {}, scheduler, run_fn)
+        with TestClient(app, follow_redirects=False) as client:
+            r = client.post("/trigger/run")
+    assert r.status_code == 303
+    assert r.headers.get("location", "").startswith("/")
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +798,7 @@ def test_logs_tail_param_respected():
     with tempfile.TemporaryDirectory() as tmpdir:
         config = _make_config(tmpdir)
         config.log_path = tmpdir
-        log_file = os.path.join(tmpdir, "pm.log")
+        log_file = os.path.join(tmpdir, "m3.log")
         with open(log_file, "w") as fh:
             for i in range(300):
                 fh.write(f"INFO line {i}\n")
@@ -771,7 +820,7 @@ def test_logs_tail_param_capped_at_2000():
     with tempfile.TemporaryDirectory() as tmpdir:
         config = _make_config(tmpdir)
         config.log_path = tmpdir
-        log_file = os.path.join(tmpdir, "pm.log")
+        log_file = os.path.join(tmpdir, "m3.log")
         with open(log_file, "w") as fh:
             fh.write("INFO test\n")
         scheduler = MagicMock()

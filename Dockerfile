@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata \
 
 COPY app/ ./app/
 
-RUN useradd -m pm \
+RUN useradd -m m3 \
     && mkdir -p /config/logs /config/reports /plugins /media \
-    && chown -R pm /app /config /plugins /media
+    && chown -R m3 /app /config /plugins /media
 
-USER pm
+USER m3
 
 EXPOSE 8765
 

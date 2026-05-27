@@ -61,7 +61,7 @@ def _print_human(stem: str, parsed) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Test the pm filename parser from the command line.",
+        description="Test the m3 filename parser from the command line.",
         epilog='Example: python -m app.tools.parse "Jane Doe with Drama % mysite - 12345"',
     )
     parser.add_argument(

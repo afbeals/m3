@@ -24,7 +24,7 @@ def test_app_name_defaults_to_pm(monkeypatch):
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("APP_NAME", raising=False)
     cfg = load_config()
-    assert cfg.app_name == "pm"
+    assert cfg.app_name == "m3"
 
 
 def test_app_name_reads_from_env(monkeypatch):

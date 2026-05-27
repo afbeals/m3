@@ -57,7 +57,7 @@ def retry_with_backoff(
     Subclasses of types in reraise_on are also re-raised (Python isinstance semantics).
 
     Note: uses time.sleep() which blocks the calling thread. This is intentional
-    for pm's single-threaded run() path. Do not call from async code.
+    for m3's single-threaded run() path. Do not call from async code.
     """
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):

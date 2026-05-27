@@ -96,7 +96,7 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
     add("source", result.source_url)
     if result.source_id:
         uid = etree.SubElement(root, "uniqueid")
-        uid.set("type", "pm")   # "pm" identifies this tool as the source
+        uid.set("type", "m3")   # "m3" identifies this tool as the source
         uid.text = result.source_id
 
     # Serialise to XML with pretty-printing

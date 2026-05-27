@@ -104,7 +104,7 @@ def test_write_nfo_contains_uniqueid(tmp_path):
     media = _make_media(tmp_path)
     write_nfo(media, _make_result(source_id="99"))
     nfo = open(media.nfo_path).read()
-    assert 'type="pm"' in nfo
+    assert 'type="m3"' in nfo
     assert ">99<" in nfo
 
 

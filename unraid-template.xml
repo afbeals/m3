@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>pm</Name>
-  <Repository>pm:latest</Repository>
+  <Name>m3</Name>
+  <Repository>m3:latest</Repository>
   <Registry/>
   <Network>bridge</Network>
   <Shell>sh</Shell>
@@ -9,7 +9,7 @@
   <Support/>
   <Project/>
   <Overview>
-    pm — Plex Metadata Agent. Scans your media library, fetches metadata from
+    m3 — Plex Metadata Agent. Scans your media library, fetches metadata from
     external APIs or HTML sites via drop-in plugins, writes Kodi-compatible NFO
     sidecar files, downloads posters and fanart, and pushes everything to Plex
     with field locks so the built-in agent won't overwrite your custom metadata.
@@ -27,17 +27,17 @@
   <DonateText/>
   <DonateLink/>
   <Description>
-    pm — Plex Metadata Agent. Fetches metadata for your media files from
+    m3 — Plex Metadata Agent. Fetches metadata for your media files from
     external APIs and HTML sites via drop-in Python plugins, writes NFO
     sidecars + artwork, and syncs to Plex with field locks.
   </Description>
 
   <!-- ── Volumes ──────────────────────────────────────────────────── -->
-  <Config Name="Plugins directory" Target="/plugins" Default="/mnt/user/appdata/pm/plugins"
+  <Config Name="Plugins directory" Target="/plugins" Default="/mnt/user/appdata/m3/plugins"
           Mode="rw" Description="Drop .py plugin files here. Changes take effect on container restart."
           Type="Path" Display="always" Required="true" Mask="false"/>
 
-  <Config Name="Config directory" Target="/config" Default="/mnt/user/appdata/pm/config"
+  <Config Name="Config directory" Target="/config" Default="/mnt/user/appdata/m3/config"
           Mode="rw" Description="Stores run reports and log files."
           Type="Path" Display="always" Required="true" Mask="false"/>
 
@@ -47,7 +47,7 @@
 
   <!-- ── Web UI port ──────────────────────────────────────────────── -->
   <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp"
-          Description="Port for the pm web dashboard. Access via http://[Unraid-IP]:[PORT]/"
+          Description="Port for the m3 web dashboard. Access via http://[Unraid-IP]:[PORT]/"
           Type="Port" Display="always" Required="true" Mask="false"/>
 
   <!-- ── Plex connection (required) ───────────────────────────────── -->
@@ -87,7 +87,7 @@
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <!-- ── Web dashboard ────────────────────────────────────────────── -->
-  <Config Name="App name" Target="APP_NAME" Default="pm"
+  <Config Name="App name" Target="APP_NAME" Default="m3"
           Description="Display name shown in the dashboard header, page title, and footer. Change this to rename the app without editing code."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
@@ -108,7 +108,7 @@
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <Config Name="Notify URL" Target="NOTIFY_URL" Default=""
-          Description="Optional webhook URL. pm POSTs a compact JSON run summary here after each completed run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable. See docs/UNRAID_SETUP.md for a Gotify setup walkthrough."
+          Description="Optional webhook URL. m3 POSTs a compact JSON run summary here after each completed run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable. See docs/UNRAID_SETUP.md for a Gotify setup walkthrough."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <Config Name="Notify min errors" Target="NOTIFY_MIN_ERRORS" Default="0"

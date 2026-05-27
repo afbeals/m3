@@ -6,9 +6,10 @@
   <h1>Latest Run</h1>
   <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
     <button type="button" class="primary"
-            hx-post="/trigger/run" hx-target="#latest-card" hx-select="#latest-card">
+            hx-post="/trigger/run" hx-target="#run-now-feedback" hx-swap="innerHTML">
       ▶ Run now
     </button>
+    <span id="run-now-feedback" style="font-size:0.8rem; min-height:1.2em;"></span>
     {% if next_run %}
     <span class="muted" style="font-size:0.75rem;">Next run: {{ next_run.strftime("%Y-%m-%d %H:%M") }}</span>
     {% endif %}

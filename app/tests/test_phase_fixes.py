@@ -200,7 +200,7 @@ def test_scheduler_raises_on_too_few_cron_fields():
 def test_cleanup_deletes_rotated_log_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a rotated log file with an old mtime
-        rotated = os.path.join(tmpdir, "pm.log.1")
+        rotated = os.path.join(tmpdir, "m3.log.1")
         open(rotated, "w").close()
         old_time = time.time() - (40 * 24 * 3600)  # 40 days ago
         os.utime(rotated, (old_time, old_time))
@@ -214,7 +214,7 @@ def test_cleanup_deletes_rotated_log_files():
 def test_cleanup_skips_active_log_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Active log file with old mtime — must not be deleted
-        active = os.path.join(tmpdir, "pm.log")
+        active = os.path.join(tmpdir, "m3.log")
         open(active, "w").close()
         old_time = time.time() - (40 * 24 * 3600)
         os.utime(active, (old_time, old_time))
@@ -227,7 +227,7 @@ def test_cleanup_skips_active_log_file():
 
 def test_cleanup_skips_files_within_retention():
     with tempfile.TemporaryDirectory() as tmpdir:
-        recent = os.path.join(tmpdir, "pm.log.1")
+        recent = os.path.join(tmpdir, "m3.log.1")
         open(recent, "w").close()
         # mtime is now — within retention window
 

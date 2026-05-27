@@ -1,11 +1,31 @@
 # Changelog
 
-All notable changes to pm are documented here.
+All notable changes to m3 are documented here.
+
+## [1.2.0] — rename to m3, image error visibility, HTMX feedback, dev ergonomics
+
+### New features
+- **`image_error` status** — when NFO is written successfully but one or more images fail to download, the file is now recorded as `image_error` rather than silently logged as `updated`. Visible in the run detail page (stat card, filter tab, retry button) and plain-text report.
+- **Trigger record history** — `/trigger/file` (inline ↺ retry) now writes a lightweight `trigger_*.json` record after each manual retrigger. The file history page (`/files?path=…`) surfaces these alongside regular run entries, marked with a ↺ indicator.
+- **`--retry-failed=N`** — extend `--retry-failed` to merge failures across N recent runs. `--retry-failed` (no argument) still defaults to the most recent run; `--retry-failed=3` collects unique failures from the last 3 runs. Duplicate paths across runs are deduplicated.
+- **`.env` file support** — `python-dotenv` is now a dependency. If a `.env` file exists in the working directory at startup, it is loaded automatically (container env vars take precedence via `override=False`). Production containers are unaffected; `.env` is a development convenience.
+- **Docker version tagging** — `UNRAID_SETUP.md` build instructions now tag both `:latest` and `:{version}` simultaneously, enabling rollback to a previous image without rebuilding.
+
+### Correctness
+- `write_images()` return value was previously ignored in `main.py`; image download failures had no effect on the reported status. Now correctly records `image_error` and stops processing the file's status as `updated`.
+- Log filename is now derived from `APP_NAME` env var (default `m3`) rather than being hardcoded as `m3.log`. Also fixes the rotated-backup cleanup check and the log viewer route to use the dynamic name.
+- `/trigger/run` HTMX callers now receive a `200` HTML fragment response instead of a `303` redirect (which HTMX treats as full-page navigation, silently discarding the `hx-target` swap).
+
+### Tests
+- Extended `/trigger/run` test coverage: new tests for HTMX `already-running` warning fragment (200, no redirect), HTMX success fragment (200, no redirect), and non-HTMX redirect path (303). Existing non-HTMX tests preserved unchanged.
+
+### Rename
+- Application renamed from `pm` to `m3` throughout: module namespace (`m3_plugin.*`), Docker image name, log filenames, User-Agent header, docs.
 
 ## [1.1.0] — cycle 11: rename detection, correctness, UX, new features
 
 ### New features
-- **Rename detection** — when exactly one video is renamed in a directory between runs, pm detects the 1:1 orphan-NFO / new-video pairing and renames the existing `.nfo`, `-poster.jpg`, and `-fanart.jpg` sidecars automatically; patches XML art paths; re-pushes metadata to Plex from the existing NFO (no redundant API fetch). Status: `renamed` in the run report and dashboard.
+- **Rename detection** — when exactly one video is renamed in a directory between runs, m3 detects the 1:1 orphan-NFO / new-video pairing and renames the existing `.nfo`, `-poster.jpg`, and `-fanart.jpg` sidecars automatically; patches XML art paths; re-pushes metadata to Plex from the existing NFO (no redundant API fetch). Status: `renamed` in the run report and dashboard.
 - `LIBRARY_EXCLUDE_PATTERNS` env var — comma-separated glob patterns to skip files during scanning (e.g. `*.part,/media/incoming/**`)
 - `--retry-failed` CLI flag — reads the latest run report and re-processes all `error` / `scrape_error` files without a full library rescan
 - `/healthz?check=plex` — live Plex reachability probe; returns `{"plex":"ok"}` or 503 without affecting process liveness

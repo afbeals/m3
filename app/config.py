@@ -20,10 +20,10 @@
 #   WEB_ENABLED           Enable the web dashboard (default: true)
 #   WEB_PORT              Port the web dashboard listens on (default: 8765)
 #   WEB_HOST              Host the web dashboard binds to (default: 0.0.0.0)
-#   APP_NAME              Display name in the dashboard header and page title (default: pm)
+#   APP_NAME              Display name in the dashboard header and page title (default: m3)
 #   PLUGIN_RATE_LIMIT_SECS    Seconds between plugin fetch() calls (default: 1.0)
 #   PLUGIN_FETCH_TIMEOUT_SECS Max seconds one plugin.fetch() may block (default: 60)
-#   NOTIFY_URL            Optional webhook URL; pm POSTs a JSON summary after each run (default: "")
+#   NOTIFY_URL            Optional webhook URL; m3 POSTs a JSON summary after each run (default: "")
 #                         Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint
 #   LIBRARY_EXCLUDE_PATTERNS  Comma-separated glob patterns to exclude from scanning (default: "")
 # -----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ class Config:
 
     # Display name shown in the dashboard header, page title, and footer.
     # Override via APP_NAME env var to rename the app without editing code.
-    app_name: str = "pm"
+    app_name: str = "m3"
 
     # Minimum seconds to wait between plugin fetch() calls during a run.
     # Prevents hammering a site with hundreds of rapid-fire requests on large libraries.
@@ -80,7 +80,7 @@ class Config:
     # indefinitely (scheduler max_instances=1 means a hung run blocks all future runs).
     plugin_fetch_timeout_secs: float = 60.0
 
-    # Optional webhook URL. When set, pm POSTs a JSON run summary to this URL
+    # Optional webhook URL. When set, m3 POSTs a JSON run summary to this URL
     # after every completed (non-dry-run) run. Leave empty to disable. Works with
     # any HTTP endpoint that accepts JSON (Apprise, Gotify, Pushover relay, etc.).
     notify_url: str = ""
@@ -186,7 +186,7 @@ def load_config(force: bool = False) -> Config:
         web_enabled=web_enabled,
         web_port=optional_int("WEB_PORT", 8765),
         web_host=optional("WEB_HOST", "0.0.0.0"),
-        app_name=optional("APP_NAME", "pm"),
+        app_name=optional("APP_NAME", "m3"),
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
         plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=1.0),
         notify_url=optional("NOTIFY_URL", ""),

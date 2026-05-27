@@ -1,4 +1,4 @@
-# pm — Plex Metadata Agent
+# m3 — Plex Metadata Agent
 
 A scheduled Python service that reads media filenames from Plex library
 directories, routes each file to a site-specific metadata plugin, fetches
@@ -19,10 +19,10 @@ docker run -d \
   -e PLUGIN_DIR=/plugins \
   -e REPORT_PATH=/config/reports \
   -e LOG_PATH=/config/logs \
-  -v /mnt/user/appdata/pm/plugins:/plugins \
-  -v /mnt/user/appdata/pm/config:/config \
+  -v /mnt/user/appdata/m3/plugins:/plugins \
+  -v /mnt/user/appdata/m3/config:/config \
   -v /mnt/user/media:/media \
-  pm
+  m3
 ```
 
 Or use the included `docker-compose.yml`:
@@ -34,7 +34,7 @@ docker-compose up -d
 ### Local testing
 
 See [docs/local-testing.md](docs/local-testing.md) for a step-by-step guide to
-running pm on macOS, Linux, or Windows without Docker.
+running m3 on macOS, Linux, or Windows without Docker.
 
 ---
 
@@ -107,7 +107,7 @@ Plugins are instantiated once at startup and shared across all files in every ru
 
 ## Web Dashboard
 
-When running normally (not `--once`), pm serves a built-in dashboard at
+When running normally (not `--once`), m3 serves a built-in dashboard at
 `http://<host>:8765` (default port):
 
 | Page | URL | What you see |
@@ -119,10 +119,10 @@ When running normally (not `--once`), pm serves a built-in dashboard at
 | File history | `/files?path=…` | All runs a specific file appeared in, with status and message |
 | Plugin list | `/plugins` | All loaded plugins and their site IDs |
 | Config | `/config` | Active env var values (Plex token masked) |
-| Log viewer | `/logs` | Last N lines of pm.log (default 200, max 2000); `?tail=N` or line-count buttons in the UI |
+| Log viewer | `/logs` | Last N lines of m3.log (default 200, max 2000); `?tail=N` or line-count buttons in the UI |
 | Health check | `/healthz` | Docker health-check endpoint; add `?verbose=1` for last-run time, `?check=plex` to probe Plex reachability |
 
-**Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec pm kill -USR1 1` (Unix only) has the same effect. If a run is already in progress, clicking Run Now shows a flash message and does not queue a second run.
+**Run Now** — the recommended way to trigger an immediate run. For headless setups (no browser), `docker exec m3 kill -USR1 1` (Unix only) has the same effect. If a run is already in progress, clicking Run Now shows a flash message and does not queue a second run.
 
 **Inline retry** — on the run-detail page, any `error`, `scrape_error`, or `unmatched` row has a
 ↺ button that re-queues that single file for immediate reprocessing.
@@ -167,10 +167,10 @@ python -m app.main --once --force
 python -m app.main --once --dry-run
 
 # Trigger an immediate run without restarting the container (Unix/Linux/macOS)
-docker exec pm kill -USR1 1
+docker exec m3 kill -USR1 1
 
 # Reload plugins without restarting the container (Unix/Linux/macOS)
-docker exec pm kill -USR2 1
+docker exec m3 kill -USR2 1
 
 # List all files that would be unmatched (no plugin claimed them)
 python -m app.main --list-unmatched
@@ -204,7 +204,7 @@ Key variables:
 | `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is aborted and marked as error |
 | `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
 | `NOTIFY_MIN_ERRORS` | `0` | Minimum combined error count before the webhook fires; set to `1` to only notify on failures |
-| `APP_NAME` | `pm` | Display name in dashboard header and run reports |
+| `APP_NAME` | `m3` | Display name in dashboard header and run reports |
 | `WEB_PORT` | `8765` | Dashboard port |
 | `WEB_HOST` | `0.0.0.0` | Dashboard bind address (`127.0.0.1` to restrict to localhost) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
