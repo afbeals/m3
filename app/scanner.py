@@ -21,7 +21,9 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +52,27 @@ def _dedup_paths(paths: list[str]) -> list[str]:
     If LIBRARY_PATHS contains both /media and /media/Movies, os.walk on /media
     already visits /media/Movies — keeping both would process every file in
     /media/Movies twice (once for each parent path in the list).
+
+    Uses pathlib.Path for resolution so that on Windows, paths are compared
+    case-insensitively (C:\\Media and c:\\media are treated as the same path).
     """
-    resolved = [os.path.realpath(p) for p in paths]
+    # Path.resolve() normalises separators, symlinks, and case on Windows
+    resolved = [str(Path(p).resolve()) for p in paths]
+    _ci = sys.platform == "win32"  # case-insensitive comparison on Windows
+
+    def _eq(a: str, b: str) -> bool:
+        return (a.lower() == b.lower()) if _ci else (a == b)
+
+    def _startswith_sep(child: str, parent: str) -> bool:
+        prefix = parent + os.sep
+        return (child.lower().startswith(prefix.lower()) if _ci
+                else child.startswith(prefix))
+
     kept = []
     for i, p in enumerate(resolved):
         # Check whether any other path is a strict prefix of this one
         dominated = any(
-            j != i and (p == resolved[j] or p.startswith(resolved[j] + os.sep))
+            j != i and (_eq(p, resolved[j]) or _startswith_sep(p, resolved[j]))
             for j in range(len(resolved))
         )
         if dominated:

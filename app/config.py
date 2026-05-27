@@ -10,9 +10,9 @@
 #   PLEX_URL              URL of your Plex server, e.g. http://192.168.1.x:32400
 #   PLEX_TOKEN            Your Plex authentication token (see UNRAID_SETUP.md)
 #   LIBRARY_PATHS         Comma-separated container paths to scan, e.g. /media/Movies,/media/TV
-#   PLUGIN_DIR            Where drop-in plugin .py files live (default: /plugins)
-#   REPORT_PATH           Where run reports are written (default: /config/reports)
-#   LOG_PATH              Where rotating log files are written (default: /config/logs)
+#   PLUGIN_DIR            Where drop-in plugin .py files live (default: ./plugins)
+#   REPORT_PATH           Where run reports are written (default: ./reports)
+#   LOG_PATH              Where rotating log files are written (default: ./logs)
 #   RUN_SCHEDULE          Cron expression for nightly runs (default: "0 3 * * *" = 3am)
 #   LOG_LEVEL             Logging verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO)
 #   LOG_RETENTION_DAYS    Delete log files older than N days (default: 30)
@@ -163,7 +163,7 @@ def load_config(force: bool = False) -> Config:
 
     # LIBRARY_PATHS is comma-separated, e.g. "/media/Movies,/media/TV"
     # Split and strip each path, dropping empty entries
-    raw_paths = optional("LIBRARY_PATHS", "/media")
+    raw_paths = optional("LIBRARY_PATHS", "./media")
     library_paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
 
     raw_exclude = optional("LIBRARY_EXCLUDE_PATTERNS", "")
@@ -176,9 +176,9 @@ def load_config(force: bool = False) -> Config:
         plex_url=require("PLEX_URL"),
         plex_token=require("PLEX_TOKEN"),
         library_paths=library_paths,
-        plugin_dir=optional("PLUGIN_DIR", "/plugins"),
-        report_path=optional("REPORT_PATH", "/config/reports"),
-        log_path=optional("LOG_PATH", "/config/logs"),
+        plugin_dir=optional("PLUGIN_DIR", "./plugins"),
+        report_path=optional("REPORT_PATH", "./reports"),
+        log_path=optional("LOG_PATH", "./logs"),
         run_schedule=optional("RUN_SCHEDULE", "0 3 * * *"),
         log_level=optional("LOG_LEVEL", "INFO").upper(),
         log_retention_days=optional_int("LOG_RETENTION_DAYS", 30),

@@ -113,6 +113,7 @@ def run(
     config,
     router: Router,
     dry_run: bool = False,
+    dry_run_strict: bool = False,
     media_files_override: "list | None" = None,
 ) -> None:
     """
@@ -134,9 +135,16 @@ def run(
     Plex is reconnected on every run so that long-running schedulers don't use
     a stale connection after a Plex server restart or token expiry.
     """
-    logger.info("Run started%s", " [DRY RUN]" if dry_run else "")
+    if dry_run_strict:
+        logger.info("Run started [DRY RUN STRICT — no API calls, no writes]")
+    elif dry_run:
+        logger.info("Run started [DRY RUN]")
+    else:
+        logger.info("Run started")
     if dry_run:
         logger.info("DRY RUN mode — no files or Plex records will be written")
+    if dry_run_strict:
+        logger.info("DRY RUN STRICT mode — plugin fetch() calls are also skipped")
 
     # In dry-run mode skip the Plex connection entirely — connecting is a network
     # side-effect that would produce confusing warnings when the intent is a zero-
@@ -262,6 +270,13 @@ def run(
         # Case 4: call the plugin to fetch metadata from the external API.
         # A per-plugin timeout prevents a hung plugin from blocking the entire run;
         # the watchdog thread is not killed (Python limitation) but the run moves on.
+        # dry_run_strict skips the fetch entirely so developers can test routing offline.
+        if dry_run_strict:
+            logger.info("[DRY RUN STRICT] Would fetch from plugin %s for: %s",
+                        type(plugin).__name__, media.path)
+            report.record(FileResult(path=media.path, status="skipped",
+                                     message="dry-run-strict: fetch skipped"))
+            continue
         try:
             result = call_with_timeout(
                 lambda: plugin.fetch(parsed),
@@ -448,6 +463,146 @@ def _validate_paths(config, library_only: bool = False) -> None:
         raise SystemExit(1)
 
 
+def _run_validate_plugins(plugin_dir: str) -> None:
+    """Load all plugins and print a structured pass/fail validation report."""
+    from app.plugins.loader import load_plugins as _load
+
+    print(f"Validating plugins in: {plugin_dir}\n")
+    if not os.path.isdir(plugin_dir):
+        print(f"ERROR: plugin directory not found: {plugin_dir}")
+        return
+
+    import importlib.util, inspect, sys as _sys
+    from app.plugins.base import MetadataPlugin as _MP
+
+    files = sorted(f for f in os.listdir(plugin_dir)
+                   if f.endswith(".py") and not f.startswith("_"))
+    if not files:
+        print("No plugin files found.")
+        return
+
+    any_fail = False
+    for fname in files:
+        fpath = os.path.join(plugin_dir, fname)
+        issues = []
+        classes_found = []
+        try:
+            module_name = f"m3_plugin_validate.{fname[:-3]}"
+            spec = importlib.util.spec_from_file_location(module_name, fpath)
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if obj is _MP or not issubclass(obj, _MP):
+                    continue
+                classes_found.append(obj.__name__)
+                if not obj.site_id:
+                    issues.append(f"  - {obj.__name__}: missing site_id")
+                elif not isinstance(obj.site_id, str):
+                    issues.append(f"  - {obj.__name__}: site_id must be a str")
+                if not callable(getattr(obj, "fetch", None)):
+                    issues.append(f"  - {obj.__name__}: missing fetch() method")
+        except Exception as exc:
+            issues.append(f"  - import error: {exc}")
+        finally:
+            _sys.modules.pop(f"m3_plugin_validate.{fname[:-3]}", None)
+
+        if not classes_found and not issues:
+            issues.append("  - no MetadataPlugin subclass found")
+
+        status = "PASS" if not issues else "FAIL"
+        if issues:
+            any_fail = True
+        classes_str = ", ".join(classes_found) if classes_found else "(none)"
+        print(f"[{status}] {fname}  classes={classes_str}")
+        for issue in issues:
+            print(issue)
+
+    print()
+    if any_fail:
+        print("Validation FAILED — fix the issues above before deploying.")
+        raise SystemExit(1)
+    else:
+        print("All plugins passed validation.")
+
+
+def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
+    """Load a single plugin file and call fetch() on a test filename stem."""
+    import importlib.util, inspect, sys as _sys
+    from app.plugins.base import MetadataPlugin as _MP
+    from app.parser import parse
+
+    if not os.path.isfile(plugin_file):
+        print(f"ERROR: plugin file not found: {plugin_file}")
+        raise SystemExit(1)
+
+    stem = filename_stem or ""
+    if not stem:
+        print("ERROR: --filename is required with --test-plugin")
+        print("  Example: --filename \"Jane Doe % mysite - 12345\"")
+        raise SystemExit(1)
+
+    # Load the plugin
+    module_name = "m3_plugin_test._testplugin"
+    spec = importlib.util.spec_from_file_location(module_name, plugin_file)
+    try:
+        module = importlib.util.module_from_spec(spec)
+        _sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        print(f"ERROR: could not import {plugin_file}: {exc}")
+        raise SystemExit(1)
+
+    plugin_classes = [
+        obj for _, obj in inspect.getmembers(module, inspect.isclass)
+        if obj is not _MP and issubclass(obj, _MP) and obj.site_id
+    ]
+    if not plugin_classes:
+        print(f"ERROR: no MetadataPlugin subclass with site_id found in {plugin_file}")
+        raise SystemExit(1)
+
+    plugin = plugin_classes[0]()
+    print(f"Plugin:   {type(plugin).__name__}  (site_id={plugin.site_id!r})")
+    print(f"Filename: {stem!r}")
+
+    parsed = parse(stem)
+    if parsed is None:
+        print("\nERROR: filename could not be parsed — check the format")
+        raise SystemExit(1)
+
+    print(f"Parsed:   form={parsed.form!r}  subtype={parsed.match_subtype!r}  "
+          f"site={parsed.site!r}  scene_id={parsed.scene_id!r}")
+
+    if parsed.site and parsed.site.lower() not in plugin.all_ids():
+        print(f"\nWARNING: parsed site {parsed.site!r} does not match plugin ids {plugin.all_ids()}")
+
+    print("\nCalling plugin.fetch() …")
+    try:
+        result = plugin.fetch(parsed)
+    except Exception as exc:
+        print(f"\nERROR: plugin.fetch() raised: {exc}")
+        raise SystemExit(1)
+
+    if result is None:
+        print("\nResult: None  (plugin returned no match)")
+        return
+
+    print(f"\nResult:")
+    print(f"  title:          {result.title!r}")
+    print(f"  summary:        {result.summary!r}")
+    print(f"  rating:         {result.rating}")
+    print(f"  year:           {result.year}")
+    print(f"  content_rating: {result.content_rating!r}")
+    print(f"  genres:         {result.genres}")
+    print(f"  tags:           {result.tags}")
+    print(f"  labels:         {result.labels}")
+    print(f"  actors:         {result.actors}")
+    print(f"  poster_url:     {result.poster_url!r}")
+    print(f"  fanart_url:     {result.fanart_url!r}")
+    print(f"  source_url:     {result.source_url!r}")
+    print(f"  source_id:      {result.source_id!r}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="m3 — Plex Metadata Agent")
     parser.add_argument(
@@ -481,7 +636,48 @@ def main() -> None:
             "(default: 1 = most recent run only), then exit"
         ),
     )
+    parser.add_argument(
+        "--dry-run-strict",
+        action="store_true",
+        help=(
+            "Like --dry-run but also skips plugin fetch() calls — "
+            "tests filename parsing and routing with zero network access; "
+            "no API keys required"
+        ),
+    )
+    parser.add_argument(
+        "--test-plugin",
+        metavar="PLUGIN_FILE",
+        default=None,
+        help=(
+            "Load a single plugin file, call fetch() on a test filename, "
+            "and print the result. Use with --filename to supply the test stem."
+        ),
+    )
+    parser.add_argument(
+        "--filename",
+        metavar="STEM",
+        default=None,
+        help="Filename stem (no extension) to use with --test-plugin",
+    )
+    parser.add_argument(
+        "--validate-plugins",
+        action="store_true",
+        help="Load all plugins, check for structural issues, print a report, then exit",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help=(
+            "Watch PLUGIN_DIR for .py changes and auto-reload plugins "
+            "(cross-platform alternative to SIGUSR2; requires watchfiles)"
+        ),
+    )
     args = parser.parse_args()
+
+    # --dry-run-strict implies --dry-run
+    if args.dry_run_strict:
+        args.dry_run = True
 
     # Load all settings from environment variables; fails fast if PLEX_URL/TOKEN missing
     config = load_config(force=args.force)
@@ -519,6 +715,14 @@ def main() -> None:
     except Exception as exc:
         logger.error("RUN_SCHEDULE %r is not a valid cron expression: %s", config.run_schedule, exc)
         raise SystemExit(1)
+
+    if args.validate_plugins:
+        _run_validate_plugins(config.plugin_dir)
+        raise SystemExit(0)
+
+    if args.test_plugin:
+        _run_test_plugin(args.test_plugin, args.filename)
+        raise SystemExit(0)
 
     # --list-unmatched only needs library paths to exist; it doesn't write reports or
     # logs, so skip the write-path validation that would block a diagnostic scan.
@@ -625,7 +829,8 @@ def main() -> None:
     def _run():
         run_state.start()
         try:
-            run(config, router, dry_run=args.dry_run)
+            run(config, router, dry_run=args.dry_run,
+                dry_run_strict=args.dry_run_strict)
         finally:
             run_state.stop()
 
@@ -644,8 +849,38 @@ def main() -> None:
     # it in-place keeps all references up-to-date without rebuilding the router.
     register_sigusr2_reload(registry, config.plugin_dir)
 
+    # --watch: cross-platform file watcher that auto-reloads plugins when any .py
+    # file in PLUGIN_DIR changes. Useful for local development on Windows where
+    # SIGUSR2 is not available. Requires watchfiles (pip install watchfiles).
+    if args.watch:
+        try:
+            from watchfiles import watch as _watch
+            import threading as _threading
+
+            def _plugin_watcher():
+                logger.info("--watch: watching %s for plugin changes", config.plugin_dir)
+                for _ in _watch(config.plugin_dir, watch_filter=lambda _c, p: p.endswith(".py")):
+                    logger.info("--watch: change detected — reloading plugins")
+                    try:
+                        from app.plugins.loader import load_plugins as _lp
+                        new_reg = _lp(config.plugin_dir)
+                        registry.clear()
+                        registry.update(new_reg)
+                        logger.info("--watch: reloaded %d plugin(s)", len(new_reg))
+                    except Exception as exc:
+                        logger.warning("--watch: reload failed: %s", exc)
+
+            _threading.Thread(target=_plugin_watcher, daemon=True, name="m3-watcher").start()
+        except ImportError:
+            logger.warning(
+                "--watch requires watchfiles: pip install watchfiles  "
+                "(or: pip install -r requirements-dev.txt)"
+            )
+
     # Launch the web dashboard in a daemon thread so it runs alongside the scheduler.
     # The scheduler keeps the main thread; the web server is the side thread.
+    # When DEBUG=true, uvicorn runs with reload=True for live template/code changes.
+    debug_mode = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
     if config.web_enabled:
         import threading
         import uvicorn
@@ -658,6 +893,7 @@ def main() -> None:
             port=config.web_port,
             log_level="warning",
             access_log=False,
+            reload=debug_mode,
         )
         web_server = uvicorn.Server(web_config)
 
@@ -667,7 +903,11 @@ def main() -> None:
             name="m3-web",
         )
         web_thread.start()
-        logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)
+        if debug_mode:
+            logger.info("Web dashboard started on http://%s:%d (DEBUG — reload enabled)",
+                        config.web_host, config.web_port)
+        else:
+            logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)
 
     # Start the blocking scheduler (blocks until container stops)
     logger.info("Scheduler started. Next run scheduled via: %s", config.run_schedule)

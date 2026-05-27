@@ -23,11 +23,17 @@ dev = [
     "mypy>=1.10",
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "ruff>=0.4.0",
+    "watchfiles>=0.21.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
 addopts = "-v"
+markers = [
+    "unit: fast, no I/O, fully mocked",
+    "integration: touches real filesystem or mocked external services",
+]
 
 [tool.coverage.run]
 source = ["app"]
@@ -36,3 +42,12 @@ omit = ["app/tests/*"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+fail_under = 80
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

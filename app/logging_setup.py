@@ -60,7 +60,9 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     # Only added when a writable log directory is available.
     if log_file:
         try:
-            file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5)
+            # delay=True defers opening the file until the first log write,
+            # which reduces Windows file-locking contention during rotation.
+            file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5, delay=True)
             file_handler.setFormatter(fmt)
             root.addHandler(file_handler)
         except OSError as exc:
