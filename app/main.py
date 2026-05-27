@@ -465,8 +465,6 @@ def _validate_paths(config, library_only: bool = False) -> None:
 
 def _run_validate_plugins(plugin_dir: str) -> None:
     """Load all plugins and print a structured pass/fail validation report."""
-    from app.plugins.loader import load_plugins as _load
-
     print(f"Validating plugins in: {plugin_dir}\n")
     if not os.path.isdir(plugin_dir):
         print(f"ERROR: plugin directory not found: {plugin_dir}")
@@ -879,7 +877,9 @@ def main() -> None:
 
     # Launch the web dashboard in a daemon thread so it runs alongside the scheduler.
     # The scheduler keeps the main thread; the web server is the side thread.
-    # When DEBUG=true, uvicorn runs with reload=True for live template/code changes.
+    # Note: uvicorn reload mode requires running as the main process and cannot be used
+    # in a daemon thread. Use `python -m uvicorn app.web:create_app --reload` for live
+    # reload during UI/template development.
     debug_mode = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
     if config.web_enabled:
         import threading
@@ -893,7 +893,6 @@ def main() -> None:
             port=config.web_port,
             log_level="warning",
             access_log=False,
-            reload=debug_mode,
         )
         web_server = uvicorn.Server(web_config)
 
@@ -904,8 +903,11 @@ def main() -> None:
         )
         web_thread.start()
         if debug_mode:
-            logger.info("Web dashboard started on http://%s:%d (DEBUG — reload enabled)",
-                        config.web_host, config.web_port)
+            logger.info(
+                "Web dashboard started on http://%s:%d (DEBUG mode — "
+                "for live reload run: python -m uvicorn app.web:create_app --reload)",
+                config.web_host, config.web_port,
+            )
         else:
             logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)
 

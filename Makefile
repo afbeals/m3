@@ -83,6 +83,7 @@ dev:
 	$(PY) -m app.main
 
 dev-reload:
+	# Windows (CMD/PowerShell): use `python tasks.py dev-reload` instead
 	DEBUG=true $(PY) -m app.main
 
 once:
@@ -95,6 +96,7 @@ gen-test-lib:
 	$(PY) scripts/generate_test_library.py
 
 clean:
+	# Windows (CMD/PowerShell): use `python tasks.py clean` instead
 	rm -rf $(VENV) __pycache__ app/__pycache__ .coverage coverage.xml
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true

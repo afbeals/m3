@@ -31,7 +31,9 @@ def config(tmp_path):
     """A MagicMock Config backed by a real temporary directory for report/log paths."""
     cfg = MagicMock()
     cfg.report_path = str(tmp_path)
-    cfg.log_path = str(tmp_path / "logs")
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    cfg.log_path = str(log_dir)
     cfg.web_host = "127.0.0.1"
     cfg.web_port = 8765
     cfg.app_name = "m3"
