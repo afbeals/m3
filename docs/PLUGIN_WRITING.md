@@ -399,6 +399,59 @@ python3 -m pytest app/tests/test_plugin_mysite.py -v
 
 ---
 
+## Handling Low-Confidence Matches
+
+Sometimes a search returns results but you aren't sure the first result is the
+right one. Rather than returning a wrong title with full confidence, consider
+these strategies:
+
+### Exact-ID is always the right path
+
+If `parsed.match_subtype == "exact"` and you have a scene ID or direct URL,
+use it directly — no confidence scoring needed. An ID match is deterministic.
+
+### For enhanced/limited searches: score before returning
+
+When calling a search endpoint, compare the API's top result against the parsed
+tokens before accepting it:
+
+```python
+def _score_match(self, data: dict, parsed: ParsedFilename) -> bool:
+    """Return True only if the result is a plausible match for the parsed tokens."""
+    if parsed.scene_id and str(data.get("id")) != parsed.scene_id:
+        return False                                      # wrong ID
+    if parsed.date and data.get("date", "")[:10] != parsed.date:
+        return False                                      # wrong release date
+    # Optional: fuzzy-match title if the site supports it
+    return True
+
+def _fetch_enhanced(self, parsed):
+    results = self._api_get("/scenes/search", params={"q": parsed.title})
+    if not results:
+        return None
+    best = results[0]
+    if not self._score_match(best, parsed):
+        logger.warning("[mysite] Low-confidence match for %r — skipping", parsed.title)
+        return None        # return None → recorded as "unmatched", not "error"
+    return self._to_result(best)
+```
+
+### When to return None vs raise ScrapeError
+
+| Situation | Action |
+|---|---|
+| API returned results but none are a confident match | `return None` |
+| API returned 0 results (scene not in database) | `return None` |
+| Required CSS selector is missing (site changed markup) | raise `SelectorMissingError` |
+| Non-200 HTTP response after retries | raise `ScrapeError` |
+| Truly unexpected exception | let it propagate (becomes `status=error`) |
+
+The key rule: **return `None` for "not found", raise for "something is broken".**
+A `None` return is quiet and expected; a raised exception logs a traceback and
+blocks the file from being marked as "updated".
+
+---
+
 ## Troubleshooting Plugins
 
 | Symptom | Likely cause | Fix |

@@ -1,6 +1,7 @@
 # Tests for dry-run mode: connect_plex must NOT be called, and "Would push" lines
 # must appear in the log even when plex_server is None.
 from __future__ import annotations
+import pytest
 
 import logging
 from unittest.mock import MagicMock, patch
@@ -10,6 +11,8 @@ from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 from app.router import Router
 from app.scanner import MediaFile
 
+pytestmark = pytest.mark.integration
+
 
 def _good_result():
     return MetadataResult(title="Test Title", actors=["Jane Doe"])
@@ -17,7 +20,7 @@ def _good_result():
 
 class _GoodPlugin(MetadataPlugin):
     site_id = "drysite"
-    aliases = []
+    aliases = ()
 
     def fetch(self, parsed: ParsedFilename):
         return _good_result()

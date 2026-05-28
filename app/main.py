@@ -21,6 +21,8 @@
 #   scan → route → fetch → write NFO → write to Plex → report
 # -----------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import argparse
 import glob
 import json
@@ -240,30 +242,44 @@ def run(
         ))
         logger.info("Renamed: %s (was %r)", media.path, media.renamed_from)
 
-    for media in remaining_files:
+    # Per-plugin file counts for the dry-run-strict routing summary
+    _strict_counts: dict[str, int] = {}
+
+    _total_remaining = len(remaining_files)
+    for _file_idx, media in enumerate(remaining_files, 1):
         # Ask the router to parse the filename and find the right plugin
         parsed, plugin = router.dispatch(media.stem)
 
+        _pfx = f"[{_file_idx}/{_total_remaining}]"
+
         # Case 1: filename couldn't be decoded at all
         if parsed is None:
-            logger.info("Unmatched (could not parse): %s", media.path)
-            report.record(FileResult(path=media.path, status="unmatched"))
+            logger.info("%s Unmatched (could not parse): %s", _pfx, media.path)
+            report.record(FileResult(
+                path=media.path,
+                status="unmatched",
+                message="could not parse filename — check format against FILENAME_PATTERNS.md",
+            ))
             continue
 
         # Case 2: Manual Add form — no plugin needed, flag for human review
         if parsed.form == "add":
             msg = f"actors={parsed.actors} title={parsed.title!r} studio={parsed.studio!r}"
-            logger.info("Manual Add form (no plugin): %s | %s", media.path, msg)
+            logger.info("%s Manual Add form (no plugin): %s | %s", _pfx, media.path, msg)
             report.record(FileResult(path=media.path, status="add_form", message=msg))
             continue
 
         # Case 3: parsed OK but no plugin is registered for this site
         if plugin is None:
-            logger.info("Unmatched (no plugin for site %r): %s", parsed.site, media.path)
+            logger.info("%s Unmatched (no plugin for site %r): %s", _pfx, parsed.site, media.path)
+            _tokens = (
+                f"site={parsed.site!r} subtype={parsed.match_subtype!r}"
+                + (f" scene_id={parsed.scene_id!r}" if parsed.scene_id else "")
+            )
             report.record(FileResult(
                 path=media.path,
                 status="unmatched",
-                message=f"no plugin registered for site {parsed.site!r}",
+                message=f"no plugin registered for site {parsed.site!r} ({_tokens})",
             ))
             continue
 
@@ -272,8 +288,10 @@ def run(
         # the watchdog thread is not killed (Python limitation) but the run moves on.
         # dry_run_strict skips the fetch entirely so developers can test routing offline.
         if dry_run_strict:
-            logger.info("[DRY RUN STRICT] Would fetch from plugin %s for: %s",
-                        type(plugin).__name__, media.path)
+            plugin_name = type(plugin).__name__
+            logger.info("%s [DRY RUN STRICT] Would fetch from plugin %s for: %s",
+                        _pfx, plugin_name, media.path)
+            _strict_counts[plugin_name] = _strict_counts.get(plugin_name, 0) + 1
             report.record(FileResult(path=media.path, status="skipped",
                                      message="dry-run-strict: fetch skipped"))
             continue
@@ -291,13 +309,18 @@ def run(
             report.record(FileResult(path=media.path, status="scrape_error", message=str(exc)))
             continue
         except Exception as exc:
+            import traceback as _tb
             logger.warning("Plugin error for %s: %s", media.path, exc)
-            report.record(FileResult(path=media.path, status="error", message=str(exc)))
+            tb_short = _tb.format_exc(limit=5)[-500:]  # last 500 chars of traceback
+            report.record(FileResult(
+                path=media.path, status="error",
+                message=f"{exc}\n{tb_short}",
+            ))
             continue
 
         # Plugin can return None if the lookup found nothing (e.g. scene not in database)
         if result is None:
-            logger.info("Plugin returned no result for: %s", media.path)
+            logger.info("%s Plugin returned no result for: %s", _pfx, media.path)
             report.record(FileResult(
                 path=media.path,
                 status="unmatched",
@@ -356,7 +379,19 @@ def run(
                 logger.warning("Plex push failed for %s: %s", media.path, exc)
 
         report.record(FileResult(path=media.path, status="updated"))
-        logger.info("Updated: %s", media.path)
+        logger.info("%s Updated: %s", _pfx, media.path)
+
+    # Print a structured routing summary when running in dry-run-strict mode so
+    # developers can see at a glance which plugins would handle which files.
+    if dry_run_strict:
+        print("\nPlugin routing summary (dry-run-strict):")
+        for plugin_name, count in sorted(_strict_counts.items(), key=lambda x: -x[1]):
+            print(f"  {plugin_name:<30} : {count} file(s)")
+        if report.unmatched:
+            print(f"  {'Unmatched':<30} : {report.unmatched} file(s)")
+        if report.add_form:
+            print(f"  {'Add-form (no plugin)':<30} : {report.add_form} file(s)")
+        print()
 
     report.finished_at = datetime.now().isoformat(timespec="seconds")
 
@@ -568,8 +603,24 @@ def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
         print("\nERROR: filename could not be parsed — check the format")
         raise SystemExit(1)
 
-    print(f"Parsed:   form={parsed.form!r}  subtype={parsed.match_subtype!r}  "
-          f"site={parsed.site!r}  scene_id={parsed.scene_id!r}")
+    print(f"Parsed:   form={parsed.form!r}  subtype={parsed.match_subtype!r}")
+    _pf = parsed
+    for _k, _v in [
+        ("site",              _pf.site),
+        ("scene_id",          _pf.scene_id),
+        ("direct_url",        _pf.direct_url),
+        ("date",              _pf.date),
+        ("title",             _pf.title),
+        ("actors",            _pf.actors or None),
+        ("genres",            _pf.genres or None),
+        ("extra_actors",      _pf.extra_actors or None),
+        ("raw_match_payload", _pf.raw_match_payload),
+        ("studio",            _pf.studio),
+        ("studio_id",         _pf.studio_id),
+        ("actress_id",        _pf.actress_id),
+    ]:
+        if _v is not None:
+            print(f"          {_k}={_v!r}")
 
     if parsed.site and parsed.site.lower() not in plugin.all_ids():
         print(f"\nWARNING: parsed site {parsed.site!r} does not match plugin ids {plugin.all_ids()}")
@@ -677,8 +728,19 @@ def main() -> None:
     if args.dry_run_strict:
         args.dry_run = True
 
-    # Load all settings from environment variables; fails fast if PLEX_URL/TOKEN missing
-    config = load_config(force=args.force)
+    # Some modes never connect to Plex — skip the PLEX_URL/TOKEN requirement for them
+    _plex_free = bool(args.validate_plugins or args.test_plugin or
+                      args.dry_run_strict or args.list_unmatched)
+
+    try:
+        config = load_config(force=args.force, plex_required=not _plex_free)
+    except ValueError as exc:
+        import sys as _sys
+        _sys.stderr.write(
+            f"\n[m3] Configuration error: {exc}\n"
+            "Copy .env.example to .env and fill in the required values.\n\n"
+        )
+        raise SystemExit(1)
 
     # Set up logging before anything else so startup messages are captured
     setup_logging(config.log_path, config.log_level, app_name=config.app_name)
@@ -861,10 +923,23 @@ def main() -> None:
                     logger.info("--watch: change detected — reloading plugins")
                     try:
                         from app.plugins.loader import load_plugins as _lp
+                        prev_count = len(registry)
                         new_reg = _lp(config.plugin_dir)
                         registry.clear()
                         registry.update(new_reg)
-                        logger.info("--watch: reloaded %d plugin(s)", len(new_reg))
+                        if not new_reg:
+                            logger.warning(
+                                "--watch: reload produced an empty plugin registry — "
+                                "all files will be unmatched until a valid plugin is saved"
+                            )
+                        elif len(new_reg) < prev_count:
+                            logger.warning(
+                                "--watch: plugin count dropped from %d to %d after reload — "
+                                "check for syntax errors or removed site_id values",
+                                prev_count, len(new_reg),
+                            )
+                        else:
+                            logger.info("--watch: reloaded %d plugin(s)", len(new_reg))
                     except Exception as exc:
                         logger.warning("--watch: reload failed: %s", exc)
 
@@ -910,6 +985,25 @@ def main() -> None:
             )
         else:
             logger.info("Web dashboard started on http://%s:%d", config.web_host, config.web_port)
+
+    # Print a structured startup health summary to stdout so developers and ops
+    # can confirm the key configuration at a glance before the first scheduled run.
+    from apscheduler.triggers.cron import CronTrigger as _CT2
+    _trigger = _CT2.from_crontab(config.run_schedule)
+    _next_run = _trigger.get_next_fire_time(None, datetime.now())
+    _next_str = _next_run.strftime("%Y-%m-%d %H:%M:%S") if _next_run else "unknown"
+    _lib_status = ", ".join(
+        f"{p} ({'ok' if os.path.isdir(p) else 'MISSING'})"
+        for p in config.library_paths
+    )
+    print(
+        f"\nm3 {__version__} ready"
+        f"\n  Plugins loaded : {len(registry)}"
+        f"\n  Library paths  : {_lib_status}"
+        f"\n  Next run       : {_next_str}  ({config.run_schedule})"
+        + (f"\n  Dashboard      : http://{config.web_host}:{config.web_port}" if config.web_enabled else "")
+        + "\n"
+    )
 
     # Start the blocking scheduler (blocks until container stops)
     logger.info("Scheduler started. Next run scheduled via: %s", config.run_schedule)

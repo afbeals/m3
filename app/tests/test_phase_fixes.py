@@ -14,6 +14,8 @@ from app.parser import parse
 from app.plugins.base import MetadataResult
 from app.scheduler import build_scheduler
 
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # Parser: empty payload returns None (issue #8)

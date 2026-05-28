@@ -2,11 +2,14 @@
 # httpx is imported inside _fire_webhook's try block, so we patch "httpx.Client"
 # at the module level rather than "app.main.httpx".
 from __future__ import annotations
+import pytest
 
 import json
 from unittest.mock import MagicMock, patch
 
 from app.main import _fire_webhook
+
+pytestmark = pytest.mark.integration
 
 
 def _run_report(**kwargs):
@@ -65,7 +68,7 @@ def test_webhook_not_called_in_run_when_notify_url_empty(tmp_path):
 
     class _P(MetadataPlugin):
         site_id = "wh"
-        aliases = []
+        aliases = ()
         def fetch(self, p): return MetadataResult(title="T")
 
     path = str(tmp_path / "Jane Doe % wh - 1.mp4")
@@ -162,7 +165,7 @@ def test_notify_min_errors_suppresses_webhook_on_clean_run():
 
     class _P(MetadataPlugin):
         site_id = "ne"
-        aliases = []
+        aliases = ()
         def fetch(self, p): return MetadataResult(title="T")
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -206,7 +209,7 @@ def test_notify_min_errors_fires_webhook_when_errors_meet_threshold():
 
     class _FailPlugin(MetadataPlugin):
         site_id = "nef"
-        aliases = []
+        aliases = ()
         def fetch(self, p): raise RuntimeError("bang")
 
     with tempfile.TemporaryDirectory() as tmp:

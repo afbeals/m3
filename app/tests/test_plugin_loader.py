@@ -1,6 +1,7 @@
 """Tests for the plugin loader."""
 
 from __future__ import annotations
+import pytest
 
 import os
 import tempfile
@@ -14,7 +15,7 @@ from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 
 class TestPlugin(MetadataPlugin):
     site_id = "testsite"
-    aliases = ["TS"]
+    aliases = ("TS",)
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         return MetadataResult(title="Test")
@@ -22,6 +23,8 @@ class TestPlugin(MetadataPlugin):
 
 _NO_SITE_ID_PLUGIN = """
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+
+pytestmark = pytest.mark.unit
 
 class BadPlugin(MetadataPlugin):
     site_id = ""

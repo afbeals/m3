@@ -31,7 +31,7 @@ from lxml import etree
 
 from app.plugins.base import MetadataResult
 from app.scanner import MediaFile
-from app.utils import retry_with_backoff
+from app.utils import retry_with_backoff, atomic_replace
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
         with open(tmp_path, "wb") as fh:
             fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
             tree.write(fh, encoding="utf-8", xml_declaration=False)
-        os.replace(tmp_path, media.nfo_path)
+        atomic_replace(tmp_path, media.nfo_path)
     except Exception:
         # Clean up the temp file if anything went wrong before the rename.
         # Use try/except rather than os.path.exists() + os.remove() to avoid
@@ -183,7 +183,7 @@ def _download_image(url: str, dest_path: str) -> bool:
                                     f"Image stream exceeded {_DOWNLOAD_MAX_BYTES} bytes from {url}"
                                 )
                             fh.write(chunk)
-                    os.replace(tmp_path, dest_path)
+                    atomic_replace(tmp_path, dest_path)
                 except Exception:
                     try:
                         os.remove(tmp_path)
@@ -241,7 +241,7 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
         with open(tmp_nfo, "wb") as fh:
             fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
             tree.write(fh, encoding="utf-8", xml_declaration=False)
-        os.replace(tmp_nfo, new_nfo)
+        atomic_replace(tmp_nfo, new_nfo)
         os.remove(old_nfo)
     except Exception:
         try:
@@ -256,7 +256,7 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
         new_img = os.path.join(dirpath, f"{new_stem}{suffix}")
         if os.path.exists(old_img):
             try:
-                os.replace(old_img, new_img)
+                atomic_replace(old_img, new_img)
                 logger.debug("Renamed image: %s → %s", old_img, new_img)
             except OSError:
                 logger.warning("Could not rename image %s → %s", old_img, new_img)

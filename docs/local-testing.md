@@ -184,6 +184,8 @@ plugin fails.
 
 ### Test filename parsing (no API call)
 
+#### macOS / Linux / Git Bash
+
 ```bash
 python3 - <<'EOF'
 from app.parser import parse
@@ -202,6 +204,37 @@ for stem in stems:
         print(f"UNMATCHED: {stem!r}")
 EOF
 ```
+
+#### Windows (PowerShell)
+
+PowerShell has no equivalent of `<<'EOF'` heredocs. Save the snippet to a file and run it:
+
+```powershell
+@"
+from app.parser import parse
+
+stems = [
+    "Jane Doe with Drama % mysite - 12345",
+    "Jane Doe with Drama % mysite - 19-06-15 - 12345 - An Interesting Plot",
+    "Add Jane Doe And Mary Smith In My Scene At MyStudio With Drama, Comedy",
+]
+
+for stem in stems:
+    result = parse(stem)
+    if result:
+        print(f"subtype={result.match_subtype} site={result.site} scene_id={result.scene_id} title={result.title!r}")
+    else:
+        print(f"UNMATCHED: {stem!r}")
+"@ | python
+```
+
+#### Windows (CMD)
+
+```cmd
+python -c "from app.parser import parse; stems=['Jane Doe with Drama %% mysite - 12345']; [print(parse(s)) for s in stems]"
+```
+
+> **CMD note**: `%` must be escaped as `%%` inside `python -c` on CMD. For multi-line scripts, save them to a `.py` file and run `python <file>.py`.
 
 ### Test your plugin with `--test-plugin`
 

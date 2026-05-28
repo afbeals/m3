@@ -48,7 +48,28 @@ class ExampleSitePlugin(MetadataPlugin):
     site_id = "examplesite"
 
     # Optional shorthand aliases users can also use in filenames: `% ES - ...`
-    aliases = ["ES"]
+    aliases = ("ES",)
+
+    def __init__(self) -> None:
+        # Share one httpx.Client across all fetch() calls so the underlying TCP
+        # connection is reused between scenes in the same run. This reduces TLS
+        # handshake overhead and is the recommended pattern for plugins that make
+        # multiple requests per run.
+        # Use a context manager (with ExampleSitePlugin() as p: ...) or call
+        # p.close() when the plugin is no longer needed if you want deterministic
+        # connection teardown. In normal m3 usage the process exits after each run,
+        # so the OS reclaims the connection automatically.
+        self._client = httpx.Client(timeout=15, follow_redirects=True)
+
+    def close(self) -> None:
+        """Release the underlying connection pool."""
+        self._client.close()
+
+    def __enter__(self) -> "ExampleSitePlugin":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         """
@@ -147,10 +168,9 @@ class ExampleSitePlugin(MetadataPlugin):
         all_params = {"api_key": api_key, **(params or {})}
 
         try:
-            with httpx.Client(timeout=15) as client:
-                r = client.get(url, params=all_params)
-                r.raise_for_status()
-                return r.json()
+            r = self._client.get(url, params=all_params)
+            r.raise_for_status()
+            return r.json()
         except httpx.HTTPStatusError as exc:
             logger.warning("[examplesite] HTTP %s for %s", exc.response.status_code, url)
         except Exception:

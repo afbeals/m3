@@ -1,9 +1,12 @@
 # Tests for scheduler.py: registry atomic-replace under simulated mid-run reload
 # and TZ-aware CronTrigger wiring.
 from __future__ import annotations
+import pytest
 
 import threading
 from unittest.mock import MagicMock, call, patch
+
+pytestmark = pytest.mark.unit
 
 
 def test_atomic_registry_replace_does_not_expose_empty_state():

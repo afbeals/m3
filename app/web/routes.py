@@ -33,7 +33,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.utils import call_with_timeout
+from app.utils import call_with_timeout, atomic_replace
 from app.web.history import list_runs, get_run, aggregate_unmatched, get_file_history
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
@@ -526,9 +526,9 @@ async def trigger_file(request: Request):
                 fname = f"trigger_{ts}_{media.stem[:40]}.json"
                 fpath = os.path.join(report_path, fname)
                 tmp = fpath + ".tmp"
-                with open(tmp, "w") as fh:
+                with open(tmp, "w", encoding="utf-8") as fh:
                     _json.dump(record, fh)
-                os.replace(tmp, fpath)
+                atomic_replace(tmp, fpath)
             except Exception as exc:
                 logger.warning("trigger_file: could not write trigger record: %s", exc)
             # Always release the per-path lock so subsequent requests can proceed.

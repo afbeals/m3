@@ -17,6 +17,7 @@ Tasks:
     once            Run one metadata pass and exit
     validate        Validate all plugins in ./plugins/
     gen-test-lib    Generate a fake media library in ./test-media/
+    check           Run lint + typecheck + tests (full pre-commit gate)
     clean           Remove venv and caches
 """
 
@@ -56,6 +57,15 @@ def task(name):
         TASKS[name] = fn
         return fn
     return decorator
+
+
+def _get_arg(key: str, default: str = "") -> str:
+    """Read a KEY=value argument from sys.argv (e.g. `python tasks.py task KEY=val`)."""
+    prefix = f"{key}="
+    for arg in sys.argv[2:]:
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+    return default
 
 
 @task("setup")
@@ -103,6 +113,14 @@ def typecheck():
     run(PY, "-m", "mypy", "app/", "--ignore-missing-imports")
 
 
+@task("check")
+def check():
+    """Run lint + typecheck + tests (full pre-commit gate)."""
+    run(PY, "-m", "ruff", "check", "app/")
+    run(PY, "-m", "mypy", "app/", "--ignore-missing-imports")
+    run(PY, "-m", "pytest", "app/tests/", "-v")
+
+
 @task("dev")
 def dev():
     """Start the app (scheduler + web dashboard)."""
@@ -129,8 +147,13 @@ def validate():
 
 @task("gen-test-lib")
 def gen_test_lib():
-    """Generate a fake media library in ./test-media/."""
-    run(PY, "scripts/generate_test_library.py")
+    """Generate a fake media library in ./test-media/.
+
+    Pass SITE=<token> to use a custom site token, e.g.:
+      python tasks.py gen-test-lib SITE=mysite
+    """
+    site = _get_arg("SITE", default="examplesite")
+    run(PY, "scripts/generate_test_library.py", "--site", site)
 
 
 @task("clean")

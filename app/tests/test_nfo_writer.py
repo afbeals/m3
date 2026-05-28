@@ -10,6 +10,8 @@ from app.plugins.base import MetadataResult
 from app.scanner import MediaFile
 from app.writers.nfo import write_nfo, write_images
 
+pytestmark = pytest.mark.unit
+
 
 def _make_media(tmp_path, name="My Movie"):
     path = str(tmp_path / f"{name}.mp4")

@@ -8,6 +8,8 @@ import pytest
 
 from app.reporter import FileResult, RunReport, write_report
 
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # RunReport.record() — counter logic
@@ -22,15 +24,26 @@ def test_record_updated_increments_counter():
 
 def test_record_all_statuses():
     report = RunReport()
-    for status in ("updated", "skipped", "unmatched", "add_form", "scrape_error", "error"):
+    for status in ("updated", "skipped", "unmatched", "add_form", "scrape_error", "image_error", "error"):
         report.record(FileResult(path=f"/{status}.mp4", status=status))
-    assert report.total_scanned == 6
+    assert report.total_scanned == 7
     assert report.updated == 1
     assert report.skipped == 1
     assert report.unmatched == 1
     assert report.add_form == 1
     assert report.scrape_errors == 1
+    assert report.image_errors == 1
     assert report.errors == 1
+
+
+def test_record_image_error_increments_counter():
+    report = RunReport()
+    report.record(FileResult(path="/scene.mp4", status="image_error",
+                             message="NFO written but one or more images failed"))
+    assert report.image_errors == 1
+    assert report.errors == 0
+    assert report.updated == 0
+    assert report.total_scanned == 1
 
 
 def test_record_scrape_error_increments_counter():
@@ -221,3 +234,25 @@ def test_write_report_json_includes_renamed_count(tmp_path):
     assert json_files
     data = json.loads(json_files[0].read_text())
     assert data["renamed"] == 1
+
+
+def test_write_report_txt_includes_image_error_section(tmp_path):
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/scene.mp4", status="image_error",
+                             message="NFO written but one or more images failed"))
+    write_report(report, str(tmp_path), retention_days=90)
+    txt = (tmp_path / "run_latest.txt").read_text(encoding="utf-8")
+    assert "Image errors" in txt
+    assert "/scene.mp4" in txt
+
+
+def test_write_report_json_includes_image_errors_count(tmp_path):
+    import json
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    report.record(FileResult(path="/scene.mp4", status="image_error",
+                             message="NFO written but one or more images failed"))
+    write_report(report, str(tmp_path), retention_days=90)
+    json_files = list(tmp_path.glob("run_*.json"))
+    assert json_files
+    data = json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert data["image_errors"] == 1

@@ -7,6 +7,8 @@ import pytest
 
 from app.config import load_config
 
+pytestmark = pytest.mark.unit
+
 
 def _base_env(overrides: dict | None = None) -> dict:
     env = {

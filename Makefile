@@ -35,7 +35,7 @@ ifeq ($(OS),Windows_NT)
 	PY     := $(VENV)/Scripts/python
 endif
 
-.PHONY: setup test test-cov lint format typecheck dev dev-reload once validate gen-test-lib clean help
+.PHONY: setup test test-cov lint format typecheck check dev dev-reload once validate gen-test-lib clean help
 
 help:
 	@echo "Available targets:"
@@ -45,6 +45,7 @@ help:
 	@echo "  lint         Check code with ruff"
 	@echo "  format       Auto-fix lint issues"
 	@echo "  typecheck    Run mypy"
+	@echo "  check        Run lint + typecheck + tests (full pre-commit gate)"
 	@echo "  dev          Start app (scheduler + web dashboard)"
 	@echo "  dev-reload   Start app with uvicorn auto-reload (DEBUG=true)"
 	@echo "  once         Run one metadata pass and exit"
@@ -79,6 +80,8 @@ format:
 typecheck:
 	$(MYPY) app/ --ignore-missing-imports
 
+check: lint typecheck test
+
 dev:
 	$(PY) -m app.main
 
@@ -92,8 +95,9 @@ once:
 validate:
 	$(PY) -m app.main --validate-plugins
 
+SITE ?= examplesite
 gen-test-lib:
-	$(PY) scripts/generate_test_library.py
+	$(PY) scripts/generate_test_library.py --site $(SITE)
 
 clean:
 	# Windows (CMD/PowerShell): use `python tasks.py clean` instead

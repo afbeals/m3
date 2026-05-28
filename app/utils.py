@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import threading
 import time
 from typing import Callable, TypeVar
@@ -75,3 +77,23 @@ def retry_with_backoff(
                 )
                 time.sleep(wait)
     raise last_exc  # type: ignore[misc]  # always set after at least one attempt
+
+
+def atomic_replace(src: str, dst: str) -> None:
+    """Rename src to dst atomically, with a Windows-safe retry on PermissionError.
+
+    On Linux/macOS os.replace() is always atomic and never raises PermissionError
+    for this use case — the retry loop adds zero overhead on those platforms.
+
+    On Windows, os.replace() raises PermissionError (WinError 32) when another
+    process (e.g. Plex scanner) has the destination file open. Retrying with short
+    exponential backoff recovers transparently in most cases.
+    """
+    for attempt in range(5):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if sys.platform != "win32" or attempt == 4:
+                raise
+            time.sleep(0.05 * (2 ** attempt))

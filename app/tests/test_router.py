@@ -1,16 +1,19 @@
 """Tests for the router dispatch logic."""
 
 from __future__ import annotations
+import pytest
 
 from unittest.mock import MagicMock
 
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 from app.router import Router
 
+pytestmark = pytest.mark.unit
+
 
 class _FakePlugin(MetadataPlugin):
     site_id = "fakesite"
-    aliases = ["FS"]
+    aliases = ("FS",)
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         return MetadataResult(title="Fake Result")

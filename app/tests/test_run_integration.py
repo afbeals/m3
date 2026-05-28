@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.main import run
+
+pytestmark = pytest.mark.integration
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 from app.router import Router
 from app.scanner import MediaFile
@@ -375,3 +377,212 @@ def test_run_media_files_override_bypasses_scan(tmp_path):
         run(cfg, router, media_files_override=[media])
 
     mock_scan.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# dry_run_strict path (H10)
+# ---------------------------------------------------------------------------
+
+def test_dry_run_strict_skips_plugin_fetch(tmp_path):
+    """With dry_run_strict=True, plugin.fetch() must not be called."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    plugin = _GoodPlugin()
+    router = Router({"mysite": plugin})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report"), \
+         patch.object(plugin, "fetch") as mock_fetch:
+        run(cfg, router, dry_run_strict=True)
+
+    mock_fetch.assert_not_called()
+
+
+def test_dry_run_strict_records_skipped_status(tmp_path):
+    """Files routed to a plugin in dry_run_strict mode get status='skipped'."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        # dry_run=False so write_report IS called, letting us inspect the report
+        run(cfg, router, dry_run_strict=True)
+
+    report = mock_report.call_args.args[0]
+    assert report.skipped == 1
+    file_result = report.files[0]
+    assert file_result.status == "skipped"
+    assert "dry-run-strict" in file_result.message
+
+
+def test_dry_run_strict_skips_connect_plex(tmp_path):
+    """dry_run_strict with dry_run=True must not attempt a Plex connection."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex") as mock_connect, \
+         patch("app.main.write_report"):
+        run(cfg, router, dry_run=True, dry_run_strict=True)
+
+    mock_connect.assert_not_called()
+
+
+def test_dry_run_strict_skips_write_report(tmp_path):
+    """dry_run_strict with dry_run=True must not write report files."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router, dry_run=True, dry_run_strict=True)
+
+    mock_report.assert_not_called()
+
+
+def test_dry_run_strict_unmatched_not_counted_as_skipped(tmp_path):
+    """Files that can't be routed are still recorded as 'unmatched', not 'skipped'."""
+    media = _make_media(tmp_path, "Jane Doe % unknownsite - 99")
+    router = Router({})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router, dry_run_strict=True)
+
+    report = mock_report.call_args.args[0]
+    assert report.unmatched == 1
+    assert report.skipped == 0
+
+
+# ---------------------------------------------------------------------------
+# --retry-failed dedup and boundary (H11)
+# ---------------------------------------------------------------------------
+
+def _make_mock_config(tmp_path):
+    cfg = MagicMock()
+    cfg.report_path = str(tmp_path / "reports")
+    cfg.plugin_dir = str(tmp_path / "plugins")
+    cfg.library_paths = [str(tmp_path)]
+    cfg.log_path = str(tmp_path / "logs")
+    cfg.log_retention_days = 30
+    cfg.force = False
+    cfg.run_schedule = "0 2 * * *"
+    cfg.app_name = "m3"
+    return cfg
+
+
+def _invoke_retry(tmp_path, argv_extra, list_runs_val, get_run_map):
+    """Run main() retry-failed path with all external dependencies mocked.
+
+    Returns the mock for _run_with_media so callers can assert on the
+    MediaFile list it was called with.
+    """
+    import sys as _sys
+    from app.main import main
+
+    mock_cfg = _make_mock_config(tmp_path)
+
+    def fake_get_run(_report_path, filename):
+        return get_run_map.get(filename)
+
+    with patch.object(_sys, "argv", ["m3"] + argv_extra), \
+         patch("app.main.load_config", return_value=mock_cfg), \
+         patch("app.main.setup_logging"), \
+         patch("app.main._validate_paths"), \
+         patch("app.main.load_plugins", return_value={}), \
+         patch("app.web.history.list_runs", return_value=list_runs_val), \
+         patch("app.web.history.get_run", side_effect=fake_get_run), \
+         patch("app.main._sweep_tmp_orphans"), \
+         patch("app.main._run_with_media") as mock_run:
+        try:
+            main()
+        except SystemExit:
+            pass
+
+    return mock_run
+
+
+def test_retry_failed_dedup_across_runs(tmp_path):
+    """Same path appearing in two run reports must be retried only once."""
+    shared_path = str(tmp_path / "Jane Doe % mysite - 12345.mp4")
+    open(shared_path, "w").close()
+
+    list_runs_val = [
+        {"filename": "run_20250102.json"},
+        {"filename": "run_20250101.json"},
+    ]
+    get_run_map = {
+        "run_20250102.json": {"files": [{"path": shared_path, "status": "error"}]},
+        "run_20250101.json": {"files": [{"path": shared_path, "status": "scrape_error"}]},
+    }
+
+    mock_run = _invoke_retry(tmp_path, ["--retry-failed", "2"], list_runs_val, get_run_map)
+
+    mock_run.assert_called_once()
+    _, _, media_list = mock_run.call_args.args
+    assert len(media_list) == 1
+    assert media_list[0].path == shared_path
+
+
+def test_retry_failed_n_boundary(tmp_path):
+    """--retry-failed=1 reads only the most recent run; --retry-failed=2 reads two."""
+    path_run1 = str(tmp_path / "Jane Doe % mysite - 001.mp4")
+    path_run2 = str(tmp_path / "Jane Doe % mysite - 002.mp4")
+    open(path_run1, "w").close()
+    open(path_run2, "w").close()
+
+    list_runs_val = [
+        {"filename": "run_20250102.json"},  # most recent
+        {"filename": "run_20250101.json"},
+    ]
+    get_run_map = {
+        "run_20250102.json": {"files": [{"path": path_run1, "status": "error"}]},
+        "run_20250101.json": {"files": [{"path": path_run2, "status": "error"}]},
+    }
+
+    # N=1: only the most recent run → only path_run1
+    mock_run_1 = _invoke_retry(tmp_path, ["--retry-failed", "1"], list_runs_val, get_run_map)
+    mock_run_1.assert_called_once()
+    _, _, media_1 = mock_run_1.call_args.args
+    assert len(media_1) == 1
+    assert media_1[0].path == path_run1
+
+    # N=2: both runs → both paths
+    mock_run_2 = _invoke_retry(tmp_path, ["--retry-failed", "2"], list_runs_val, get_run_map)
+    mock_run_2.assert_called_once()
+    _, _, media_2 = mock_run_2.call_args.args
+    assert len(media_2) == 2
+
+
+def test_retry_failed_skips_nonexistent_files(tmp_path):
+    """Paths in the report that no longer exist on disk must be skipped silently."""
+    existing_path = str(tmp_path / "Jane Doe % mysite - 001.mp4")
+    missing_path = str(tmp_path / "Deleted File % mysite - 999.mp4")
+    open(existing_path, "w").close()
+    # missing_path is intentionally NOT created
+
+    list_runs_val = [{"filename": "run_20250101.json"}]
+    get_run_map = {
+        "run_20250101.json": {
+            "files": [
+                {"path": existing_path, "status": "error"},
+                {"path": missing_path, "status": "error"},
+            ]
+        },
+    }
+
+    mock_run = _invoke_retry(tmp_path, ["--retry-failed", "1"], list_runs_val, get_run_map)
+
+    mock_run.assert_called_once()
+    _, _, media_list = mock_run.call_args.args
+    paths = [m.path for m in media_list]
+    assert existing_path in paths
+    assert missing_path not in paths

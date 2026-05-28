@@ -14,8 +14,12 @@
 #   in check on long-running Unraid installs.
 # -----------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import logging
 import os
+import sys
+import time
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 
@@ -62,11 +66,31 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
         try:
             # delay=True defers opening the file until the first log write,
             # which reduces Windows file-locking contention during rotation.
-            file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5, delay=True)
+            file_handler = RotatingFileHandler(
+                log_file, maxBytes=10 * 1024 * 1024, backupCount=5,
+                delay=True, encoding="utf-8",
+            )
+            # Windows: RotatingFileHandler.doRollover() calls os.rename() which raises
+            # PermissionError (WinError 32) when another process holds the log file open
+            # (e.g. a tail -f in a terminal or Unraid's log viewer). Replace the default
+            # rotator with a version that retries with exponential backoff, matching the
+            # atomic_replace() pattern used elsewhere in the codebase.
+            if sys.platform == "win32":
+                def _win_rotator(source: str, dest: str) -> None:
+                    for attempt in range(5):
+                        try:
+                            if os.path.exists(dest):
+                                os.remove(dest)
+                            os.rename(source, dest)
+                            return
+                        except PermissionError:
+                            if attempt == 4:
+                                raise
+                            time.sleep(0.05 * (2 ** attempt))
+                file_handler.rotator = _win_rotator  # type: ignore[assignment]
             file_handler.setFormatter(fmt)
             root.addHandler(file_handler)
         except OSError as exc:
-            import sys
             print(
                 f"{app_name} WARNING: could not open log file {log_file!r}: {exc}. "
                 "Continuing with stdout-only logging.",

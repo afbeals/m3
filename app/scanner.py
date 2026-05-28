@@ -122,7 +122,12 @@ def scan_library(
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in VIDEO_EXTENSIONS:
                     full_path = os.path.join(dirpath, fname)
-                    if not any(fnmatch.fnmatch(full_path, pat) for pat in exclude_patterns):
+                    # Normalize to forward slashes for cross-platform pattern matching —
+                    # os.walk yields backslash paths on Windows, but patterns are
+                    # typically written with forward slashes (copied from Unix or .env files).
+                    _norm_path = full_path.replace("\\", "/")
+                    _norm_pats = [p.replace("\\", "/") for p in exclude_patterns]
+                    if not any(fnmatch.fnmatch(_norm_path, pat) for pat in _norm_pats):
                         video_stems[os.path.splitext(fname)[0]] = full_path
                     else:
                         logger.debug("Excluding (matches pattern): %s", full_path)

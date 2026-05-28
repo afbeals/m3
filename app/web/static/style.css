@@ -224,6 +224,8 @@ tr:hover .copy-btn { opacity: 1; }
 .muted { color: var(--dim); }
 .mono  { font-family: inherit; }
 .path  { color: var(--dim); font-size: 0.8rem; word-break: break-all; }
+.path a { color: inherit; text-decoration: none; }
+.path a:hover { color: var(--text); text-decoration: underline; }
 .msg   { color: var(--yellow); font-size: 0.8rem; padding-left: 1rem; }
 
 .filter-bar {

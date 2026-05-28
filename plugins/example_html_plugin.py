@@ -38,7 +38,7 @@ BASE_URL = "https://example-html-site.com"
 
 class ExampleHTMLPlugin(MetadataPlugin):
     site_id = "examplehtml"
-    aliases = ["EH"]
+    aliases = ("EH",)
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         logger.info(

@@ -6,37 +6,74 @@
   <h1>Log Viewer</h1>
   <div style="display:flex; align-items:center; gap:1rem;">
     <span class="muted" style="font-size:0.8rem;">Last {{ tail }} lines · {{ log_path }}</span>
-    <a href="/logs" class="btn" style="font-size:0.8rem; padding:0.2rem 0.6rem;">↺ Refresh</a>
+    <a href="/logs?tail={{ tail }}" class="btn"
+       style="font-size:0.8rem; padding:0.2rem 0.6rem;"
+       hx-get="/logs?tail={{ tail }}"
+       hx-target="#log-panel"
+       hx-swap="innerHTML"
+       hx-trigger="click"
+       title="Refresh log">↺ Refresh</a>
   </div>
 </div>
 
-<div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+<div style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
   <span class="muted" style="font-size:0.8rem;">Lines:</span>
   {% for n in [200, 500, 1000, 2000] %}
   <a href="/logs?tail={{ n }}"
      class="btn{% if tail == n %} active{% endif %}"
      style="font-size:0.75rem; padding:0.2rem 0.5rem;{% if tail == n %} border-color:var(--text); color:var(--text);{% endif %}">{{ n }}</a>
   {% endfor %}
+  <span class="muted" style="font-size:0.8rem; margin-left:0.75rem;">Filter:</span>
+  <input id="log-filter" type="search" placeholder="e.g. ERROR, mysite, /path/to/file"
+         style="font-size:0.8rem; padding:0.2rem 0.5rem; background:var(--card); color:var(--text);
+                border:1px solid var(--muted); border-radius:4px; width:280px;"
+         oninput="filterLogs(this.value)">
+  <span id="log-match-count" class="muted" style="font-size:0.75rem;"></span>
 </div>
 
+<div id="log-panel"
+     hx-get="/logs?tail={{ tail }}"
+     hx-trigger="every 30s"
+     hx-swap="innerHTML">
 {% if error %}
 <div class="card muted">{{ error }}</div>
 {% elif lines %}
 <div class="card" style="padding:0.75rem 1rem; overflow-x:auto;">
-  <pre style="margin:0; font-size:0.75rem; line-height:1.5; white-space:pre-wrap; word-break:break-all;">{% for line in lines %}{{ line }}
+  <pre id="log-pre" style="margin:0; font-size:0.75rem; line-height:1.5; white-space:pre-wrap; word-break:break-all;">{% for line in lines %}<span class="log-line">{{ line }}</span>
 {% endfor %}</pre>
 </div>
 {% else %}
 <div class="card muted">Log file is empty.</div>
 {% endif %}
+</div>
 
-{% if lines %}
 <script>
-  // Auto-scroll to the bottom only on the initial page load, not on HTMX refreshes,
-  // so a user who scrolled up to read older lines isn't yanked away.
+  function filterLogs(query) {
+    const lines = document.querySelectorAll(".log-line");
+    const q = query.trim().toLowerCase();
+    let visible = 0;
+    lines.forEach(function(el) {
+      const match = !q || el.textContent.toLowerCase().includes(q);
+      el.style.display = match ? "" : "none";
+      if (match) visible++;
+    });
+    const counter = document.getElementById("log-match-count");
+    if (counter) {
+      counter.textContent = q ? visible + " / " + lines.length + " lines" : "";
+    }
+  }
+
+  // Re-apply filter after HTMX refreshes the log panel
+  document.body.addEventListener("htmx:afterSwap", function(evt) {
+    if (evt.detail.target && evt.detail.target.id === "log-panel") {
+      const q = document.getElementById("log-filter");
+      if (q && q.value) filterLogs(q.value);
+    }
+  });
+
+  // Auto-scroll to bottom only on initial page load, not after HTMX refreshes
   if (!document.documentElement.hasAttribute("hx-request")) {
     window.scrollTo(0, document.body.scrollHeight);
   }
 </script>
-{% endif %}
 {% endblock %}

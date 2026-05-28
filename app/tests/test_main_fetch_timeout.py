@@ -2,6 +2,7 @@
 # A plugin whose fetch() sleeps longer than the timeout should be recorded as
 # status=error and the run should continue processing remaining files.
 from __future__ import annotations
+import pytest
 
 import time
 from unittest.mock import MagicMock, patch
@@ -11,10 +12,12 @@ from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 from app.router import Router
 from app.scanner import MediaFile
 
+pytestmark = pytest.mark.integration
+
 
 class _SlowPlugin(MetadataPlugin):
     site_id = "slowsite"
-    aliases = []
+    aliases = ()
 
     def fetch(self, parsed: ParsedFilename):
         time.sleep(10)  # always times out under a short timeout
@@ -23,7 +26,7 @@ class _SlowPlugin(MetadataPlugin):
 
 class _GoodPlugin(MetadataPlugin):
     site_id = "goodsite"
-    aliases = []
+    aliases = ()
 
     def fetch(self, parsed: ParsedFilename):
         return MetadataResult(title="Fast Title")

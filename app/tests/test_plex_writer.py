@@ -8,6 +8,8 @@ import pytest
 from app.plugins.base import MetadataResult
 from app.writers.plex import connect_plex, find_plex_item, push_to_plex
 
+pytestmark = pytest.mark.unit
+
 
 def _make_result(**kwargs) -> MetadataResult:
     defaults = dict(

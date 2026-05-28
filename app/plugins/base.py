@@ -128,12 +128,12 @@ class MetadataPlugin(ABC):
     site_id: str = ""
 
     # Optional shorthand aliases users can also use in filenames.
-    # e.g. aliases = ["WB"] means "% WB - 12345" also routes here.
+    # e.g. aliases = ("WB",) means "% WB - 12345" also routes here.
     #
-    # Override with your own list literal in each subclass — do NOT mutate this
-    # list at runtime. A class-level list is shared across all subclasses that
-    # don't override it, so appending to it would affect every plugin.
-    aliases: list[str] = []  # subclasses should override: aliases = ["MY", "ALIAS"]
+    # Tuple (not list) so the class-level default is immutable — a mutable list
+    # default is shared across all subclasses that don't override it, making it
+    # easy to accidentally corrupt all plugins with a single .append() call.
+    aliases: tuple[str, ...] = ()  # subclasses should override: aliases = ("MY", "ALIAS")
 
     @abstractmethod
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:

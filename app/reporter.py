@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
 from app.logging_setup import cleanup_old_files
+from app.utils import atomic_replace
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +121,10 @@ def write_report(
     json_path = os.path.join(report_path, f"run_{ts}.json")
     json_tmp = json_path + ".tmp"
     try:
-        with open(json_tmp, "w") as fh:
+        with open(json_tmp, "w", encoding="utf-8") as fh:
             # asdict() converts the nested dataclasses to plain dicts for JSON serialisation
             json.dump(asdict(report), fh, indent=2)
-        os.replace(json_tmp, json_path)
+        atomic_replace(json_tmp, json_path)
     except OSError as exc:
         logger.error("Could not write JSON report to %s: %s", json_path, exc)
         try:
@@ -207,9 +208,9 @@ def write_report(
     # leaves run_latest.txt in a corrupt/truncated state.
     txt_tmp = txt_path + ".tmp"
     try:
-        with open(txt_tmp, "w") as fh:
+        with open(txt_tmp, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
-        os.replace(txt_tmp, txt_path)
+        atomic_replace(txt_tmp, txt_path)
         logger.info("Report written to %s", txt_path)
     except OSError as exc:
         logger.error("Could not write text report to %s: %s", txt_path, exc)

@@ -13,6 +13,8 @@ from app.scrape import (
     _MAX_RESPONSE_BYTES,
 )
 
+pytestmark = pytest.mark.unit
+
 
 def _make_response(
     status_code: int = 200,

@@ -5,6 +5,8 @@ import pytest
 from app.parser import parse
 from app.plugins.base import ParsedFilename
 
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # Helpers

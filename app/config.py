@@ -120,13 +120,17 @@ class Config:
         )
 
 
-def load_config(force: bool = False) -> Config:
+def load_config(force: bool = False, plex_required: bool = True) -> Config:
     # Inner helper: raise if a required env var is missing or empty
     def require(key: str) -> str:
         val = os.environ.get(key, "").strip()
         if not val:
             raise ValueError(f"Required environment variable {key!r} is not set")
         return val
+
+    # Inner helper: like require() but returns "" when plex_required=False
+    def require_or_empty(key: str) -> str:
+        return require(key) if plex_required else os.environ.get(key, "").strip()
 
     # Inner helper: return env var value or a default if not set
     def optional(key: str, default: str) -> str:
@@ -173,8 +177,8 @@ def load_config(force: bool = False) -> Config:
     web_enabled = web_enabled_raw not in ("false", "0", "no", "off")
 
     return Config(
-        plex_url=require("PLEX_URL"),
-        plex_token=require("PLEX_TOKEN"),
+        plex_url=require_or_empty("PLEX_URL"),
+        plex_token=require_or_empty("PLEX_TOKEN"),
         library_paths=library_paths,
         plugin_dir=optional("PLUGIN_DIR", "./plugins"),
         report_path=optional("REPORT_PATH", "./reports"),

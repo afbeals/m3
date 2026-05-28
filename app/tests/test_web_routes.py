@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 
 from app.web import create_app
 
+pytestmark = pytest.mark.integration
+
 
 def _make_config(report_path: str) -> MagicMock:
     cfg = MagicMock()
@@ -195,7 +197,7 @@ def test_plugins_lists_registered_plugins():
 
     class _TestPlugin(MetadataPlugin):
         site_id = "testsite"
-        aliases = ["TS"]
+        aliases = ("TS",)
         def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
             return None
 
