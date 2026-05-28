@@ -230,6 +230,7 @@ def _download_image(url: str, dest_base: str) -> str | None:
                 max_attempts=_DOWNLOAD_MAX_ATTEMPTS,
                 backoff_base=_DOWNLOAD_BACKOFF_BASE,
                 description=f"image download {url}",
+                reraise_on=(ValueError,),
             )
         except Exception as exc:
             logger.error("Failed to download image from %s after %d attempts: %s",
@@ -312,33 +313,40 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
             logger.debug("Image not present, skipping rename: %s%s", old_stem, base_suffix)
 
 
-def write_images(media: MediaFile, result: MetadataResult) -> bool:
+def write_images(
+    media: MediaFile,
+    result: MetadataResult,
+) -> tuple[bool, str | None, str | None]:
     """Download poster and fanart images into the same directory as the media file.
 
-    Returns True if all requested images downloaded successfully, False if any failed.
-    Failures are logged as errors but do not raise — image download issues should not
-    abort an otherwise successful metadata write.
+    Returns a 3-tuple ``(success, poster_path, fanart_path)`` where:
+    - ``success`` is True if all requested images downloaded successfully.
+    - ``poster_path`` is the full path actually written for the poster, or None.
+    - ``fanart_path`` is the full path actually written for the fanart, or None.
 
-    The actual filenames written (including the correct extension derived from
-    Content-Type) are returned via the media object's companion NFO — callers that
-    need the real filenames should inspect the directory after this call, or use
-    write_images_and_get_filenames() if they need the names for NFO <art> elements.
+    Failures are logged as errors but do not raise — image download issues should not
+    abort an otherwise successful metadata write.  The extension in the returned paths
+    reflects the actual Content-Type of the downloaded image (e.g. ``.webp``, ``.png``),
+    not the ``.jpg`` default, so callers can embed the correct filename in the NFO
+    ``<art>`` block.
     """
     base = os.path.dirname(media.path)
     all_ok = True
+    poster_path: str | None = None
+    fanart_path: str | None = None
 
     if result.poster_url:
         dest_base = os.path.join(base, f"{media.stem}-poster")
-        written = _download_image(result.poster_url, dest_base)
-        if written is None:
+        poster_path = _download_image(result.poster_url, dest_base)
+        if poster_path is None:
             logger.error("Poster download failed for %s — NFO written but image missing", media.path)
             all_ok = False
 
     if result.fanart_url:
         dest_base = os.path.join(base, f"{media.stem}-fanart")
-        written = _download_image(result.fanart_url, dest_base)
-        if written is None:
+        fanart_path = _download_image(result.fanart_url, dest_base)
+        if fanart_path is None:
             logger.error("Fanart download failed for %s — NFO written but image missing", media.path)
             all_ok = False
 
-    return all_ok
+    return all_ok, poster_path, fanart_path

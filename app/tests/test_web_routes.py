@@ -819,8 +819,8 @@ def test_trigger_file_thread_writes_trigger_record_on_success():
             if "trigger_" in dst:
                 done.set()
 
-        with patch("app.web.routes.write_nfo"), \
-             patch("app.web.routes.write_images", return_value=True), \
+        with patch("app.web.routes.write_images", return_value=(True, None, None)), \
+             patch("app.web.routes.write_nfo"), \
              patch("app.web.routes.connect_plex", return_value=None), \
              patch("app.web.routes.push_to_plex", return_value=True), \
              patch("app.web.routes.atomic_replace", side_effect=_replace_and_signal):

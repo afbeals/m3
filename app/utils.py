@@ -90,7 +90,7 @@ def retry_with_backoff(
         except Exception as exc:
             last_exc = exc
             if attempt < max_attempts:
-                wait = min(backoff_base ** attempt, max_wait)
+                wait = max(min(backoff_base ** attempt, max_wait), 0.1)
                 logger.warning(
                     "%s attempt %d/%d failed (%s); retrying in %.0fs",
                     description, attempt, max_attempts, exc, wait,

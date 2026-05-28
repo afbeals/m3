@@ -122,6 +122,21 @@ def get_run(report_path: str, filename: str) -> dict | None:
     except OSError:
         mtime = None
 
+    if mtime is None:
+        # File disappeared; skip the cache to avoid creating a degenerate (path, name, None)
+        # cache entry that would permanently poison lookups for this file.
+        try:
+            with open(fpath, encoding="utf-8") as fh:
+                data = json.load(fh)
+            data["filename"] = filename
+        except (FileNotFoundError, OSError):
+            logger.debug("Report file no longer present: %s", fpath)
+            return None
+        except Exception as exc:
+            logger.warning("Could not read report file %s: %s", fpath, exc)
+            return None
+        return data
+
     cache_key = (report_path, filename, mtime)
     with _cache_lock:
         cached = _get_run_cache.get(cache_key)
@@ -287,4 +302,4 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
             return datetime.min
 
     history.sort(key=_safe_dt, reverse=True)
-    return history
+    return history[:max_runs]

@@ -519,6 +519,7 @@ async def trigger_file(request: Request):
     router_obj = request.app.state.plugin_router
 
     run_state = request.app.state.run_state
+    run_state_started = False
 
     def _run_single():
         import json as _json
@@ -558,10 +559,9 @@ async def trigger_file(request: Request):
                 outcome_message = "plugin returned no result"
                 return
             try:
-                write_nfo(media, result)
-                images_ok = write_images(media, result)
+                images_ok, poster_path, fanart_path = write_images(media, result)
             except Exception as exc:
-                logger.warning("trigger_file: write error for %s: %s", resolved_file_path, exc)
+                logger.warning("trigger_file: image write error for %s: %s", resolved_file_path, exc)
                 outcome_status = "error"
                 outcome_message = str(exc)
                 return
@@ -569,6 +569,17 @@ async def trigger_file(request: Request):
                 outcome_status = "image_error"
                 outcome_message = "NFO written but one or more images failed to download"
             else:
+                poster_filename = os.path.basename(poster_path) if poster_path else None
+                fanart_filename = os.path.basename(fanart_path) if fanart_path else None
+                try:
+                    write_nfo(media, result,
+                              poster_filename=poster_filename,
+                              fanart_filename=fanart_filename)
+                except Exception as exc:
+                    logger.warning("trigger_file: NFO write error for %s: %s", resolved_file_path, exc)
+                    outcome_status = "error"
+                    outcome_message = str(exc)
+                    return
                 outcome_status = "updated"
             if plex_server is not None:
                 try:
@@ -580,7 +591,7 @@ async def trigger_file(request: Request):
             # Release the per-path lock first — before any I/O that could fail —
             # so a write error never permanently blocks future retrigger attempts.
             file_lock.release()
-            if run_state is not None:
+            if run_state is not None and run_state_started:
                 run_state.stop()
             # Write a lightweight trigger record so the file history page shows
             # the manual retrigger outcome alongside regular scheduled runs.
@@ -591,7 +602,7 @@ async def trigger_file(request: Request):
                     "trigger": True,
                     "started_at": started_at,
                     "finished_at": finished_at,
-                    "files": [{"path": file_path, "status": outcome_status, "message": outcome_message}],
+                    "files": [{"path": resolved_file_path, "status": outcome_status, "message": outcome_message}],
                 }
                 report_path = config.report_path
                 os.makedirs(report_path, exist_ok=True)
@@ -612,11 +623,12 @@ async def trigger_file(request: Request):
     # blocked from future retrigger attempts.
     if run_state is not None:
         run_state.start()
+        run_state_started = True
     try:
         thread.start()
     except Exception:
         file_lock.release()
-        if run_state is not None:
+        if run_state is not None and run_state_started:
             run_state.stop()
         raise
 
@@ -625,7 +637,7 @@ async def trigger_file(request: Request):
     # form POSTs (no HTMX) fall back to the full-page redirect so the behaviour
     # is unchanged for non-JS environments.
     if request.headers.get("HX-Request"):
-        slot_id = hashlib.md5(file_path.encode()).hexdigest()[:8]
+        slot_id = hashlib.sha256(file_path.encode()).hexdigest()[:16]
         return request.app.state.templates.TemplateResponse(
             request,
             "partials/queued_badge.html",

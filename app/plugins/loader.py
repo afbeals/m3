@@ -122,16 +122,20 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                 logger.exception("Failed to instantiate plugin class %s in %s; skipping", obj.__name__, fname)
                 continue
             # Register the plugin under its site_id and every alias
-            for key in instance.all_ids():
+            for key in dict.fromkeys(instance.all_ids()):
                 if key in registry:
-                    # Two plugins claim the same id — last one loaded wins
+                    evicted = registry[key]
                     logger.error(
-                        "Plugin id %r already registered by %s; overwriting with %s",
-                        key,
-                        type(registry[key]).__name__,
-                        obj.__name__,
+                        "Plugin %r already registered for id %r; overwriting with %s — "
+                        "remove the duplicate from your plugin directory.",
+                        type(evicted).__name__, key, obj.__name__,
                     )
-                    registry[key].close()  # close the evicted instance before overwriting
+                    # Remove ALL keys pointing to the evicted instance before closing it
+                    # so no stale references remain after close().
+                    stale_keys = [k for k, v in registry.items() if v is evicted]
+                    for k in stale_keys:
+                        del registry[k]
+                    evicted.close()
                 registry[key] = instance
                 logger.info("Registered plugin %s for id %r", obj.__name__, key)
 

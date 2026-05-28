@@ -155,10 +155,12 @@ class ExampleHTMLPlugin(MetadataPlugin):
 
         # ---- Images ----
         poster_el = soup.select_one("img.poster-image")
-        poster_url = poster_el.get("src") if poster_el else None
+        raw_poster = poster_el.get("src") if poster_el else None
+        poster_url = urljoin(BASE_URL, raw_poster) if raw_poster else None
 
         fanart_el = soup.select_one("img.fanart-image")
-        fanart_url = fanart_el.get("src") if fanart_el else None
+        raw_fanart = fanart_el.get("src") if fanart_el else None
+        fanart_url = urljoin(BASE_URL, raw_fanart) if raw_fanart else None
 
         # ---- Scene ID for traceability ----
         # Example: <meta name="scene-id" content="12345">

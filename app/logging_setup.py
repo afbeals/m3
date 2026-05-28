@@ -51,6 +51,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
 
     # Shared format: timestamp, level, logger name, message
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    fmt.converter = time.gmtime  # force UTC timestamps in log output
 
     root = logging.getLogger()
 

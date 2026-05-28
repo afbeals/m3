@@ -336,26 +336,20 @@ def run(
         if config.plugin_rate_limit_secs > 0:
             time.sleep(config.plugin_rate_limit_secs)
 
-        # Write the NFO sidecar and download poster/fanart images alongside the video file
+        # Write images first so we know the actual filenames (extension derived from
+        # Content-Type) before writing the NFO <art> block.
         if dry_run:
             logger.info("[DRY RUN] Would write NFO + images for: %s", media.path)
         else:
             try:
-                write_nfo(media, result)
-            except Exception as exc:
-                logger.exception("NFO write error for %s", media.path)
-                report.record(FileResult(path=media.path, status="error", message=str(exc)))
-                continue
-
-            try:
-                images_ok = write_images(media, result)
+                images_ok, poster_path, fanart_path = write_images(media, result)
             except Exception as exc:
                 logger.exception("Image write error for %s", media.path)
                 report.record(FileResult(path=media.path, status="error", message=str(exc)))
                 continue
             if not images_ok:
                 logger.warning(
-                    "Image download failed for %s — NFO written, images missing. "
+                    "Image download failed for %s — NFO not written, images missing. "
                     "Recording as image_error.",
                     media.path,
                 )
@@ -364,7 +358,20 @@ def run(
                     status="image_error",
                     message="NFO written but one or more images failed to download",
                 ))
-                # NFO was written but images failed; skip Plex push since missing poster would look worse than no update
+                # Images failed; skip NFO write and Plex push
+                continue
+
+            # Build bare filenames for the NFO <art> block using the actual written paths
+            poster_filename = os.path.basename(poster_path) if poster_path else None
+            fanart_filename = os.path.basename(fanart_path) if fanart_path else None
+
+            try:
+                write_nfo(media, result,
+                          poster_filename=poster_filename,
+                          fanart_filename=fanart_filename)
+            except Exception as exc:
+                logger.exception("NFO write error for %s", media.path)
+                report.record(FileResult(path=media.path, status="error", message=str(exc)))
                 continue
 
         # Push the same metadata to Plex with field locks so Plex's built-in agent
@@ -405,9 +412,9 @@ def run(
     if dry_run:
         logger.info(
             "[DRY RUN] Skipping report write. "
-            "updated=%d skipped=%d unmatched=%d scrape_errors=%d errors=%d",
-            report.updated, report.skipped, report.unmatched,
-            report.scrape_errors, report.errors,
+            "updated=%d renamed=%d skipped=%d unmatched=%d scrape_errors=%d image_errors=%d errors=%d",
+            report.updated, report.renamed, report.skipped, report.unmatched,
+            report.scrape_errors, report.image_errors, report.errors,
         )
     else:
         # Write JSON + plain-text report files and clean up old ones

@@ -90,7 +90,7 @@ def test_webhook_not_called_in_run_when_notify_url_empty(tmp_path):
 
     with _patch("app.main.scan_library", return_value=([media], 0)), \
          _patch("app.main.write_nfo"), \
-         _patch("app.main.write_images", return_value=True), \
+         _patch("app.main.write_images", return_value=(True, None, None)), \
          _patch("app.main.connect_plex", return_value=None), \
          _patch("app.main.write_report"), \
          _patch("app.main._fire_webhook") as mock_webhook:
@@ -189,7 +189,7 @@ def test_notify_min_errors_suppresses_webhook_on_clean_run():
 
         with _patch("app.main.scan_library", return_value=([media], 0)), \
              _patch("app.main.write_nfo"), \
-             _patch("app.main.write_images", return_value=True), \
+             _patch("app.main.write_images", return_value=(True, None, None)), \
              _patch("app.main.connect_plex", return_value=None), \
              _patch("app.main.write_report"), \
              _patch("app.main._fire_webhook") as mock_webhook:

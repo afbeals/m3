@@ -188,11 +188,11 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         raw_exclude
         and len(library_exclude_patterns) == 1
         and " " in library_exclude_patterns[0]
-        and not any(c in library_exclude_patterns[0] for c in ("*", "?", "["))
     ):
         logger.warning(
-            "LIBRARY_EXCLUDE_PATTERNS appears to use spaces as separators (%r). "
-            "Use commas to separate multiple patterns. Current value treated as a single pattern.",
+            "LIBRARY_EXCLUDE_PATTERNS=%r appears to use spaces as separators. "
+            "Use commas to separate multiple patterns. "
+            "Current value is treated as a single pattern.",
             raw_exclude,
         )
 

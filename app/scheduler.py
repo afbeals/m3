@@ -167,7 +167,13 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
                 _trigger_event.clear()  # consume the event before acting; a second signal during add_job will re-set it
                 logger.info("SIGUSR1 received — scheduling immediate run")
                 try:
-                    scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True, misfire_grace_time=_MISFIRE_GRACE_SECS)
+                    scheduler.add_job(
+                        run_fn,
+                        trigger="date",
+                        id="sigusr1_trigger",
+                        replace_existing=True,
+                        misfire_grace_time=_MISFIRE_GRACE_SECS,
+                    )
                 except Exception as exc:
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
 

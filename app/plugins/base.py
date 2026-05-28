@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Literal
@@ -124,9 +125,15 @@ class MetadataResult:
                 # Only set attributes that actually exist on this dataclass
                 if hasattr(self, field_name):
                     setattr(self, field_name, [])
-        # Validate rating is in a sensible range if provided
-        if self.rating is not None and not (0.0 <= self.rating <= 10.0):
-            raise ValueError(f"MetadataResult.rating must be between 0 and 10, got {self.rating}")
+        # Validate rating is in a sensible range if provided.
+        # math.isfinite() explicitly rejects float('nan') and float('inf').
+        # Note: nan is also caught by the chained comparison alone (0.0 <= nan
+        # evaluates to False), but isfinite() makes the intent unambiguous.
+        if self.rating is not None:
+            if not math.isfinite(self.rating) or not (0.0 <= self.rating <= 10.0):
+                raise ValueError(
+                    f"rating must be a finite number 0–10, got {self.rating!r}"
+                )
         # Guard against plugins passing str(None) = "None" as source_id
         if self.source_id is not None and self.source_id.strip().lower() in ("none", ""):
             self.source_id = None

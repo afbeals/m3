@@ -343,6 +343,55 @@ def test_push_nfo_to_plex_plain_tag_elements(tmp_path):
     mock_item.addLabel.assert_not_called()
 
 
+def test_push_nfo_to_plex_uploads_webp_poster(tmp_path):
+    """push_nfo_to_plex should find .webp images when .jpg doesn't exist."""
+    from lxml import etree
+    from app.writers.plex import push_nfo_to_plex
+
+    # write an NFO
+    nfo = tmp_path / "Scene.nfo"
+    root = etree.Element("movie")
+    etree.SubElement(root, "title").text = "Scene"
+    etree.ElementTree(root).write(str(nfo))
+
+    # create only a .webp poster (no .jpg)
+    webp_poster = tmp_path / "Scene-poster.webp"
+    webp_poster.write_bytes(b"fake webp")
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        result = push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), str(nfo))
+
+    assert result is True
+    mock_item.uploadPoster.assert_called_once_with(filepath=str(webp_poster))
+    mock_item.uploadArt.assert_not_called()  # no fanart file exists
+
+
+def test_push_nfo_to_plex_does_not_remove_when_nfo_has_no_list_fields(tmp_path):
+    """When NFO has no genres/actors/labels, remove methods must not be called."""
+    from lxml import etree
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = tmp_path / "Scene.nfo"
+    # Write minimal NFO with only title — no genres, actors, labels, or tags
+    root = etree.Element("movie")
+    etree.SubElement(root, "title").text = "Minimal Scene"
+    etree.ElementTree(root).write(str(nfo))
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), str(nfo))
+
+    mock_item.removeGenres.assert_not_called()
+    mock_item.removeActors.assert_not_called()
+    mock_item.removeLabels.assert_not_called()
+    mock_item.removeTags.assert_not_called()
+
+
 def test_connect_plex_returns_none_on_timeout(caplog):
     """connect_plex must return None and emit a WARNING when call_with_timeout raises TimeoutError.
 

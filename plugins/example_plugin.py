@@ -131,11 +131,14 @@ class ExampleSitePlugin(MetadataPlugin):
             params["scene_id"] = parsed.scene_id
 
         results = self._api_get("/scenes/search", params=params)
-        if not results or not isinstance(results, list) or not isinstance(results[0], dict):
+        if not results or not isinstance(results, list):
+            return None
+        result_dicts = [r for r in results if isinstance(r, dict)]
+        if not result_dicts:
             return None
 
         # Take the first (best) result
-        return self._to_result(results[0])
+        return self._to_result(result_dicts[0])
 
     # ------------------------------------------------------------------
     # Limited search — site supports title and/or actor only
@@ -149,10 +152,13 @@ class ExampleSitePlugin(MetadataPlugin):
             params["actor"] = parsed.actors[0]
 
         results = self._api_get("/scenes/search", params=params)
-        if not results or not isinstance(results, list) or not isinstance(results[0], dict):
+        if not results or not isinstance(results, list):
+            return None
+        result_dicts = [r for r in results if isinstance(r, dict)]
+        if not result_dicts:
             return None
 
-        return self._to_result(results[0])
+        return self._to_result(result_dicts[0])
 
     # ------------------------------------------------------------------
     # Helpers

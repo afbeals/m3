@@ -188,14 +188,21 @@ def test_write_images_downloads_poster_and_fanart(tmp_path):
     media = _make_media(tmp_path)
     result = _make_result(poster_url="http://x.com/p.jpg", fanart_url="http://x.com/f.jpg")
 
+    def fake_download(url, dest_base):
+        # Return the path with .jpg extension as if jpeg was downloaded
+        return dest_base + ".jpg"
+
     with patch("app.writers.nfo._download_image") as mock_dl:
-        mock_dl.return_value = True
-        write_images(media, result)
+        mock_dl.side_effect = fake_download
+        outcome = write_images(media, result)
 
     assert mock_dl.call_count == 2
     calls = [c.args[0] for c in mock_dl.call_args_list]
     assert "http://x.com/p.jpg" in calls
     assert "http://x.com/f.jpg" in calls
+    # write_images returns (success, poster_path, fanart_path)
+    success, poster_path, fanart_path = outcome
+    assert success is True
 
 
 def test_write_images_skips_when_no_urls(tmp_path):
@@ -384,6 +391,39 @@ def test_download_image_retries_on_connect_error_and_succeeds(tmp_path):
     assert result is not None, "Must return a path string on success, not None"
     assert os.path.exists(result), "Image file must be written after a successful retry"
     assert call_count == 3
+
+
+def test_download_image_not_retried_on_bad_content_type(tmp_path):
+    """ValueError from bad content-type must not trigger retries."""
+    from app.writers.nfo import _download_image
+
+    dest_base = str(tmp_path / "stem-poster")
+
+    call_count = 0
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.headers = {"content-type": "text/html"}
+    mock_response.iter_bytes = MagicMock(return_value=iter([]))
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    def mock_stream(method, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return mock_response
+
+    mock_client = MagicMock()
+    mock_client.stream.side_effect = mock_stream
+    mock_client.__enter__ = lambda s: s
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("app.writers.nfo.httpx") as mock_httpx:
+        mock_httpx.Client.return_value = mock_client
+        result = _download_image("http://example.com/poster.jpg", dest_base)
+
+    assert result is None
+    assert call_count == 1  # must not retry on deterministic ValueError
 
 
 # ---------------------------------------------------------------------------

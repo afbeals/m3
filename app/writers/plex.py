@@ -279,7 +279,7 @@ def push_nfo_to_plex(
         # by filtering <tag> elements whose text starts with "label:" and stripping
         # the prefix.  Plain <label> elements are not written by write_nfo so this
         # correctly matches the format produced by nfo.py.
-        labels = [el.text[6:] for el in root.findall("tag") if el.text and el.text.startswith("label:")]
+        labels = [el.text[6:].strip() for el in root.findall("tag") if el.text and el.text.startswith("label:")]
         tags = [el.text.strip() for el in root.findall("tag") if el.text and not el.text.startswith("label:")]
 
         # Add new values first, then remove old — same add-first ordering as
@@ -305,13 +305,25 @@ def push_nfo_to_plex(
 
         # Upload images from the local renamed files — avoids a redundant network
         # round-trip to the source site since the content hasn't changed.
+        from app.writers.nfo import _IMAGE_EXTENSIONS
         dirpath = os.path.dirname(nfo_path)
         stem = os.path.splitext(os.path.basename(nfo_path))[0]
-        poster_path = os.path.join(dirpath, f"{stem}-poster.jpg")
-        fanart_path = os.path.join(dirpath, f"{stem}-fanart.jpg")
-        if os.path.exists(poster_path):
+        poster_path = None
+        for ext in _IMAGE_EXTENSIONS:
+            candidate = os.path.join(dirpath, f"{stem}-poster{ext}")
+            if os.path.exists(candidate):
+                poster_path = candidate
+                break
+        if poster_path:
             item.uploadPoster(filepath=poster_path)
-        if os.path.exists(fanart_path):
+
+        fanart_path = None
+        for ext in _IMAGE_EXTENSIONS:
+            candidate = os.path.join(dirpath, f"{stem}-fanart{ext}")
+            if os.path.exists(candidate):
+                fanart_path = candidate
+                break
+        if fanart_path:
             item.uploadArt(filepath=fanart_path)
 
         logger.info("Re-pushed Plex metadata for renamed item: %s", item.title)

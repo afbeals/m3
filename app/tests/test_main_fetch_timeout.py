@@ -84,7 +84,7 @@ def test_run_continues_after_timeout(tmp_path):
     with patch("app.main.scan_library", return_value=([slow, fast], 0)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=True), \
+         patch("app.main.write_images", return_value=(True, None, None)), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
 

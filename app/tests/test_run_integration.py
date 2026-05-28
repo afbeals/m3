@@ -92,7 +92,7 @@ def test_run_marks_file_updated_on_success(tmp_path):
 
     with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=True), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -179,6 +179,7 @@ def test_run_marks_file_error_when_nfo_write_fails(tmp_path):
     cfg = _config(tmp_path)
 
     with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.write_nfo", side_effect=OSError("disk full")), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
@@ -215,7 +216,7 @@ def test_run_dry_run_skips_plex_push(tmp_path):
 
     with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=True), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.connect_plex", return_value=mock_plex), \
          patch("app.main.push_to_plex") as mock_push, \
          patch("app.main.write_report"):
@@ -232,7 +233,7 @@ def test_run_continues_after_one_file_errors(tmp_path):
 
     with patch("app.main.scan_library", return_value=([bad, good], 0)), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=True), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)
@@ -250,7 +251,7 @@ def test_run_pushes_to_plex_when_connected(tmp_path):
 
     with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=True), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.connect_plex", return_value=mock_plex), \
          patch("app.main.push_to_plex") as mock_push, \
          patch("app.main.write_report"):
@@ -374,7 +375,7 @@ def test_run_media_files_override_bypasses_scan(tmp_path):
     with patch("app.main.scan_library") as mock_scan, \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images"), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
          patch("app.main.write_report"):
         run(cfg, router, media_files_override=[media])
 
@@ -603,7 +604,7 @@ def test_run_image_error_when_write_images_returns_false(tmp_path):
 
     with patch("app.main.scan_library", return_value=([media], 0)), \
          patch("app.main.write_nfo"), \
-         patch("app.main.write_images", return_value=False), \
+         patch("app.main.write_images", return_value=(False, None, None)), \
          patch("app.main.connect_plex", return_value=None), \
          patch("app.main.write_report") as mock_report:
         run(cfg, router)

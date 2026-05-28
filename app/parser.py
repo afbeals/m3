@@ -46,7 +46,7 @@ def _looks_like_url_slug(tok: str) -> bool:
     if _DATE_SHAPED.match(tok):
         return False
     if " " not in tok:
-        return True
+        return "-" in tok  # a real slug has at least one hyphen
     # Space-containing token: treat as slug only if it has hyphens (slug part)
     # and the trailing word is purely numeric (an appended ID).
     parts = tok.rsplit(" ", 1)
@@ -239,7 +239,13 @@ def parse(filename_stem: str) -> ParsedFilename | None:
         # and is not a valid Add form — treat it as unmatched.
         if stem.strip().lower() == "add":
             return None
-        return _parse_add_form(stem)
+        result = _parse_add_form(stem)
+        if not result.actors:
+            # Add form with no actors is not usable (e.g. "Add 2024-01-01" with
+            # only a date and no actor name). Return None so callers don't get
+            # an IndexError when accessing actors[0].
+            return None
+        return result
 
     if "%" in stem:
         return _parse_general_form(stem)

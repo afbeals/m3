@@ -119,7 +119,7 @@ def write_report(
         try:
             start = datetime.fromisoformat(report.started_at)
             end = datetime.fromisoformat(report.finished_at)
-            report.duration_seconds = max(0, round((end - start).total_seconds()))
+            report.duration_seconds = max(0, int(round((end - start).total_seconds())))
         except ValueError:
             pass  # malformed timestamp — leave duration_seconds as None
 
@@ -152,8 +152,8 @@ def write_report(
             os.remove(json_tmp)
         except FileNotFoundError:
             pass  # already moved by atomic_replace or never created
-        except OSError:
-            pass
+        except OSError as _e:
+            logger.debug("Could not remove .tmp file %s: %s", json_tmp, _e)
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
@@ -163,7 +163,7 @@ def write_report(
         "─" * 40,
         f"  Total files scanned                    : {report.total_scanned}",
         f"  Updated                                : {report.updated}"
-        + (f"  ({plex_failed_count} Plex push failed)" if plex_failed_count else ""),
+        + (f" ({plex_failed_count} Plex push failed)" if plex_failed_count else ""),
         f"  Renamed (assets updated, no re-fetch)  : {report.renamed}",
         f"  Skipped (up-to-date)                   : {report.skipped}",
         f"  Manual Add (pending)                   : {report.add_form}",
@@ -239,8 +239,8 @@ def write_report(
             os.remove(txt_tmp)
         except FileNotFoundError:
             pass  # already moved by atomic_replace or never created
-        except OSError:
-            pass
+        except OSError as _e:
+            logger.debug("Could not remove .tmp file %s: %s", txt_tmp, _e)
 
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.
