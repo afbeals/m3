@@ -127,7 +127,7 @@ def test_write_images_returns_false_when_download_fails(tmp_path):
     )
     result = MetadataResult(title="T", poster_url="http://x.com/p.jpg")
 
-    with patch("app.writers.nfo._download_image", return_value=False):
+    with patch("app.writers.nfo._download_image", return_value=None):
         ok = write_images(media, result)
 
     assert ok is False
@@ -146,7 +146,7 @@ def test_write_images_returns_true_when_all_succeed(tmp_path):
     result = MetadataResult(title="T", poster_url="http://x.com/p.jpg",
                             fanart_url="http://x.com/f.jpg")
 
-    with patch("app.writers.nfo._download_image", return_value=True):
+    with patch("app.writers.nfo._download_image", return_value="/some/path.jpg"):
         ok = write_images(media, result)
 
     assert ok is True

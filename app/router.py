@@ -54,9 +54,10 @@ class Router:
             logger.debug("Manual Add form detected for: %r", filename_stem)
             return parsed, None
 
-        if not parsed.site:
-            # General form but no % token found — shouldn't happen after parsing, but guard anyway
-            logger.debug("No site token found in: %r", filename_stem)
+        if not parsed.site or not parsed.site.strip():
+            # General form but no % token found (or whitespace-only) — shouldn't happen
+            # after parsing, but guard anyway. Log the actual value to aid debugging.
+            logger.debug("No site token found in: %r (site=%r)", filename_stem, parsed.site)
             return parsed, None
 
         # Step 2: O(1) plugin lookup by site id (already lowercased by the parser)

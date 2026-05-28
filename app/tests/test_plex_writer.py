@@ -279,6 +279,10 @@ def test_push_nfo_to_plex_pushes_labels(tmp_path):
     mock_item.removeLabels.assert_called_once()
     mock_item.addTag.assert_not_called()
 
+    # add-before-remove ordering: addLabel must come before removeLabels
+    call_names = [c[0] for c in mock_item.method_calls]
+    assert call_names.index("addLabel") < call_names.index("removeLabels")
+
 
 def test_push_nfo_to_plex_returns_false_when_item_not_found(tmp_path):
     from app.writers.plex import push_nfo_to_plex
@@ -310,3 +314,46 @@ def test_push_nfo_to_plex_uploads_local_images(tmp_path):
         push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
     mock_item.uploadPoster.assert_called_once_with(filepath=str(poster))
     mock_item.uploadArt.assert_called_once_with(filepath=str(fanart))
+
+
+def test_push_nfo_to_plex_plain_tag_elements(tmp_path):
+    """A plain <tag>mytag</tag> (no 'label:' prefix) must be pushed via addTag,
+    not addLabel, and removeTag must be called once."""
+    from lxml import etree
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = str(tmp_path / "movie.nfo")
+
+    # Build NFO with a plain <tag> (not label: prefixed)
+    root = etree.Element("movie")
+    etree.SubElement(root, "title").text = "Test Movie"
+    etree.SubElement(root, "tag").text = "mytag"
+    tree = etree.ElementTree(root)
+    with open(nfo, "wb") as fh:
+        fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+        tree.write(fh, encoding="utf-8", xml_declaration=False)
+
+    mock_item = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+
+    mock_item.addTag.assert_called_once_with("mytag", locked=True)
+    mock_item.removeTags.assert_called_once()
+    # A plain tag must not be treated as a label
+    mock_item.addLabel.assert_not_called()
+
+
+def test_connect_plex_returns_none_on_timeout(caplog):
+    """connect_plex must return None and emit a WARNING when call_with_timeout raises TimeoutError.
+
+    The generic except-Exception handler in connect_plex catches TimeoutError and
+    logs a WARNING about the failed connection — the log message does not contain
+    'timeout' but the level must be WARNING and the result must be None.
+    """
+    import logging
+    with patch("app.writers.plex.call_with_timeout", side_effect=TimeoutError("timed out")):
+        with caplog.at_level(logging.WARNING, logger="app.writers.plex"):
+            result = connect_plex("http://plex:32400", "token")
+    assert result is None
+    # connect_plex catches all exceptions with a single WARNING — verify one was emitted
+    assert any(r.levelno == logging.WARNING for r in caplog.records)

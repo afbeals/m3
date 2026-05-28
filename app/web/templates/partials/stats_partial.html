@@ -1,0 +1,45 @@
+{% if latest %}
+<div class="stats">
+  <a href="/runs/{{ latest.filename }}?status=updated" class="stat stat-link">
+    <div class="stat-label">Updated</div>
+    <div class="stat-value {% if (latest.updated | default(0)) > 0 %}green{% else %}dim{% endif %}">
+      {{ latest.updated | default(0) }}
+    </div>
+  </a>
+  {% set _renamed = latest.get('renamed', 0) %}
+  {% if _renamed > 0 %}
+  <a href="/runs/{{ latest.filename }}?status=renamed" class="stat stat-link">
+    <div class="stat-label">Renamed</div>
+    <div class="stat-value blue">{{ _renamed }}</div>
+  </a>
+  {% endif %}
+  <a href="/runs/{{ latest.filename }}?status=skipped" class="stat stat-link">
+    <div class="stat-label">Skipped</div>
+    <div class="stat-value dim">{{ latest.skipped | default(0) }}</div>
+  </a>
+  <a href="/runs/{{ latest.filename }}?status=scrape_error" class="stat stat-link">
+    <div class="stat-label">Scrape errors</div>
+    <div class="stat-value {% if (latest.scrape_errors | default(0)) > 0 %}yellow{% else %}dim{% endif %}">
+      {{ latest.scrape_errors | default(0) }}
+    </div>
+  </a>
+  <a href="/runs/{{ latest.filename }}?status=error" class="stat stat-link">
+    <div class="stat-label">Errors</div>
+    <div class="stat-value {% if (latest.errors | default(0)) > 0 %}red{% else %}dim{% endif %}">
+      {{ latest.errors | default(0) }}
+    </div>
+  </a>
+  <a href="/runs/{{ latest.filename }}?status=unmatched" class="stat stat-link">
+    <div class="stat-label">Unmatched</div>
+    <div class="stat-value {% if (latest.unmatched | default(0)) > 0 %}yellow{% else %}dim{% endif %}">
+      {{ latest.unmatched | default(0) }}
+    </div>
+  </a>
+  <a href="/runs/{{ latest.filename }}" class="stat stat-link">
+    <div class="stat-label">Total</div>
+    <div class="stat-value dim">{{ latest.total_scanned | default(0) }}</div>
+  </a>
+</div>
+{% else %}
+<div class="stats"></div>
+{% endif %}

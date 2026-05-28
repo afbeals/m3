@@ -12,7 +12,8 @@
 #
 # Images:
 #   Poster and fanart are downloaded from the URLs in MetadataResult and saved
-#   as <stem>-poster.jpg and <stem>-fanart.jpg next to the video file.
+#   as <stem>-poster.<ext> and <stem>-fanart.<ext> next to the video file.
+#   The extension is derived from the server's Content-Type header.
 #   These filenames are also referenced inside the NFO <art> block.
 #
 # Why write sidecars at all?
@@ -43,10 +44,28 @@ _DOWNLOAD_BACKOFF_BASE = 2.0
 _DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024
 # Allowlist of permitted image content types; excludes SVG, HTML error pages, etc.
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+# Maps content-type to file extension for downloaded images
+_CONTENT_TYPE_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+# All extensions that may have been written by previous versions or current code
+_IMAGE_EXTENSIONS = (".jpg", ".png", ".webp")
 
 
-def write_nfo(media: MediaFile, result: MetadataResult) -> None:
-    """Build and write a Kodi-spec NFO XML file next to the media file."""
+def write_nfo(
+    media: MediaFile,
+    result: MetadataResult,
+    poster_filename: str | None = None,
+    fanart_filename: str | None = None,
+) -> None:
+    """Build and write a Kodi-spec NFO XML file next to the media file.
+
+    poster_filename / fanart_filename: bare filenames (no directory) to use in
+    the NFO <art> block.  If not provided, falls back to <stem>-poster.jpg and
+    <stem>-fanart.jpg for backwards compatibility.
+    """
 
     # Root element for a movie NFO
     root = etree.Element("movie")
@@ -59,7 +78,7 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
 
     # Core metadata fields
     add("title", result.title)
-    add("year", str(result.year) if result.year else None)
+    add("year", str(result.year) if result.year is not None else None)
     add("rating", str(result.rating) if result.rating is not None else None)
     add("mpaa", result.content_rating)   # content rating, e.g. "NR", "R"
     add("plot", result.summary)
@@ -89,10 +108,10 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
         art_el = etree.SubElement(root, "art")
         if result.poster_url:
             p = etree.SubElement(art_el, "poster")
-            p.text = f"{media.stem}-poster.jpg"
+            p.text = poster_filename or f"{media.stem}-poster.jpg"
         if result.fanart_url:
             f = etree.SubElement(art_el, "fanart")
-            f.text = f"{media.stem}-fanart.jpg"
+            f.text = fanart_filename or f"{media.stem}-fanart.jpg"
 
     # Source URL and unique ID for traceability back to the originating site
     add("source", result.source_url)
@@ -128,17 +147,20 @@ def write_nfo(media: MediaFile, result: MetadataResult) -> None:
     logger.info("Wrote NFO: %s", media.nfo_path)
 
 
-def _download_image(url: str, dest_path: str) -> bool:
-    """Download an image from url and save it to dest_path. Returns True on success.
+def _download_image(url: str, dest_base: str) -> str | None:
+    """Download an image from url and save it to dest_base + <ext>.
+
+    The extension is derived from the Content-Type header of the response.
+    Returns the full path actually written on success, or None on failure.
 
     - Retries up to _DOWNLOAD_MAX_ATTEMPTS times with exponential backoff.
     - Uses a single httpx.Client for all attempts (keeps connection pooling).
     - Writes atomically via a .tmp file + os.replace() so interrupted downloads
-      never leave a partial file at dest_path.
+      never leave a partial file at the destination path.
     """
     # One client for all attempts — reuses the connection across retries
     with httpx.Client(follow_redirects=True, timeout=30) as client:
-        def _attempt() -> bool:
+        def _attempt() -> str:
             # Stream the response so we can abort mid-download if the body
             # exceeds the size cap — avoids buffering hundreds of MB for a
             # misconfigured or malicious URL before discovering it's oversized.
@@ -148,10 +170,15 @@ def _download_image(url: str, dest_path: str) -> bool:
                 # Reject non-image content types to avoid writing HTML error pages to disk.
                 # Split on ";" to handle "image/jpeg; charset=..." style values.
                 content_type = r.headers.get("content-type", "")
-                if content_type.split(";")[0].strip() not in _ALLOWED_IMAGE_TYPES:
+                ct_base = content_type.split(";")[0].strip()
+                if ct_base not in _ALLOWED_IMAGE_TYPES:
                     raise ValueError(
                         f"Unexpected content-type {content_type!r} for image URL {url}"
                     )
+
+                # Derive file extension from content-type; default to .jpg as fallback
+                ext = _CONTENT_TYPE_EXT.get(ct_base, ".jpg")
+                dest_path = dest_base + ext
 
                 # Two-stage size guard: Content-Length pre-flight avoids downloading
                 # a single byte when the server advertises an oversized body up front.
@@ -195,7 +222,7 @@ def _download_image(url: str, dest_path: str) -> bool:
                     raise
 
             logger.info("Downloaded image: %s", dest_path)
-            return True
+            return dest_path
 
         try:
             return retry_with_backoff(
@@ -207,16 +234,17 @@ def _download_image(url: str, dest_path: str) -> bool:
         except Exception as exc:
             logger.error("Failed to download image from %s after %d attempts: %s",
                          url, _DOWNLOAD_MAX_ATTEMPTS, exc)
-            return False
+            return None
 
 
 def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
     """Rename all sidecar assets when a video file is renamed.
 
-    Moves <old_stem>.nfo, <old_stem>-poster.jpg, and <old_stem>-fanart.jpg to
-    the new stem names.  The NFO XML is also patched in-place: the <poster> and
-    <fanart> text nodes reference the old stem filenames and must be updated so
-    Plex / Kodi can still locate the images after the rename.
+    Moves <old_stem>.nfo, <old_stem>-poster.<ext>, and <old_stem>-fanart.<ext>
+    to the new stem names.  All supported image extensions (.jpg, .png, .webp)
+    are tried.  The NFO XML is also patched in-place: the <poster> and <fanart>
+    text nodes reference the old stem filenames and must be updated so Plex /
+    Kodi can still locate the images after the rename.
 
     Raises OSError if the NFO rename itself fails (the NFO is required; images
     are optional and missing images are logged as warnings, not errors).
@@ -234,10 +262,15 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
         root = tree.getroot()
         art = root.find("art")
         if art is not None:
-            for tag, suffix in (("poster", "-poster.jpg"), ("fanart", "-fanart.jpg")):
+            for tag, base_suffix in (("poster", "-poster"), ("fanart", "-fanart")):
                 el = art.find(tag)
                 if el is not None and el.text:
-                    el.text = f"{new_stem}{suffix}"
+                    # Preserve the original extension from the existing NFO text
+                    old_text = el.text
+                    # Extract extension from the existing value; default to .jpg
+                    _, existing_ext = os.path.splitext(old_text)
+                    ext = existing_ext if existing_ext in _IMAGE_EXTENSIONS else ".jpg"
+                    el.text = f"{new_stem}{base_suffix}{ext}"
         # Use the same header format as write_nfo (double-quoted, uppercase UTF-8)
         # so the file is byte-for-byte consistent before and after a rename.
         etree.indent(tree, space="  ")
@@ -260,17 +293,23 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
         logger.exception("Failed to rename NFO from %r to %r", old_nfo, new_nfo)
         raise
 
-    for suffix in ("-poster.jpg", "-fanart.jpg"):
-        old_img = os.path.join(dirpath, f"{old_stem}{suffix}")
-        new_img = os.path.join(dirpath, f"{new_stem}{suffix}")
-        if os.path.exists(old_img):
-            try:
-                atomic_replace(old_img, new_img)
-                logger.debug("Renamed image: %s → %s", old_img, new_img)
-            except OSError:
-                logger.warning("Could not rename image %s → %s", old_img, new_img)
-        else:
-            logger.debug("Image not present, skipping rename: %s", old_img)
+    # Rename images — try all supported extensions for each role
+    for base_suffix in ("-poster", "-fanart"):
+        renamed = False
+        for ext in _IMAGE_EXTENSIONS:
+            old_img = os.path.join(dirpath, f"{old_stem}{base_suffix}{ext}")
+            new_img = os.path.join(dirpath, f"{new_stem}{base_suffix}{ext}")
+            if os.path.exists(old_img):
+                try:
+                    atomic_replace(old_img, new_img)
+                    logger.debug("Renamed image: %s → %s", old_img, new_img)
+                    renamed = True
+                    break
+                except OSError:
+                    logger.warning("Could not rename image %s → %s", old_img, new_img)
+                    break
+        if not renamed:
+            logger.debug("Image not present, skipping rename: %s%s", old_stem, base_suffix)
 
 
 def write_images(media: MediaFile, result: MetadataResult) -> bool:
@@ -279,19 +318,26 @@ def write_images(media: MediaFile, result: MetadataResult) -> bool:
     Returns True if all requested images downloaded successfully, False if any failed.
     Failures are logged as errors but do not raise — image download issues should not
     abort an otherwise successful metadata write.
+
+    The actual filenames written (including the correct extension derived from
+    Content-Type) are returned via the media object's companion NFO — callers that
+    need the real filenames should inspect the directory after this call, or use
+    write_images_and_get_filenames() if they need the names for NFO <art> elements.
     """
     base = os.path.dirname(media.path)
     all_ok = True
 
     if result.poster_url:
-        dest = os.path.join(base, f"{media.stem}-poster.jpg")
-        if not _download_image(result.poster_url, dest):
+        dest_base = os.path.join(base, f"{media.stem}-poster")
+        written = _download_image(result.poster_url, dest_base)
+        if written is None:
             logger.error("Poster download failed for %s — NFO written but image missing", media.path)
             all_ok = False
 
     if result.fanart_url:
-        dest = os.path.join(base, f"{media.stem}-fanart.jpg")
-        if not _download_image(result.fanart_url, dest):
+        dest_base = os.path.join(base, f"{media.stem}-fanart")
+        written = _download_image(result.fanart_url, dest_base)
+        if written is None:
             logger.error("Fanart download failed for %s — NFO written but image missing", media.path)
             all_ok = False
 

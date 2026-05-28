@@ -110,7 +110,7 @@ class ExampleSitePlugin(MetadataPlugin):
         # Example: GET https://api.example-site.com/v1/scenes/12345?api_key=...
         url_path = f"/scenes/{quote(str(scene_id), safe='')}"
         data = self._api_get(url_path)
-        if data is None:
+        if not isinstance(data, dict):
             return None
 
         return self._to_result(data)
@@ -131,7 +131,7 @@ class ExampleSitePlugin(MetadataPlugin):
             params["scene_id"] = parsed.scene_id
 
         results = self._api_get("/scenes/search", params=params)
-        if not results or not isinstance(results, list):
+        if not results or not isinstance(results, list) or not isinstance(results[0], dict):
             return None
 
         # Take the first (best) result
@@ -149,7 +149,7 @@ class ExampleSitePlugin(MetadataPlugin):
             params["actor"] = parsed.actors[0]
 
         results = self._api_get("/scenes/search", params=params)
-        if not results or not isinstance(results, list):
+        if not results or not isinstance(results, list) or not isinstance(results[0], dict):
             return None
 
         return self._to_result(results[0])
@@ -180,11 +180,14 @@ class ExampleSitePlugin(MetadataPlugin):
 
         return None
 
-    def _to_result(self, data: dict) -> MetadataResult:
+    def _to_result(self, data: dict) -> MetadataResult | None:
         """
         Map the raw API response dict to a MetadataResult.
         Adjust field names to match your actual API response shape.
         """
+        if not isinstance(data, dict):
+            logger.warning("[examplesite] _to_result: expected dict, got %s", type(data).__name__)
+            return None
         return MetadataResult(
             # Use `or` (not just `.get(..., default)`) so a present-but-null title
             # field also falls back to the default, instead of passing None to MetadataResult.

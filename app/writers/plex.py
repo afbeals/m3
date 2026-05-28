@@ -101,9 +101,10 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                         if part.file == file_path:
                             found = item
             if found is not None:
-                # Break as soon as we find the target — we forgo cache-warming for
-                # unseen items, but avoid scanning the entire library when the target
-                # is found early.
+                # Break as soon as we find the target. This means sections scanned after
+                # this point are not cached, but we avoid scanning the entire library
+                # when the target is found early. The partial cache still benefits
+                # subsequent lookups for files in already-scanned sections.
                 break
 
         # Only cache positive results — caching None would permanently prevent retries
@@ -163,7 +164,7 @@ def push_to_plex(
         if result.content_rating:
             edits["contentRating.value"] = result.content_rating
             edits["contentRating.locked"] = 1
-        if result.year:
+        if result.year is not None:
             edits["year.value"] = result.year
             edits["year.locked"] = 1
 

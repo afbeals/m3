@@ -159,14 +159,15 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
             _trigger_event.set()
 
         def _watcher():
+            # scheduler is assigned above before this thread is started, so it is
+            # always a BlockingScheduler instance here — the `scheduler is None`
+            # check that appeared in some earlier versions was unreachable.
             while True:
                 _trigger_event.wait()
                 _trigger_event.clear()  # consume the event before acting; a second signal during add_job will re-set it
-                if scheduler is None:
-                    return
                 logger.info("SIGUSR1 received — scheduling immediate run")
                 try:
-                    scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
+                    scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True, misfire_grace_time=_MISFIRE_GRACE_SECS)
                 except Exception as exc:
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
 

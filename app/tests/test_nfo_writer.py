@@ -5,6 +5,7 @@ import os
 from unittest.mock import patch, MagicMock
 
 import pytest
+from lxml import etree
 
 from app.plugins.base import MetadataResult
 from app.scanner import MediaFile
@@ -160,6 +161,25 @@ def test_write_nfo_is_atomic_cleans_tmp_on_error(tmp_path):
     assert not os.path.exists(tmp_file)
 
 
+def test_write_nfo_cleans_tmp_when_atomic_replace_raises(tmp_path):
+    """If atomic_replace raises, the .tmp file must be removed."""
+    media = MediaFile(
+        path=str(tmp_path / "Scene.mp4"),
+        stem="Scene",
+        nfo_path=str(tmp_path / "Scene.nfo"),
+    )
+    result = MetadataResult(title="Test Scene", actors=["Actor One"])
+
+    with patch("app.writers.nfo.atomic_replace", side_effect=OSError("disk full")):
+        with pytest.raises(OSError):
+            write_nfo(media, result)
+
+    # The .nfo.tmp file must not exist after the exception
+    assert not os.path.exists(str(tmp_path / "Scene.nfo.tmp"))
+    # The .nfo itself should not exist either (write failed)
+    assert not os.path.exists(str(tmp_path / "Scene.nfo"))
+
+
 # ---------------------------------------------------------------------------
 # write_images — image download delegation
 # ---------------------------------------------------------------------------
@@ -194,14 +214,16 @@ def test_write_images_poster_path_uses_stem(tmp_path):
 
     captured = {}
 
-    def fake_dl(url, dest):
-        captured["poster_dest"] = dest
-        return True
+    def fake_dl(url, dest_base):
+        captured["poster_dest"] = dest_base
+        return dest_base + ".jpg"
 
     with patch("app.writers.nfo._download_image", side_effect=fake_dl):
         write_images(media, result)
 
-    assert captured["poster_dest"].endswith("My Scene-poster.jpg")
+    # _download_image now receives the base path (without extension); the
+    # caller derives the extension from the Content-Type header at runtime.
+    assert captured["poster_dest"].endswith("My Scene-poster")
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +271,10 @@ def _wrap_client_with_fresh_response(content_length_header, body_bytes):
 
 def test_download_image_rejects_non_image_content_type(tmp_path):
     """When the response has a non-image Content-Type, _download_image must return
-    False and must not write any file to the destination path."""
+    None and must not write any file to the destination path."""
     from app.writers.nfo import _download_image
 
-    dest = str(tmp_path / "img.jpg")
+    dest_base = str(tmp_path / "img")
 
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -268,10 +290,14 @@ def test_download_image_rejects_non_image_content_type(tmp_path):
 
     with patch("app.writers.nfo.httpx") as mock_httpx:
         mock_httpx.Client.return_value = mock_client
-        result = _download_image("http://example.com/img.jpg", dest)
+        result = _download_image("http://example.com/img.jpg", dest_base)
 
-    assert result is False
-    assert not os.path.exists(dest), "No image file should be written for non-image content-type"
+    assert result is None
+    # No file should be written for any extension
+    for ext in (".jpg", ".png", ".webp"):
+        assert not os.path.exists(dest_base + ext), (
+            f"No image file should be written for non-image content-type (checked {ext})"
+        )
 
 
 def test_download_image_aborts_on_content_length_header_exceeding_cap(tmp_path):
@@ -279,7 +305,7 @@ def test_download_image_aborts_on_content_length_header_exceeding_cap(tmp_path):
     before any bytes are streamed to disk."""
     from app.writers.nfo import _download_image, _DOWNLOAD_MAX_BYTES
 
-    dest = str(tmp_path / "img.jpg")
+    dest_base = str(tmp_path / "img")
     oversized = _DOWNLOAD_MAX_BYTES + 1
 
     mock_client = _wrap_client_with_fresh_response(
@@ -288,10 +314,13 @@ def test_download_image_aborts_on_content_length_header_exceeding_cap(tmp_path):
 
     with patch("app.writers.nfo.httpx") as mock_httpx:
         mock_httpx.Client.return_value = mock_client
-        result = _download_image("http://example.com/img.jpg", dest)
+        result = _download_image("http://example.com/img.jpg", dest_base)
 
-    assert result is False
-    assert not os.path.exists(dest), "Destination file must not be written when Content-Length exceeds cap"
+    assert result is None
+    for ext in (".jpg", ".png", ".webp"):
+        assert not os.path.exists(dest_base + ext), (
+            f"Destination file must not be written when Content-Length exceeds cap (checked {ext})"
+        )
 
 
 def test_download_image_aborts_mid_stream_when_body_exceeds_cap(tmp_path):
@@ -299,7 +328,7 @@ def test_download_image_aborts_mid_stream_when_body_exceeds_cap(tmp_path):
     leave no partial file at the destination path."""
     from app.writers.nfo import _download_image, _DOWNLOAD_MAX_BYTES
 
-    dest = str(tmp_path / "img.jpg")
+    dest_base = str(tmp_path / "img")
     # No Content-Length header; body exceeds cap mid-stream
     oversized_body = _DOWNLOAD_MAX_BYTES + 65536
 
@@ -309,10 +338,52 @@ def test_download_image_aborts_mid_stream_when_body_exceeds_cap(tmp_path):
 
     with patch("app.writers.nfo.httpx") as mock_httpx:
         mock_httpx.Client.return_value = mock_client
-        result = _download_image("http://example.com/img.jpg", dest)
+        result = _download_image("http://example.com/img.jpg", dest_base)
 
-    assert result is False
-    assert not os.path.exists(dest), "Partial file must be cleaned up after mid-stream abort"
+    assert result is None
+    for ext in (".jpg", ".png", ".webp"):
+        assert not os.path.exists(dest_base + ext), (
+            f"Partial file must be cleaned up after mid-stream abort (checked {ext})"
+        )
+
+
+def test_download_image_retries_on_connect_error_and_succeeds(tmp_path):
+    """_download_image retries on httpx.ConnectError and returns the written path
+    when a later attempt succeeds."""
+    import httpx as real_httpx
+    from app.writers.nfo import _download_image
+
+    dest_base = str(tmp_path / "img")
+
+    # Build a small successful response for the 3rd attempt (content-type: image/jpeg → .jpg)
+    success_response = _make_streaming_mock(content_length_header=None, body_bytes=100)
+
+    call_count = 0
+
+    def stream_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            raise real_httpx.ConnectError("connection refused")
+        return success_response
+
+    mock_client = MagicMock()
+    mock_client.stream.side_effect = stream_side_effect
+    mock_client.__enter__ = lambda s: s
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("app.writers.nfo.httpx") as mock_httpx:
+        mock_httpx.Client.return_value = mock_client
+        # ConnectError must be recognised as a retryable exception — not a reraise_on type.
+        # Mirror the real httpx.ConnectError so isinstance checks inside retry_with_backoff work.
+        mock_httpx.ConnectError = real_httpx.ConnectError
+        with patch("app.utils.time.sleep"):  # skip real backoff sleeps
+            result = _download_image("http://example.com/img.jpg", dest_base)
+
+    # _download_image now returns the full path written (dest_base + extension) on success
+    assert result is not None, "Must return a path string on success, not None"
+    assert os.path.exists(result), "Image file must be written after a successful retry"
+    assert call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -413,3 +484,38 @@ class TestRenameNfoAssets:
         content = dst_nfo.read_text(encoding="utf-8")
         assert "Old Title" in content, "Destination NFO must contain the source title after overwrite"
         assert "Pre-existing Title" not in content, "Pre-existing destination title must be replaced"
+
+    def test_rename_nfo_assets_partial_art_poster_only(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+
+        old_stem = "Old Scene"
+        new_stem = "New Scene"
+
+        # Create NFO with art block that has poster but no fanart
+        nfo_path = tmp_path / f"{old_stem}.nfo"
+        root = etree.Element("movie")
+        etree.SubElement(root, "title").text = "Old Scene"
+        art = etree.SubElement(root, "art")
+        etree.SubElement(art, "poster").text = f"{old_stem}-poster.jpg"
+        # No fanart element
+        etree.ElementTree(root).write(str(nfo_path), encoding="utf-8", xml_declaration=True)
+
+        # Create only the poster image
+        poster_path = tmp_path / f"{old_stem}-poster.jpg"
+        poster_path.write_bytes(b"fake jpeg")
+
+        rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+
+        # New NFO should exist
+        new_nfo = tmp_path / f"{new_stem}.nfo"
+        assert new_nfo.exists()
+
+        # Poster was renamed
+        assert (tmp_path / f"{new_stem}-poster.jpg").exists()
+        assert not (tmp_path / f"{old_stem}-poster.jpg").exists()
+
+        # New NFO's art/poster should reference the new stem
+        tree = etree.parse(str(new_nfo))
+        poster_el = tree.find("art/poster")
+        assert poster_el is not None
+        assert new_stem in poster_el.text

@@ -171,6 +171,12 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
     # Skipping runs whose summary counter is 0 avoids opening JSON files unnecessarily.
     seen: dict[str, dict] = {}  # path -> aggregated entry
 
+    def _parse_dt(s):
+        try:
+            return datetime.fromisoformat(s)
+        except (ValueError, TypeError):
+            return datetime.min
+
     for summary in summaries:
         # Skip runs that explicitly report 0 unmatched files — saves opening the full JSON.
         # Fall through when the key is absent (old-format reports that predate the counter).
@@ -198,15 +204,9 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
             entry = seen[path]
             entry["count"] += 1
             run_started = run.get("started_at")
-            if run_started and (entry["last_seen"] is None or run_started > entry["last_seen"]):
+            if run_started and (entry["last_seen"] is None or _parse_dt(run_started) > _parse_dt(entry["last_seen"])):
                 entry["last_seen"] = run_started
                 entry["last_message"] = f.get("message", "")
-
-    def _parse_dt(s):
-        try:
-            return datetime.fromisoformat(s)
-        except (ValueError, TypeError):
-            return datetime.min
 
     result = sorted(seen.values(), key=lambda e: (-e["count"], _parse_dt(e.get("last_seen", ""))))
     with _cache_lock:
@@ -280,5 +280,11 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
                 })
                 break
 
-    history.sort(key=lambda e: e.get("started_at", ""), reverse=True)
+    def _safe_dt(e):
+        try:
+            return datetime.fromisoformat(e.get("started_at", ""))
+        except (ValueError, TypeError):
+            return datetime.min
+
+    history.sort(key=_safe_dt, reverse=True)
     return history

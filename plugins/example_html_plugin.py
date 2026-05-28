@@ -25,7 +25,8 @@ Filename examples this plugin handles (site_id = "examplehtml"):
 """
 
 import logging
-from urllib.parse import quote_plus
+import re
+from urllib.parse import quote, quote_plus, urljoin
 
 from bs4 import BeautifulSoup
 
@@ -68,7 +69,7 @@ class ExampleHTMLPlugin(MetadataPlugin):
             logger.warning("[examplehtml] Exact match but no scene_id or direct_url")
             return None
 
-        url = f"{BASE_URL}/scenes/{scene_id}"
+        url = f"{BASE_URL}/scenes/{quote(str(scene_id), safe='-_')}"
         # fetch_html raises ScrapeError on HTTP errors; let it propagate so
         # main.py records it as status="scrape_error" in the run report.
         html = fetch_html(url)
@@ -100,7 +101,7 @@ class ExampleHTMLPlugin(MetadataPlugin):
         if not href:
             logger.warning("[examplehtml] Search result link has no href")
             return None
-        detail_url = BASE_URL + href
+        detail_url = urljoin(BASE_URL, href)
         detail_html = fetch_html(detail_url)
         return self._parse_detail_page(detail_html, detail_url)
 
@@ -127,11 +128,9 @@ class ExampleHTMLPlugin(MetadataPlugin):
         # ---- Year ----
         year_el = soup.select_one("span.release-year")
         year: int | None = None
-        if year_el:
-            try:
-                year = int(year_el.get_text(strip=True)[:4])
-            except ValueError:
-                pass
+        year_text = year_el.get_text(strip=True) if year_el else ""
+        year_match = re.match(r"\d{4}", year_text)
+        year = int(year_match.group()) if year_match else None
 
         # ---- Rating ----
         rating_el = soup.select_one("span.rating-value")

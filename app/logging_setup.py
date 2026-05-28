@@ -20,7 +20,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,7 @@ def cleanup_old_files(
     active_log = f"{app_name}.log"
 
     # Any file older than this timestamp will be deleted
-    cutoff = datetime.now() - timedelta(days=retention_days)
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=retention_days)
     removed = 0
 
     # os.scandir yields DirEntry objects that cache stat results, avoiding a
@@ -147,6 +147,7 @@ def cleanup_old_files(
                 is_rotated_log_backup = (
                     pattern_suffix == ".log"
                     and fname.startswith(f"{active_log}.")
+                    and fname[len(active_log) + 1:].isdigit()
                 )
                 if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
                     continue
@@ -155,7 +156,7 @@ def cleanup_old_files(
             if fname == active_log:
                 continue
 
-            mtime = datetime.fromtimestamp(entry.stat().st_mtime)
+            mtime = datetime.fromtimestamp(entry.stat().st_mtime, tz=timezone.utc)
             if mtime < cutoff:
                 try:
                     os.remove(entry.path)

@@ -30,7 +30,7 @@
     <tr>
       <td class="path">
         {{ e.path }}
-        <button class="copy-btn" data-path="{{ e.path }}" title="Copy path">⎘</button>
+        <button class="copy-btn" data-path="{{ e.path }}" title="Copy path" aria-label="Copy path">⎘</button>
       </td>
       <td class="{% if e.count > 10 %}stat-value red{% elif e.count > 2 %}stat-value yellow{% else %}stat-value{% endif %}" style="font-size:0.9rem;">
         {{ e.count }}

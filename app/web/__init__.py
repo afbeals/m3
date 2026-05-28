@@ -95,12 +95,11 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
             # Compare against local time so the elapsed calculation is correct
             # on servers not running in UTC. If the datetime is tz-aware,
             # fall back to a UTC comparison.
-            if dt.tzinfo is None:
-                secs = int((datetime.now() - dt).total_seconds())
-            else:
-                secs = int((datetime.now(timezone.utc) - dt).total_seconds())
-            if secs < 0:
+            now = datetime.now(timezone.utc) if dt.tzinfo else datetime.now()
+            raw_secs = (now - dt).total_seconds()
+            if raw_secs < 0:
                 return ""
+            secs = int(raw_secs)
             if secs < 60:
                 return f"{secs}s ago"
             if secs < 3600:

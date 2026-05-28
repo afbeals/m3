@@ -180,6 +180,21 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
 
     raw_exclude = optional("LIBRARY_EXCLUDE_PATTERNS", "")
     library_exclude_patterns = [p.strip() for p in raw_exclude.split(",") if p.strip()]
+    # Warn if the user appears to have used spaces instead of commas as separators.
+    # A single-element result containing a space (and no glob metacharacters) is
+    # the telltale sign of e.g. LIBRARY_EXCLUDE_PATTERNS="*.part *.tmp" instead of
+    # the correct "*.part,*.tmp".
+    if (
+        raw_exclude
+        and len(library_exclude_patterns) == 1
+        and " " in library_exclude_patterns[0]
+        and not any(c in library_exclude_patterns[0] for c in ("*", "?", "["))
+    ):
+        logger.warning(
+            "LIBRARY_EXCLUDE_PATTERNS appears to use spaces as separators (%r). "
+            "Use commas to separate multiple patterns. Current value treated as a single pattern.",
+            raw_exclude,
+        )
 
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
     web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
@@ -220,8 +235,8 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         log_path=optional("LOG_PATH", "./logs"),
         run_schedule=run_schedule,
         log_level=log_level,
-        log_retention_days=optional_int("LOG_RETENTION_DAYS", 30),
-        report_retention_days=optional_int("REPORT_RETENTION_DAYS", 90),
+        log_retention_days=optional_int("LOG_RETENTION_DAYS", 30, min_val=1),
+        report_retention_days=optional_int("REPORT_RETENTION_DAYS", 90, min_val=1),
         web_enabled=web_enabled,
         web_port=optional_int("WEB_PORT", 8765, min_val=1),
         web_host=optional("WEB_HOST", "0.0.0.0"),

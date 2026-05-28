@@ -62,16 +62,21 @@ def retry_with_backoff(
     *,
     max_attempts: int,
     backoff_base: float,
+    max_wait: float = 60.0,
     description: str = "operation",
     reraise_on: tuple[type[Exception], ...] = (),
 ) -> T:
     """
     Call fn() up to max_attempts times, sleeping backoff_base**attempt seconds
-    between failures.  Returns the first successful result.  Re-raises the last
-    exception if all attempts are exhausted.
+    between failures (capped at max_wait seconds).  Returns the first successful
+    result.  Re-raises the last exception if all attempts are exhausted.
 
     reraise_on: tuple of exception types to re-raise immediately without retrying.
     Subclasses of types in reraise_on are also re-raised (Python isinstance semantics).
+
+    max_wait: maximum number of seconds to sleep between attempts (default 60.0).
+    The exponential backoff is clamped to this value so very large backoff_base
+    values or many attempts don't produce unbounded sleep times.
 
     Note: uses time.sleep() which blocks the calling thread. This is intentional
     for m3's single-threaded run() path. Do not call from async code.
@@ -85,7 +90,7 @@ def retry_with_backoff(
         except Exception as exc:
             last_exc = exc
             if attempt < max_attempts:
-                wait = backoff_base ** attempt
+                wait = min(backoff_base ** attempt, max_wait)
                 logger.warning(
                     "%s attempt %d/%d failed (%s); retrying in %.0fs",
                     description, attempt, max_attempts, exc, wait,

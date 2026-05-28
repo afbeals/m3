@@ -120,11 +120,10 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
     if last_run:
         try:
             last_dt = datetime.fromisoformat(last_run)
-            # Make timezone-aware if naive (reports use local time)
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            # Use local time for naive datetimes, UTC for aware ones
+            now = datetime.now(timezone.utc) if last_dt.tzinfo else datetime.now()
             hours_since = round(
-                (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600, 1
+                (now - last_dt).total_seconds() / 3600, 1
             )
         except ValueError:
             logger.debug("healthz: could not parse started_at timestamp %r", last_run)
@@ -136,6 +135,26 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
         "hours_since_last_run": hours_since,
         "run_count": len(runs),
     })
+
+
+# ---------------------------------------------------------------------------
+# Stats partial — polled by HTMX on the dashboard to refresh stat cards
+# ---------------------------------------------------------------------------
+
+@router.get("/api/stats", response_class=HTMLResponse)
+def api_stats(request: Request):
+    """Return just the .stats div so HTMX can refresh it without a full page load.
+
+    Always returns a .stats element (even when no runs exist) so hx-select=".stats"
+    always finds a match and the swap succeeds.
+    """
+    runs = list_runs(request.app.state.config.report_path)
+    latest = runs[0] if runs else None
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "partials/stats_partial.html",
+        {"latest": latest},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +294,18 @@ def unmatched_digest(request: Request, q: str = ""):
 # Plugin list
 # ---------------------------------------------------------------------------
 
+def _safe_getfile(cls) -> str:
+    """Return the source file for a class, falling back to '<unknown>' on failure.
+
+    inspect.getfile() raises TypeError for built-in classes and OSError when the
+    source file cannot be located (e.g. frozen modules or dynamically generated classes).
+    """
+    try:
+        return inspect.getfile(cls)
+    except (TypeError, OSError):
+        return "<unknown>"
+
+
 @router.get("/plugins", response_class=HTMLResponse)
 def plugin_list(request: Request):
     registry = request.app.state.plugin_registry
@@ -289,7 +320,7 @@ def plugin_list(request: Request):
             "site_id": cls.site_id,
             "aliases": cls.aliases,
             "class_name": cls.__name__,
-            "source_file": inspect.getfile(cls),
+            "source_file": _safe_getfile(cls),
         })
 
     return request.app.state.templates.TemplateResponse(
@@ -475,10 +506,15 @@ async def trigger_file(request: Request):
     if not file_lock.acquire(blocking=False):
         return _htmx_error(request, f"Already processing: {file_path}", status_code=409)
 
-    stem = os.path.splitext(os.path.basename(file_path))[0]
-    dirpath = os.path.dirname(file_path)
+    # Use the resolved path for all downstream operations so that symlinks and
+    # relative paths are normalised before constructing sidecar paths and the
+    # MediaFile object.  file_path (raw form input) is kept only for display and
+    # the per-path coalescing lock.
+    resolved_file_path = str(real_path)
+    stem = os.path.splitext(os.path.basename(resolved_file_path))[0]
+    dirpath = os.path.dirname(resolved_file_path)
     nfo_path = os.path.join(dirpath, f"{stem}.nfo")
-    media = MediaFile(path=file_path, stem=stem, nfo_path=nfo_path)
+    media = MediaFile(path=resolved_file_path, stem=stem, nfo_path=nfo_path)
 
     router_obj = request.app.state.plugin_router
 
@@ -497,10 +533,10 @@ async def trigger_file(request: Request):
             # needed and would produce misleading report entries.
             plex_server = connect_plex(config.plex_url, config.plex_token)
             if plex_server is None:
-                logger.warning("trigger_file: Plex unreachable — metadata will be written to sidecar only for %s", file_path)
+                logger.warning("trigger_file: Plex unreachable — metadata will be written to sidecar only for %s", resolved_file_path)
             parsed, plugin = router_obj.dispatch(media.stem)
             if parsed is None or plugin is None:
-                logger.warning("trigger_file: could not route %s", file_path)
+                logger.warning("trigger_file: could not route %s", resolved_file_path)
                 outcome_status = "unmatched"
                 outcome_message = "no plugin registered for this file"
                 return
@@ -512,12 +548,12 @@ async def trigger_file(request: Request):
                     description="trigger_file plugin fetch",
                 )
             except Exception as exc:
-                logger.warning("trigger_file: plugin error for %s: %s", file_path, exc)
+                logger.warning("trigger_file: plugin error for %s: %s", resolved_file_path, exc)
                 outcome_status = "error"
                 outcome_message = str(exc)
                 return
             if result is None:
-                logger.warning("trigger_file: plugin returned no result for %s", file_path)
+                logger.warning("trigger_file: plugin returned no result for %s", resolved_file_path)
                 outcome_status = "unmatched"
                 outcome_message = "plugin returned no result"
                 return
@@ -525,7 +561,7 @@ async def trigger_file(request: Request):
                 write_nfo(media, result)
                 images_ok = write_images(media, result)
             except Exception as exc:
-                logger.warning("trigger_file: write error for %s: %s", file_path, exc)
+                logger.warning("trigger_file: write error for %s: %s", resolved_file_path, exc)
                 outcome_status = "error"
                 outcome_message = str(exc)
                 return
@@ -536,10 +572,10 @@ async def trigger_file(request: Request):
                 outcome_status = "updated"
             if plex_server is not None:
                 try:
-                    push_to_plex(plex_server, file_path, result)
+                    push_to_plex(plex_server, resolved_file_path, result)
                 except Exception as exc:
-                    logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
-            logger.info("trigger_file: reprocessed %s (status=%s)", file_path, outcome_status)
+                    logger.warning("trigger_file: Plex push error for %s: %s", resolved_file_path, exc)
+            logger.info("trigger_file: reprocessed %s (status=%s)", resolved_file_path, outcome_status)
         finally:
             # Release the per-path lock first — before any I/O that could fail —
             # so a write error never permanently blocks future retrigger attempts.

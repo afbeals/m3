@@ -114,7 +114,7 @@ class MetadataResult:
         # Normalise: strip whitespace from title
         self.title = self.title.strip()
         # Ensure list fields are actually lists (guard against plugins returning None)
-        for field_name in ("actors", "genres", "tags", "labels", "directors", "studios"):
+        for field_name in ("actors", "genres", "tags", "labels"):
             if getattr(self, field_name, None) is None:
                 _logger.warning(
                     "MetadataResult.%s was None from plugin — coercing to []. "

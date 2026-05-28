@@ -29,7 +29,7 @@
     {% set total_scanned = run.total_scanned or 0 %}
     {% set skipped = run.get('skipped') or 0 %}
     {% set renamed_cnt = run.get('renamed') or 0 %}
-    {% set processable = total_scanned - skipped - renamed_cnt %}
+    {% set processable = [total_scanned - skipped - renamed_cnt, 0] | max %}
     {% set success_pct = ((run.updated / processable * 100) | int) if processable > 0 else None %}
     {% set ago = time_ago(run.started_at) %}
     <tr>

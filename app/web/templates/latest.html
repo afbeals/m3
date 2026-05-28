@@ -35,8 +35,8 @@
   <div class="stats">
     <a href="/runs/{{ latest.filename }}?status=updated" class="stat stat-link">
       <div class="stat-label">Updated</div>
-      <div class="stat-value {% if latest.updated > 0 %}green{% else %}dim{% endif %}">
-        {{ latest.updated }}
+      <div class="stat-value {% if (latest.updated | default(0)) > 0 %}green{% else %}dim{% endif %}">
+        {{ latest.updated | default(0) }}
       </div>
     </a>
     {% set _renamed = latest.get('renamed', 0) %}
@@ -48,29 +48,29 @@
     {% endif %}
     <a href="/runs/{{ latest.filename }}?status=skipped" class="stat stat-link">
       <div class="stat-label">Skipped</div>
-      <div class="stat-value dim">{{ latest.skipped }}</div>
+      <div class="stat-value dim">{{ latest.skipped | default(0) }}</div>
     </a>
     <a href="/runs/{{ latest.filename }}?status=scrape_error" class="stat stat-link">
       <div class="stat-label">Scrape errors</div>
-      <div class="stat-value {% if latest.scrape_errors > 0 %}yellow{% else %}dim{% endif %}">
-        {{ latest.scrape_errors }}
+      <div class="stat-value {% if (latest.scrape_errors | default(0)) > 0 %}yellow{% else %}dim{% endif %}">
+        {{ latest.scrape_errors | default(0) }}
       </div>
     </a>
     <a href="/runs/{{ latest.filename }}?status=error" class="stat stat-link">
       <div class="stat-label">Errors</div>
-      <div class="stat-value {% if latest.errors > 0 %}red{% else %}dim{% endif %}">
-        {{ latest.errors }}
+      <div class="stat-value {% if (latest.errors | default(0)) > 0 %}red{% else %}dim{% endif %}">
+        {{ latest.errors | default(0) }}
       </div>
     </a>
     <a href="/runs/{{ latest.filename }}?status=unmatched" class="stat stat-link">
       <div class="stat-label">Unmatched</div>
-      <div class="stat-value {% if latest.unmatched > 0 %}yellow{% else %}dim{% endif %}">
-        {{ latest.unmatched }}
+      <div class="stat-value {% if (latest.unmatched | default(0)) > 0 %}yellow{% else %}dim{% endif %}">
+        {{ latest.unmatched | default(0) }}
       </div>
     </a>
     <a href="/runs/{{ latest.filename }}" class="stat stat-link">
       <div class="stat-label">Total</div>
-      <div class="stat-value dim">{{ latest.total_scanned }}</div>
+      <div class="stat-value dim">{{ latest.total_scanned | default(0) }}</div>
     </a>
   </div>
 
@@ -93,8 +93,8 @@
   </p>
 </div>
 
-<!-- Auto-refresh every 10s: target only the latest-card so focus and scroll are preserved -->
-<div hx-get="/" hx-trigger="every 10s" hx-target=".stats" hx-select=".stats" hx-swap="outerHTML" hx-push-url="false" style="display:none"></div>
+<!-- Auto-refresh every 10s: poll /api/stats which always returns a .stats element -->
+<div hx-get="/api/stats" hx-trigger="every 10s" hx-target=".stats" hx-swap="outerHTML" hx-push-url="false" style="display:none"></div>
 
 {% else %}
 <div id="latest-card" class="card muted">
@@ -103,6 +103,7 @@
   ⚠ A run is already in progress. Wait for it to finish before triggering another.
 </div>
 {% endif %}
+<div class="stats"></div>
 No runs found yet. Click "Run now" to start the first pass.</div>
 {% endif %}
 {% endblock %}

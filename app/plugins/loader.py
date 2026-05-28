@@ -47,9 +47,12 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
     old_registry: if provided, close() is called on each plugin instance before loading
     new ones. This releases any open resources (e.g. httpx.Client connection pools).
     """
-    # Close any plugins in the old registry before building the new one
+    # Close any plugins in the old registry before building the new one.
+    # Deduplicate by object identity: a plugin registered under both its site_id
+    # and one or more aliases appears multiple times in .values(), and calling
+    # close() twice raises RuntimeError on httpx.Client.
     if old_registry is not None:
-        for plugin in old_registry.values():
+        for plugin in {id(p): p for p in old_registry.values()}.values():
             try:
                 plugin.close()
             except Exception:
@@ -68,10 +71,12 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
         # Files starting with "_" are intentionally skipped so the plugin dir
         # can contain private helper modules (e.g. _shared_auth.py) without them
         # being treated as plugins.
-        if not fname.endswith(".py") or fname.startswith("_"):
+        if not fname.endswith(".py"):
             continue
-
         fpath = os.path.join(plugin_dir, fname)
+        if fname.startswith("_"):
+            logger.debug("Skipping non-plugin file (underscore prefix): %s", fpath)
+            continue
         # Namespace the module name to avoid shadowing stdlib modules or other
         # plugins with the same base name (e.g. a plugin named "json.py" would
         # shadow the stdlib json module without this prefix).
@@ -126,6 +131,7 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                         type(registry[key]).__name__,
                         obj.__name__,
                     )
+                    registry[key].close()  # close the evicted instance before overwriting
                 registry[key] = instance
                 logger.info("Registered plugin %s for id %r", obj.__name__, key)
 

@@ -183,12 +183,12 @@ def scan_library(
                     for stem, full_path in video_stems.items():
                         if stem == new_stem:
                             continue
-                        nfo_path = os.path.join(dirpath, f"{stem}.nfo")
+                        _loop_nfo_path = os.path.join(dirpath, f"{stem}.nfo")
                         if stem in nfo_stems:
                             logger.debug("Skipping (sidecar exists): %s", full_path)
                             skipped += 1
                         else:
-                            results.append(MediaFile(path=full_path, stem=stem, nfo_path=nfo_path))
+                            results.append(MediaFile(path=full_path, stem=stem, nfo_path=_loop_nfo_path))
                     continue  # this directory's videos were all handled in the rename branch above
 
             # Normal per-stem classification (no rename candidate, or --force)

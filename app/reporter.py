@@ -119,7 +119,7 @@ def write_report(
         try:
             start = datetime.fromisoformat(report.started_at)
             end = datetime.fromisoformat(report.finished_at)
-            report.duration_seconds = max(0, int((end - start).total_seconds()))
+            report.duration_seconds = max(0, round((end - start).total_seconds()))
         except ValueError:
             pass  # malformed timestamp — leave duration_seconds as None
 
@@ -147,14 +147,17 @@ def write_report(
         atomic_replace(json_tmp, json_path)
     except Exception as exc:
         logger.error("Could not write JSON report to %s: %s", json_path, exc)
+    finally:
         try:
             os.remove(json_tmp)
+        except FileNotFoundError:
+            pass  # already moved by atomic_replace or never created
         except OSError:
             pass
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
-    plex_failed_count = sum(1 for f in report.files if getattr(f, "plex_failed", False))
+    plex_failed_count = sum(1 for f in report.files if f.plex_failed)
     lines = [
         f"{app_name} run — {report.started_at}  (duration: {duration_str})",
         "─" * 40,
@@ -231,8 +234,11 @@ def write_report(
         logger.info("Report written to %s", txt_path)
     except Exception as exc:
         logger.error("Could not write text report to %s: %s", txt_path, exc)
+    finally:
         try:
             os.remove(txt_tmp)
+        except FileNotFoundError:
+            pass  # already moved by atomic_replace or never created
         except OSError:
             pass
 

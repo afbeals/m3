@@ -140,14 +140,12 @@ def run(
     """
     if dry_run_strict:
         logger.info("Run started [DRY RUN STRICT — no API calls, no writes]")
+        logger.info("DRY RUN STRICT mode — no files written, no Plex updated, no plugin fetches")
     elif dry_run:
         logger.info("Run started [DRY RUN]")
+        logger.info("DRY RUN mode — no files or Plex records will be written")
     else:
         logger.info("Run started")
-    if dry_run:
-        logger.info("DRY RUN mode — no files or Plex records will be written")
-    if dry_run_strict:
-        logger.info("DRY RUN STRICT mode — plugin fetch() calls are also skipped")
 
     # In dry-run mode skip the Plex connection entirely — connecting is a network
     # side-effect that would produce confusing warnings when the intent is a zero-
@@ -336,7 +334,7 @@ def run(
         #   - the first file in a run is not delayed
         #   - failed fetches (exception or None result) don't count toward the window
         if config.plugin_rate_limit_secs > 0:
-            _stop_event.wait(timeout=config.plugin_rate_limit_secs)
+            time.sleep(config.plugin_rate_limit_secs)
 
         # Write the NFO sidecar and download poster/fanart images alongside the video file
         if dry_run:
@@ -423,7 +421,7 @@ def run(
         # NOTIFY_MIN_ERRORS gates the webhook: when set to 1 the webhook only fires
         # when something broke, avoiding noise on clean nightly runs.
         if config.notify_url:
-            total_errors = report.errors + report.scrape_errors
+            total_errors = report.errors + report.scrape_errors + report.image_errors
             if total_errors >= config.notify_min_errors:
                 _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
@@ -800,7 +798,7 @@ def main() -> None:
         raise SystemExit(1)
     try:
         from apscheduler.triggers.cron import CronTrigger as _CT
-        _CT.from_crontab(config.run_schedule)
+        _cron_trigger = _CT.from_crontab(config.run_schedule)
     except Exception as exc:
         logger.error("RUN_SCHEDULE %r is not a valid cron expression: %s", config.run_schedule, exc)
         raise SystemExit(1)
@@ -1035,9 +1033,7 @@ def main() -> None:
 
     # Print a structured startup health summary to stdout so developers and ops
     # can confirm the key configuration at a glance before the first scheduled run.
-    from apscheduler.triggers.cron import CronTrigger as _CT2
-    _trigger = _CT2.from_crontab(config.run_schedule)
-    _next_run = _trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+    _next_run = _cron_trigger.get_next_fire_time(None, datetime.now(timezone.utc))
     _next_str = _next_run.strftime("%Y-%m-%d %H:%M:%S") if _next_run else "unknown"
     _lib_status = ", ".join(
         f"{p} ({'ok' if os.path.isdir(p) else 'MISSING'})"
