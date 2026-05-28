@@ -2,6 +2,33 @@
 
 All notable changes to m3 are documented here.
 
+## [1.3.0] — developer ergonomics, Windows support, new CLI flags
+
+### New features
+
+- **`--dry-run-strict`** — skips plugin `fetch()` calls entirely (returns `None` for all files). Lets you test filename parsing, routing, and the pipeline structure with zero network access and no API keys required. Regular `--dry-run` still calls `fetch()` but skips writes; `--dry-run-strict` goes one step further.
+- **`--test-plugin <path>`** — loads a single plugin file, calls `fetch()` on a parsed filename (supply with `--filename "..."`) and prints the full `MetadataResult` fields. No library scan, no writes, no Plex connection. Fastest way to iterate on plugin mapping logic.
+- **`--validate-plugins`** — scans all plugins in `PLUGIN_DIR`, checks each for correct `site_id` format, `MetadataPlugin` subclass, importability, and `fetch()` signature. Prints a pass/fail table; exits with code 1 if any plugin fails. Use before deploying a batch of new plugins.
+- **`--watch`** — monitors `PLUGIN_DIR` for `.py` file changes and hot-reloads plugins automatically. Cross-platform via `watchfiles` (works on Windows; replaces the Unix-only `SIGUSR2` signal for local development).
+- **`--retry-failed=N`** — extends `--retry-failed` to merge failures across N recent runs. `--retry-failed` (no argument) still defaults to the most recent run; `--retry-failed=3` collects unique failures from the last 3 runs, deduplicated by path.
+- **`scripts/generate_test_library.py`** — generates a fake media library in `./test-media/` with empty `.mp4` files covering all parse subtypes (exact/enhanced/limited/add/unmatched). No real media needed; use for smoke-testing the pipeline.
+- **`Makefile`** — `make setup`, `test`, `test-cov`, `lint`, `format`, `typecheck`, `dev`, `dev-reload`, `once`, `validate`, `gen-test-lib`, `clean` targets. Git Bash / WSL required for `make` on Windows; equivalent `python tasks.py <task>` works everywhere.
+- **`tasks.py`** — pure-Python cross-platform task runner. All Makefile targets available as `python tasks.py <task>`, including `dev-reload` (uses env dict, not Unix inline assignment) and `clean` (uses `shutil` + `pathlib`, not `rm -rf`).
+- **`.env` file support** — `python-dotenv` is now a dependency. A `.env` file in the working directory is loaded at startup (`override=False`, so container env vars always win). `.env.example` is included as a fully annotated reference covering all variables with dev-friendly defaults.
+
+### Correctness & Windows
+- **Log file rotation** — `RotatingFileHandler` now uses `delay=True`, deferring file open until the first write. Reduces Windows file-locking contention during log rotation.
+- **Path deduplication** — `_dedup_paths()` in `scanner.py` now uses `pathlib.Path.resolve()` and case-insensitive comparison on Windows (`sys.platform == "win32"`). Prevents double-scanning when `LIBRARY_PATHS` contains aliases that differ only by case (e.g. `C:\Media` and `c:\media`).
+- **Local-friendly config defaults** — path defaults changed from absolute container paths (`/plugins`, `/config/reports`, `/config/logs`, `/media`) to relative paths (`./plugins`, `./reports`, `./logs`, `./media`). Docker users set these via env vars (unchanged). Running locally without env vars now works out of the box.
+- **uvicorn reload** — removed `reload=debug_mode` from the `uvicorn.Config` in the daemon thread (reload requires being the main process; it silently failed in a daemon thread). `DEBUG=true` now logs instructions to run uvicorn directly for live template reload: `python -m uvicorn app.web:create_app --reload`.
+
+### Tests & CI
+- **`conftest.py`** — shared pytest fixtures (`config`, `app`, `client`, `write_run`) extracted to `app/tests/conftest.py`, replacing duplicated `_make_config()` / `_make_app()` helpers across test files.
+- **GitHub Actions CI** — `.github/workflows/test.yml` runs the full test suite with coverage on `ubuntu-latest` and `windows-latest` (Python 3.12) on every push and PR.
+- **Coverage threshold** — `fail_under = 80` enforced in `pyproject.toml` via `[tool.coverage.report]`.
+- **Ruff config** — `[tool.ruff]` and `[tool.ruff.lint]` sections added to `pyproject.toml`; `ruff` added to dev extras and `requirements-dev.txt`.
+- **Pytest markers** — `unit` and `integration` markers registered in `pyproject.toml`.
+
 ## [1.2.0] — rename to m3, image error visibility, HTMX feedback, dev ergonomics
 
 ### New features

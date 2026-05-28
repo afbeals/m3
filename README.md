@@ -33,8 +33,20 @@ docker-compose up -d
 
 ### Local testing
 
-See [docs/local-testing.md](docs/local-testing.md) for a step-by-step guide to
-running m3 on macOS, Linux, or Windows without Docker.
+```bash
+# macOS / Linux / Git Bash
+make setup        # create .venv and install all deps
+cp .env.example .env   # fill in your values
+make dev          # start scheduler + web dashboard
+
+# Windows (CMD / PowerShell — no make required)
+python tasks.py setup
+copy .env.example .env
+python tasks.py dev
+```
+
+See [docs/local-testing.md](docs/local-testing.md) for a full step-by-step guide
+covering macOS, Linux, and Windows.
 
 ---
 
@@ -157,14 +169,13 @@ python -m app.main
 python -m app.main --once
 
 # Run once, re-process files that already have .nfo sidecars
-# --force re-downloads images even if they already exist on disk; it also re-fetches
-# all metadata regardless of existing .nfo content.
 python -m app.main --once --force
 
 # Dry run — parse + route + fetch but skip all writes
-# --dry-run skips NFO writes, image downloads, AND the Plex push. A run report is
-# also NOT written (the run appears in logs only).
 python -m app.main --once --dry-run
+
+# Dry-run-strict — skip plugin fetch() entirely; test parsing + routing with no API calls
+python -m app.main --once --dry-run-strict
 
 # Trigger an immediate run without restarting the container (Unix/Linux/macOS)
 docker exec m3 kill -USR1 1
@@ -172,14 +183,25 @@ docker exec m3 kill -USR1 1
 # Reload plugins without restarting the container (Unix/Linux/macOS)
 docker exec m3 kill -USR2 1
 
+# Watch plugins dir and hot-reload on changes — cross-platform (local dev)
+python -m app.main --watch
+
 # List all files that would be unmatched (no plugin claimed them)
 python -m app.main --list-unmatched
 
-# Re-process only the error/scrape_error files from the most recent run
-# (reads the latest run report and re-fetches only those specific files)
+# Validate all plugins — pass/fail table, exits 1 on failure
+python -m app.main --validate-plugins
+
+# Test a single plugin file + filename, print MetadataResult (no writes, no Plex)
+python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+
+# Re-process only failed files from the most recent run
 python -m app.main --retry-failed
 
-# Test the filename parser without running a full pass (useful during plugin development)
+# Re-process failures merged across the last N runs (deduplicated)
+python -m app.main --retry-failed=3
+
+# Test the filename parser standalone
 python -m app.tools.parse "Jane Doe with Drama % mysite - 12345"
 python -m app.tools.parse --json "Jane Doe % MS - eager-hands"   # JSON output
 ```
@@ -197,7 +219,7 @@ Key variables:
 |---|---|---|
 | `PLEX_URL` | *(required)* | Plex server URL |
 | `PLEX_TOKEN` | *(required)* | Plex authentication token |
-| `LIBRARY_PATHS` | `/media` | Comma-separated container paths to scan |
+| `LIBRARY_PATHS` | `./media` (local) / `/media` (Docker) | Comma-separated paths to scan |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip (e.g. `*.part,/media/incoming/**`) |
 | `RUN_SCHEDULE` | `0 3 * * *` | Cron expression for scheduled runs |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls (0 to disable) |
@@ -215,10 +237,23 @@ Key variables:
 ## Tests
 
 ```bash
+# macOS / Linux
+make setup && make test
+make test-cov    # with coverage report
+
+# Windows / all platforms
+python tasks.py setup
+python tasks.py test
+python tasks.py test-cov
+
+# Or manually:
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest app/tests/ -v
 ```
+
+CI runs automatically on every push and PR via GitHub Actions
+(`ubuntu-latest` + `windows-latest`, Python 3.12). Coverage threshold: 80%.
 
 ---
 

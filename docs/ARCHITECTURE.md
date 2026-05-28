@@ -97,8 +97,12 @@ m3/
 ├── requirements-dev.txt          # pytest + coverage (local dev only)
 ├── config.example.yml            # annotated env var reference (docs only)
 │
+├── Makefile                          # make setup/test/dev/clean (macOS, Linux, Git Bash)
+├── tasks.py                          # python tasks.py <task> — cross-platform alternative to make
+├── .env.example                      # annotated reference for all env vars; copy to .env for local dev
+│
 ├── app/
-│   ├── main.py                   # entrypoint; scheduler; web server; --once/--force flags
+│   ├── main.py                   # entrypoint; scheduler; web server; --once/--force/--watch flags
 │   ├── config.py                 # loads/validates all config from env vars
 │   ├── scheduler.py              # APScheduler cron; Windows-safe SIGUSR1/SIGUSR2 handlers
 │   ├── runstate.py               # thread-safe run-in-progress flag for web UI
@@ -133,6 +137,7 @@ m3/
 │   │   └── plex.py               # PlexAPI integration; field-locked updates
 │   │
 │   └── tests/
+│       ├── conftest.py              # shared fixtures: config, app, client, write_run
 │       ├── test_config.py           # 8 tests — config loading + env var parsing
 │       ├── test_parser.py           # 29 tests — all forms, subtypes, edge cases
 │       ├── test_router.py           # 5 tests — dispatch, aliases, unmatched
@@ -154,6 +159,13 @@ m3/
 ├── plugins/                      # mounted from host at /plugins; drop .py files here
 │   ├── example_plugin.py         # reference JSON API plugin (fully commented)
 │   └── example_html_plugin.py    # reference HTML scraping plugin (BeautifulSoup)
+│
+├── scripts/
+│   └── generate_test_library.py  # generates ./test-media/ with empty .mp4 files for local dev
+│
+├── .github/
+│   └── workflows/
+│       └── test.yml              # CI: pytest + coverage on ubuntu-latest + windows-latest
 │
 └── docs/
     ├── ARCHITECTURE.md           # this file
@@ -294,27 +306,32 @@ Plex connection is re-established at the start of every run (not once at startup
 
 All config via environment variables. See `config.example.yml` for the full annotated reference.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PLEX_URL` | *(required)* | Plex server URL reachable from inside the container |
-| `PLEX_TOKEN` | *(required)* | Plex authentication token |
-| `LIBRARY_PATHS` | `/media` | Comma-separated container paths to scan |
-| `PLUGIN_DIR` | `/plugins` | Where plugin `.py` files are discovered |
-| `REPORT_PATH` | `/config/reports` | Where run reports are written |
-| `LOG_PATH` | `/config/logs` | Where rotating log files are written |
-| `RUN_SCHEDULE` | `0 3 * * *` | Cron expression (5-field) |
-| `LOG_LEVEL` | `INFO` | DEBUG / INFO / WARNING / ERROR |
-| `LOG_RETENTION_DAYS` | `30` | Delete log files older than N days |
-| `REPORT_RETENTION_DAYS` | `90` | Delete report files older than N days |
-| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds to wait between plugin fetch() calls |
-| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is marked as timed out |
-| `WEB_ENABLED` | `true` | Enable the web dashboard |
-| `WEB_PORT` | `8765` | Port the dashboard listens on |
-| `WEB_HOST` | `0.0.0.0` | Host the dashboard binds to |
-| `APP_NAME` | `m3` | Display name in the dashboard header and title |
-| `NOTIFY_URL` | *(empty)* | Webhook URL to POST a JSON run summary after each run |
-| `NOTIFY_MIN_ERRORS` | `0` | Minimum combined error count before the webhook fires (0 = always fire) |
-| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
+| Variable | Default (local) | Default (Docker) | Purpose |
+|---|---|---|---|
+| `PLEX_URL` | *(required)* | *(required)* | Plex server URL reachable from the running process |
+| `PLEX_TOKEN` | *(required)* | *(required)* | Plex authentication token |
+| `LIBRARY_PATHS` | `./media` | `/media` | Comma-separated paths to scan |
+| `PLUGIN_DIR` | `./plugins` | `/plugins` | Where plugin `.py` files are discovered |
+| `REPORT_PATH` | `./reports` | `/config/reports` | Where run reports are written |
+| `LOG_PATH` | `./logs` | `/config/logs` | Where rotating log files are written |
+| `RUN_SCHEDULE` | `0 3 * * *` | `0 3 * * *` | Cron expression (5-field) |
+| `LOG_LEVEL` | `INFO` | `INFO` | DEBUG / INFO / WARNING / ERROR |
+| `LOG_RETENTION_DAYS` | `30` | `30` | Delete log files older than N days |
+| `REPORT_RETENTION_DAYS` | `90` | `90` | Delete report files older than N days |
+| `PLUGIN_RATE_LIMIT_SECS` | `1.0` | `1.0` | Seconds to wait between plugin fetch() calls |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | `60.0` | Seconds before a single plugin fetch() is marked as timed out |
+| `WEB_ENABLED` | `true` | `true` | Enable the web dashboard |
+| `WEB_PORT` | `8765` | `8765` | Port the dashboard listens on |
+| `WEB_HOST` | `0.0.0.0` | `0.0.0.0` | Host the dashboard binds to (`127.0.0.1` for local dev) |
+| `APP_NAME` | `m3` | `m3` | Display name in the dashboard header and title |
+| `NOTIFY_URL` | *(empty)* | *(empty)* | Webhook URL to POST a JSON run summary after each run |
+| `NOTIFY_MIN_ERRORS` | `0` | `0` | Minimum combined error count before the webhook fires (0 = always fire) |
+| `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | *(empty)* | Comma-separated glob patterns to skip during scanning |
+| `DEBUG` | `false` | `false` | When `true`, logs a hint to run uvicorn directly for live template reload |
+
+> **Local dev tip:** copy `.env.example` to `.env` — the app loads it at startup
+> (`override=False`). The defaults in `.env.example` are tuned for local development
+> (`LOG_LEVEL=DEBUG`, `PLUGIN_RATE_LIMIT_SECS=0`, `WEB_HOST=127.0.0.1`).
 
 ---
 
@@ -326,6 +343,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 - Manual trigger via web UI: `POST /trigger/run` calls `scheduler.add_job(..., replace_existing=True)`
 - Manual trigger via signal: `docker exec m3 kill -USR1 1` (Unix only; Windows-guarded in `build_scheduler`)
 - Plugin hot-reload via signal: `docker exec m3 kill -USR2 1` — `register_sigusr2_reload()` is called in `main()` immediately after `build_scheduler()`; it registers a SIGUSR2 handler that atomically replaces the shared `registry` dict contents (clear + update under a lock) so all live references see the new plugins without a container restart. `app.state.plugin_router` (the `Router` wrapping the registry in the web app) reads the same dict, so the web UI's plugin list and dispatch also reflect the reload automatically (Unix only; skipped on Windows)
+- Plugin hot-reload via `--watch` flag: cross-platform alternative to SIGUSR2 using `watchfiles`. Monitors `PLUGIN_DIR` for `.py` changes and triggers the same atomic registry replace. Works on Windows; intended for local development.
 
 ## Run Modes
 
@@ -342,8 +360,26 @@ docker exec m3 python -m app.main --once --force
 # Dry run — parse + route + fetch but skip all writes and report
 docker exec m3 python -m app.main --once --dry-run
 
+# Dry-run-strict — skip plugin fetch() entirely; test parsing + routing only, no API calls
+docker exec m3 python -m app.main --once --dry-run-strict
+
 # Diagnose unmatched files — scan library, print files no plugin claims, exit
 docker exec m3 python -m app.main --list-unmatched
+
+# Re-process only the failed files from the most recent run
+docker exec m3 python -m app.main --retry-failed
+
+# Re-process failures from the last N runs (deduplicated)
+docker exec m3 python -m app.main --retry-failed=3
+
+# Test a single plugin file + filename, print MetadataResult, no writes
+python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+
+# Validate all plugins — print pass/fail table, exit 1 on failure
+python -m app.main --validate-plugins
+
+# Watch plugin dir and hot-reload on .py changes (cross-platform; local dev)
+python -m app.main --watch
 ```
 
 `--force` only applies to the run it's passed to. Scheduled runs always use normal skip logic.
@@ -376,6 +412,7 @@ File statuses:
 | `skipped` | Sidecar already exists and `--force` not set |
 | `unmatched` | Filename unparseable or no plugin registered for site |
 | `add_form` | Manual Add form filename — needs human follow-up |
+| `image_error` | NFO written successfully, but one or more image downloads failed |
 | `scrape_error` | Plugin raised `ScrapeError` — site markup changed or record gone |
 | `error` | Plugin or writer raised an unexpected exception |
 

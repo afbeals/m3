@@ -31,9 +31,41 @@ Edit `plugins/mysite.py`:
 3. Set the env var name in `_api_get()` (e.g. `MYSITE_API_KEY`)
 4. Update `_to_result()` to map your API's response fields
 
-Restart the container:
+### Validate before deploying
+
+```bash
+python -m app.main --validate-plugins
+```
+
+Checks every plugin in `PLUGIN_DIR` for structural issues (site_id format,
+correct subclass, importable, `fetch()` signature). Prints a pass/fail table;
+exits 1 if anything fails.
+
+### Test a single plugin without a full run
+
+```bash
+python -m app.main \
+  --test-plugin plugins/mysite.py \
+  --filename "Jane Doe with Drama % mysite - 12345.mp4"
+```
+
+Loads the plugin, runs `fetch()` on the parsed filename, and prints the full
+`MetadataResult` fields. No library scan, no Plex connection, no writes.
+
+### Deploy to the container
+
 ```bash
 docker restart m3
+```
+
+Or, if the container is already running, trigger a hot-reload without a restart:
+
+```bash
+# Unix/Linux/macOS:
+docker exec m3 kill -USR2 1
+
+# All platforms (local dev with --watch flag):
+python -m app.main --watch   # auto-reloads on every .py save in plugins/
 ```
 
 Your plugin is live. Test it with a one-shot run:
@@ -247,18 +279,15 @@ Before writing a single line of plugin code, verify your filenames route to your
 docker exec m3 python -m app.main --list-unmatched
 
 # Or locally after activating the venv:
-PLEX_URL=x PLEX_TOKEN=x LIBRARY_PATHS=/tmp/m3-test-media PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp NOTIFY_URL= LOG_PATH=/tmp \
-python3 -m app.main --list-unmatched
+python -m app.main --list-unmatched
 ```
 
 Once your plugin is in place, run `--list-unmatched` again — your files should
 disappear from the list (they'll now be routed to your plugin).
 
-### 1. Test parsing first (no API needed)
+### 1. Test parsing (no API needed)
 
 ```bash
-source .venv/bin/activate
 python3 - <<'EOF'
 from app.parser import parse
 
@@ -272,7 +301,26 @@ for stem in stems:
 EOF
 ```
 
-### 2. Test the plugin directly (no full run needed)
+### 2. Test the plugin with `--test-plugin` (recommended)
+
+```bash
+python -m app.main \
+  --test-plugin plugins/mysite.py \
+  --filename "Jane Doe with Drama % mysite - 12345.mp4"
+```
+
+Loads the plugin file, calls `fetch()` on the parsed filename, and prints the
+full `MetadataResult`. No library scan, no Plex connection, no writes. This is
+the fastest inner loop for iterating on `_to_result()` mapping.
+
+Use `--dry-run-strict` if you want to verify parsing and routing across your
+entire library without making any API calls:
+
+```bash
+python -m app.main --once --dry-run-strict
+```
+
+### 3. Test the plugin directly in Python (alternative)
 
 ```bash
 python3 - <<'EOF'
@@ -295,24 +343,32 @@ else:
 EOF
 ```
 
-### 3. Run a full one-shot pass
+### 4. Run a full one-shot pass
+
+With `.env` configured (see `local-testing.md`):
 
 ```bash
-PLEX_URL=... PLEX_TOKEN=... LIBRARY_PATHS=/path/to/media \
-PLUGIN_DIR=./plugins REPORT_PATH=/tmp/m3-reports LOG_PATH=/tmp/m3-logs \
-MYSITE_API_KEY=your-key \
-python3 -m app.main --once --force
+python -m app.main --once --force
 ```
 
 Check the output:
 ```bash
-cat /tmp/m3-reports/run_latest.txt
+cat ./reports/run_latest.txt
 ```
 
 Look for your file under `updated` (success) or `error`/`scrape_error` (check
 the message column).
 
-### 4. Unit tests
+### 5. Validate before deploying
+
+```bash
+python -m app.main --validate-plugins
+```
+
+Prints a pass/fail table for every plugin in `PLUGIN_DIR`. Exits 1 if any
+plugin fails structural checks. Run this before a batch deploy.
+
+### 6. Unit tests
 
 Write a test file in `app/tests/test_plugin_mysite.py`. Mock the HTTP calls
 with `httpx`'s built-in `MockTransport`, or use `unittest.mock.patch` to mock
@@ -366,4 +422,6 @@ Before deploying a plugin:
 - [ ] `fetch()` returns `None` for "not found" rather than raising
 - [ ] HTML selectors use `SelectorMissingError` for required elements
 - [ ] `_to_result()` uses `or "Unknown Title"` so `title` is never empty
+- [ ] `--test-plugin` run confirms `MetadataResult` fields look correct
+- [ ] `--validate-plugins` passes (no structural issues reported)
 - [ ] Plugin tested locally with `--once --force` before deploying

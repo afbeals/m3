@@ -17,7 +17,25 @@ to Docker/Unraid.
 
 ## 1. Set up a virtual environment
 
-### macOS / Linux
+### Quickstart (any platform)
+
+The repo ships with a `Makefile` (macOS/Linux/Git Bash) and a pure-Python
+`tasks.py` (all platforms including Windows CMD/PowerShell):
+
+```bash
+# macOS / Linux / Git Bash on Windows
+make setup
+
+# Windows (CMD or PowerShell — no make required)
+python tasks.py setup
+```
+
+Both create `.venv/`, upgrade pip, and install all dependencies from
+`requirements.txt` and `requirements-dev.txt`.
+
+### Manual setup
+
+#### macOS / Linux
 
 ```bash
 cd /path/to/m3
@@ -28,7 +46,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Windows (Command Prompt)
+#### Windows (Command Prompt)
 
 ```cmd
 cd C:\path\to\m3
@@ -39,7 +57,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### Windows (PowerShell)
+#### Windows (PowerShell)
 
 ```powershell
 cd C:\path\to\m3
@@ -55,45 +73,78 @@ pip install -r requirements.txt
 
 ---
 
-## 2. Create a test media file
+## 2. Configure your environment
 
-The scanner looks for real video files on disk. Create a dummy file named
-exactly as you'd name a real media file — the filename stem is what gets parsed.
-
-### macOS / Linux
+Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
-mkdir -p /tmp/m3-test-media
-
-# General form with site token
-touch "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 12345.mp4"
-
-# Enhanced search with date and scene ID
-touch "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot.mp4"
-
-# Manual Add form
-touch "/tmp/m3-test-media/Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
+cp .env.example .env
 ```
 
-### Windows (Command Prompt)
+The `.env` file is loaded automatically at startup (`override=False`, so any
+environment variables already set in your shell take precedence). This removes
+the need to export a long list of `VAR=value` prefixes before every command.
 
-```cmd
-mkdir C:\m3-test-media
+Key values to set for local testing:
 
-type nul > "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
+```dotenv
+PLEX_URL=http://your-plex-ip:32400
+PLEX_TOKEN=your-plex-token
+LIBRARY_PATHS=./test-media          # or wherever your test files are
+PLUGIN_DIR=./plugins
+MYSITE_API_KEY=your-api-key
+
+# Dev-friendly defaults already set in .env.example:
+LOG_LEVEL=DEBUG
+PLUGIN_RATE_LIMIT_SECS=0            # no delay between API calls during dev
+WEB_HOST=127.0.0.1
 ```
 
-### Windows (PowerShell)
+> **Without a `.env` file**: all path defaults (`PLUGIN_DIR`, `REPORT_PATH`,
+> `LOG_PATH`, `LIBRARY_PATHS`) point to relative paths (`./plugins`,
+> `./reports`, `./logs`, `./media`) so the app starts without any config.
+
+---
+
+## 3. Generate a test media library
+
+Instead of creating dummy files by hand, use the bundled generator:
+
+```bash
+# macOS / Linux
+python3 scripts/generate_test_library.py
+
+# Windows
+python scripts\generate_test_library.py
+
+# Or via task runner:
+make gen-test-lib
+python tasks.py gen-test-lib
+```
+
+This creates `./test-media/` with empty `.mp4` files covering all filename
+subtypes: exact match, enhanced, limited, add-form, and intentionally
+unmatched. Use `--output <dir>` to write to a different path.
+
+You can also create files manually:
+
+```bash
+# macOS / Linux
+mkdir -p ./test-media
+touch "./test-media/Jane Doe with Drama % examplesite - 12345.mp4"
+touch "./test-media/Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot.mp4"
+touch "./test-media/Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
+```
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\m3-test-media
-
-New-Item "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.mp4"
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force -Path .\test-media
+New-Item ".\test-media\Jane Doe with Drama % examplesite - 12345.mp4"
 ```
 
 ---
 
-## 3. Write a plugin for your site
+## 4. Write a plugin for your site
 
 Copy the example plugin and fill in your API logic:
 
@@ -114,204 +165,206 @@ Edit `plugins/mysite.py` — at minimum:
 
 ---
 
-## 4. Test the filename parser in isolation (no API needed)
+## 5. Validate your plugin
 
-Before running the full pipeline, verify your filenames parse correctly:
-
-### macOS / Linux
+Before running a full pass, check that your plugin loads and passes structural
+validation:
 
 ```bash
-source .venv/bin/activate
+python -m app.main --validate-plugins
+```
 
+This loads all plugins in `PLUGIN_DIR`, checks `site_id` format, subclassing,
+and `fetch()` signature, and prints a pass/fail table. Exits with code 1 if any
+plugin fails.
+
+---
+
+## 6. Test your plugin in isolation (no full run)
+
+### Test filename parsing (no API call)
+
+```bash
 python3 - <<'EOF'
 from app.parser import parse
 
 stems = [
-    "Jane Doe with Drama % examplesite - 12345",
-    "Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot",
+    "Jane Doe with Drama % mysite - 12345",
+    "Jane Doe with Drama % mysite - 19-06-15 - 12345 - An Interesting Plot",
     "Add Jane Doe And Mary Smith In My Scene At MyStudio With Drama, Comedy",
-    "Jane Doe % ES - eager-hands",   # alias + direct URL slug
 ]
 
 for stem in stems:
     result = parse(stem)
     if result:
-        print(f"\nStem: {stem!r}")
-        print(f"  form:          {result.form}")
-        print(f"  actors:        {result.actors}")
-        print(f"  genres:        {result.genres}")
-        print(f"  site:          {result.site}")
-        print(f"  match_subtype: {result.match_subtype}")
-        print(f"  date:          {result.date}")
-        print(f"  scene_id:      {result.scene_id}")
-        print(f"  title:         {result.title}")
-        print(f"  direct_url:    {result.direct_url}")
+        print(f"subtype={result.match_subtype} site={result.site} scene_id={result.scene_id} title={result.title!r}")
     else:
-        print(f"\nStem: {stem!r}  →  UNMATCHED (returned None)")
+        print(f"UNMATCHED: {stem!r}")
 EOF
 ```
 
-### Windows (PowerShell)
+### Test your plugin with `--test-plugin`
 
-```powershell
-.venv\Scripts\Activate.ps1
+Load a single plugin file, call `fetch()` on a parsed filename, and print the
+full `MetadataResult` — no library scan, no Plex connection, no writes:
 
-python -c "
-from app.parser import parse
-stem = 'Jane Doe with Drama % examplesite - 12345'
-r = parse(stem)
-print('form:', r.form, 'site:', r.site, 'scene_id:', r.scene_id)
-"
+```bash
+python -m app.main \
+  --test-plugin plugins/mysite.py \
+  --filename "Jane Doe with Drama % mysite - 12345.mp4"
 ```
+
+On Windows:
+```cmd
+python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe with Drama %% mysite - 12345.mp4"
+```
+
+This is the fastest way to iterate on plugin mapping logic. You'll see each
+`MetadataResult` field printed directly.
+
+### Dry-run-strict (no API calls at all)
+
+Test that your filenames parse and route correctly without making any network
+requests:
+
+```bash
+python -m app.main --once --dry-run-strict
+```
+
+Unlike `--dry-run` (which still calls `fetch()`), `--dry-run-strict` skips all
+plugin API calls. Useful for verifying parsing and routing on a large library
+without needing API keys or network access.
 
 ---
 
-## 5. Run a full one-shot pass
+## 7. Run a full one-shot pass
 
-Set environment variables and run with `--once`:
-
-> **Note:** `--once` runs immediately and exits. It does **not** start the web
-> dashboard. To use the dashboard locally, omit `--once` (see step 5b below).
-
-> **Tip:** Set `PLUGIN_RATE_LIMIT_SECS=0` when testing locally to disable the
-> per-plugin delay. The default 1-second wait between API calls is designed for
-> production runs over large libraries — skip it during development.
-
-### macOS / Linux
+With `.env` set up (step 2), just run:
 
 ```bash
+# macOS / Linux
 source .venv/bin/activate
-
-PLEX_URL=http://your-plex-ip:32400 \
-PLEX_TOKEN=your-plex-token \
-LIBRARY_PATHS=/tmp/m3-test-media \
-PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/m3-test-reports \
-LOG_PATH=/tmp/m3-test-logs \
-LOG_LEVEL=DEBUG \
-EXAMPLESITE_API_KEY=your-api-key \
 python3 -m app.main --once
+
+# Windows
+.venv\Scripts\activate.bat
+python -m app.main --once
+
+# Or via task runner (activates venv automatically):
+make once
+python tasks.py once
 ```
 
 Add `--force` to re-process files that already have a `.nfo` sidecar:
 
 ```bash
-... python3 -m app.main --once --force
+python -m app.main --once --force
 ```
 
-### Windows (Command Prompt)
-
-```cmd
-set PLEX_URL=http://your-plex-ip:32400
-set PLEX_TOKEN=your-plex-token
-set LIBRARY_PATHS=C:\m3-test-media
-set PLUGIN_DIR=plugins
-set REPORT_PATH=C:\m3-test-reports
-set LOG_PATH=C:\m3-test-logs
-set LOG_LEVEL=DEBUG
-set EXAMPLESITE_API_KEY=your-api-key
-
-python -m app.main --once
-```
-
-### Windows (PowerShell)
-
-```powershell
-$env:PLEX_URL       = "http://your-plex-ip:32400"
-$env:PLEX_TOKEN     = "your-plex-token"
-$env:LIBRARY_PATHS  = "C:\m3-test-media"
-$env:PLUGIN_DIR     = "plugins"
-$env:REPORT_PATH    = "C:\m3-test-reports"
-$env:LOG_PATH       = "C:\m3-test-logs"
-$env:LOG_LEVEL      = "DEBUG"
-$env:EXAMPLESITE_API_KEY = "your-api-key"
-
-python -m app.main --once
-```
+> **Without `.env`**: pass env vars explicitly as before, or export them in
+> your shell. The `.env` approach is recommended for local dev.
 
 ---
 
-## 5b. Run with the web dashboard (optional)
+## 8. Run with the web dashboard
 
 Omit `--once` to start the scheduler and web server together (just like in Docker):
 
 ```bash
-source .venv/bin/activate
-
-PLEX_URL=http://your-plex-ip:32400 \
-PLEX_TOKEN=your-plex-token \
-LIBRARY_PATHS=/tmp/m3-test-media \
-PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/m3-test-reports \
-LOG_PATH=/tmp/m3-test-logs \
-LOG_LEVEL=DEBUG \
-EXAMPLESITE_API_KEY=your-api-key \
+# macOS / Linux
+make dev
+# or:
 python3 -m app.main
+
+# Windows
+python tasks.py dev
+# or:
+python -m app.main
 ```
 
-Open `http://localhost:8765` in your browser. You'll see the dashboard with a
-**Run Now** button — click it to trigger an immediate run without waiting for the
-cron schedule. Press Ctrl+C to stop.
+Open `http://localhost:8765` in your browser. Click **Run Now** to trigger an
+immediate run. Press Ctrl+C to stop.
+
+### Live reload during template / UI development
+
+The web dashboard runs in a daemon thread alongside the scheduler, which means
+uvicorn's built-in `--reload` mode cannot be used in that architecture. For live
+reloading of templates and routes during UI development, run uvicorn directly in
+a separate terminal:
+
+```bash
+python -m uvicorn app.web:create_app --reload --port 8765
+```
+
+This starts only the web server with auto-reload on file changes. Run the
+scheduler separately in another terminal if needed.
 
 ---
 
-## 6. Check the outputs
+## 9. Plugin hot-reload during development
 
-### macOS / Linux
+Use `--watch` to automatically reload plugins when you save changes:
+
+```bash
+python -m app.main --watch
+```
+
+This monitors `PLUGIN_DIR` for `.py` file changes and reloads all plugins
+automatically — no container restart or signal required. Works on all platforms
+including Windows (uses `watchfiles`).
+
+On Unix, you can also use the signal:
+```bash
+docker exec m3 kill -USR2 1
+```
+
+---
+
+## 10. Check the outputs
 
 ```bash
 # List what was written next to the media file
-ls /tmp/m3-test-media/
+ls ./test-media/
 
 # Read the NFO sidecar
-cat "/tmp/m3-test-media/Jane Doe with Drama % examplesite - 12345.nfo"
+cat "./test-media/Jane Doe with Drama % mysite - 12345.nfo"
 
 # Read the run summary report
-cat /tmp/m3-test-reports/run_latest.txt
+cat ./reports/run_latest.txt
 
 # Tail the log for detail
-tail -50 /tmp/m3-test-logs/m3.log
+tail -50 ./logs/m3.log
 ```
 
-### Windows (PowerShell)
-
+Windows (PowerShell):
 ```powershell
-# List output files
-Get-ChildItem C:\m3-test-media\
-
-# Read the NFO
-Get-Content "C:\m3-test-media\Jane Doe with Drama % examplesite - 12345.nfo"
-
-# Read the run summary
-Get-Content C:\m3-test-reports\run_latest.txt
-
-# Tail the log
-Get-Content C:\m3-test-logs\m3.log -Tail 50
+Get-ChildItem .\test-media\
+Get-Content ".\test-media\Jane Doe with Drama % mysite - 12345.nfo"
+Get-Content .\reports\run_latest.txt
+Get-Content .\logs\m3.log -Tail 50
 ```
 
 ---
 
-## 7. Run the test suite
+## 11. Run the test suite
 
 ```bash
 # macOS / Linux
-source .venv/bin/activate
-python3 -m pytest app/tests/ -v
+make test
+make test-cov    # with coverage report
 
-# Windows
-.venv\Scripts\activate.bat
-python -m pytest app\tests\ -v
-```
+# Windows / all platforms
+python tasks.py test
+python tasks.py test-cov
 
-Run with coverage:
-
-```bash
-python3 -m pytest app/tests/ -v --cov=app --cov-report=term-missing
+# Or manually:
+python -m pytest app/tests/ -v
+python -m pytest app/tests/ -v --cov=app --cov-report=term-missing
 ```
 
 ---
 
-## 8. Skipping Plex during local testing
+## 12. Skipping Plex during local testing
 
 If you don't have Plex running locally, the app continues automatically in
 sidecar-only mode. You'll see these warnings in the log — they are expected:
@@ -330,30 +383,34 @@ plugin → parse → fetch → NFO pipeline without a Plex server.
 
 ```
 1. Edit plugins/mysite.py
-2. Run: python -m app.main --once --force
-3. Check: run_latest.txt  →  see if the file was "updated" or "unmatched"
-4. Check: the .nfo file   →  verify the fields look correct
-5. Check: m3.log          →  see the full detail trace
+2. python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+     → see full MetadataResult or error message immediately
+3. python -m app.main --once --force
+     → full pipeline pass; check run_latest.txt
+4. Check: ./test-media/Jane Doe % mysite - 12345.nfo  →  verify NFO fields
+5. Check: ./logs/m3.log  →  full detail trace
 6. Repeat
+```
+
+Use `--watch` to skip manual reloads while editing:
+```bash
+python -m app.main --watch  # keeps running; reloads plugins on save
 ```
 
 ---
 
 ## Retrying failed files
 
-After a run with errors, re-process only the failed files without re-running everything:
+After a run with errors, re-process only the failed files:
 
 ```bash
-# macOS / Linux
-source .venv/bin/activate
-PLEX_URL=... PLEX_TOKEN=... LIBRARY_PATHS=... PLUGIN_DIR=./plugins \
-REPORT_PATH=/tmp/m3-test-reports LOG_PATH=/tmp/m3-test-logs \
-python3 -m app.main --retry-failed
+python -m app.main --retry-failed       # most recent run
+python -m app.main --retry-failed=3     # merge failures from last 3 runs
 ```
 
-This reads the most recent run report and re-processes every file with status `error`
-or `scrape_error`. It bypasses the normal skip-if-NFO-exists logic for only the targeted
-files, leaving the rest of your library untouched.
+`--retry-failed` reads the run report(s) and re-processes every file with
+status `error`, `scrape_error`, or `image_error`. It bypasses the normal
+skip-if-NFO-exists logic for only the targeted files.
 
 ---
 
@@ -361,9 +418,11 @@ files, leaving the rest of your library untouched.
 
 | Topic | Detail |
 |---|---|
-| Manual run trigger | `SIGUSR1` (trigger immediate run) and `SIGUSR2` (hot-reload plugins) are Unix signals and are not supported on Windows. Use `--once` locally, or the **Run Now** button / `docker exec` in a Docker/Unraid environment instead. |
-| Diagnosing unmatched files | `--list-unmatched` works normally on Windows: `python -m app.main --list-unmatched` |
-| Path separators | Use backslashes (`C:\m3-test-media`) for `LIBRARY_PATHS` on Windows when running locally. Inside Docker the paths are always Linux-style (`/media`). |
+| Task runner | Use `python tasks.py <task>` instead of `make` if you're on CMD/PowerShell (no Git Bash). All Makefile targets have an equivalent `tasks.py` command. |
+| Manual run trigger | `SIGUSR1` (trigger immediate run) is Unix-only. Use the **Run Now** button in the dashboard, or `--once` locally. |
+| Plugin hot-reload | `SIGUSR2` is Unix-only. Use `--watch` flag instead — it's cross-platform and works on Windows. |
+| Path separators | Use backslashes (`C:\m3-test-media`) for `LIBRARY_PATHS` when running locally on Windows. Inside Docker the paths are always Linux-style. |
 | Python command | Use `python` (not `python3`) on most Windows installs. |
 | Line endings | The app writes NFO files in UTF-8. If you open them in Notepad and see no line breaks, use Notepad++ or VS Code instead. |
-| RotatingFileHandler | Python's rotating log handler can occasionally fail to rotate on Windows if another process has the log file open (e.g., VS Code). This is a known Python limitation. If you see a rotation warning in logs, close any open log file viewers and it will recover on the next rotation. |
+| RotatingFileHandler | `delay=True` is set, deferring file open until the first write. This reduces Windows file-locking issues during log rotation. |
+| Path case sensitivity | `LIBRARY_PATHS` entries that differ only by case (e.g. `C:\Media` and `c:\media`) are automatically deduplicated on Windows. |
