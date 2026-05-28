@@ -25,6 +25,9 @@ from logging.handlers import RotatingFileHandler
 
 logger = logging.getLogger(__name__)
 
+_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per rotated file
+_LOG_BACKUP_COUNT = 5               # keep m3.log + 5 rotated backups
+
 
 def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     # Create the log directory if it doesn't exist yet.
@@ -33,7 +36,6 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     try:
         os.makedirs(log_path, exist_ok=True)
     except OSError as exc:
-        import sys
         print(
             f"{app_name} WARNING: could not create log directory {log_path!r}: {exc}. "
             "Falling back to stdout-only logging.",
@@ -67,7 +69,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
             # delay=True defers opening the file until the first log write,
             # which reduces Windows file-locking contention during rotation.
             file_handler = RotatingFileHandler(
-                log_file, maxBytes=10 * 1024 * 1024, backupCount=5,
+                log_file, maxBytes=_LOG_MAX_BYTES, backupCount=_LOG_BACKUP_COUNT,
                 delay=True, encoding="utf-8",
             )
             # Windows: RotatingFileHandler.doRollover() calls os.rename() which raises

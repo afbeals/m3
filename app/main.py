@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import time
+import traceback as _tb
 from datetime import datetime
 
 # Load .env file if present (local development convenience).
@@ -42,14 +43,14 @@ except ImportError:
     pass  # python-dotenv not installed — silently skip
 
 from app import __version__
-from app.config import load_config
+from app.config import Config, load_config
 from app.utils import call_with_timeout
 from app.logging_setup import setup_logging, cleanup_old_files
 from app.plugins.loader import load_plugins
 from app.reporter import RunReport, FileResult, write_report
 from app.router import Router
 from app.runstate import RunState
-from app.scanner import scan_library
+from app.scanner import MediaFile, scan_library
 from app.scrape import ScrapeError
 
 from app.writers.nfo import write_nfo, write_images, rename_nfo_assets
@@ -59,15 +60,11 @@ logger = logging.getLogger(__name__)
 
 
 _WEBHOOK_TIMEOUT_SECS = 10
-
-# Default per-plugin fetch timeout in seconds. A plugin that never returns would
-# hang the entire run indefinitely without this guard (scheduler max_instances=1
-# means subsequent scheduled runs are silently skipped while the run is stuck).
-# Configurable via PLUGIN_FETCH_TIMEOUT_SECS env var; see config.py.
-_DEFAULT_PLUGIN_FETCH_TIMEOUT = 60
+_TRACEBACK_LIMIT = 5
+_TRACEBACK_MAX_CHARS = 500
 
 
-def _fire_webhook(url: str, report, *, app_name: str = "m3") -> None:
+def _fire_webhook(url: str, report: RunReport, *, app_name: str = "m3") -> None:
     """POST a compact JSON run summary to the configured NOTIFY_URL.
 
     Uses a short timeout so a slow/unreachable endpoint doesn't delay the
@@ -112,11 +109,11 @@ def _fire_webhook(url: str, report, *, app_name: str = "m3") -> None:
 
 
 def run(
-    config,
+    config: Config,
     router: Router,
     dry_run: bool = False,
     dry_run_strict: bool = False,
-    media_files_override: "list | None" = None,
+    media_files_override: list[MediaFile] | None = None,
 ) -> None:
     """
     Execute one full metadata pass over all configured library paths.
@@ -308,14 +305,16 @@ def run(
             logger.warning("Scrape error for %s: %s", media.path, exc)
             report.record(FileResult(path=media.path, status="scrape_error", message=str(exc)))
             continue
+        except TimeoutError as exc:
+            # Plugin fetch exceeded the configured timeout — treat as scrape_error so
+            # users can distinguish a hung plugin from an unexpected crash.
+            logger.warning("Plugin fetch timed out for %s: %s", media.path, exc)
+            report.record(FileResult(path=media.path, status="scrape_error", message=f"fetch timed out: {exc}"))
+            continue
         except Exception as exc:
-            import traceback as _tb
-            logger.warning("Plugin error for %s: %s", media.path, exc)
-            tb_short = _tb.format_exc(limit=5)[-500:]  # last 500 chars of traceback
-            report.record(FileResult(
-                path=media.path, status="error",
-                message=f"{exc}\n{tb_short}",
-            ))
+            tb_short = _tb.format_exc(limit=_TRACEBACK_LIMIT)[-_TRACEBACK_MAX_CHARS:]
+            logger.warning("Plugin error for %s: %s\n%s", media.path, exc, tb_short)
+            report.record(FileResult(path=media.path, status="error", message=str(exc)))
             continue
 
         # Plugin can return None if the lookup found nothing (e.g. scene not in database)
@@ -428,7 +427,7 @@ def run(
     )
 
 
-def _run_with_media(config, router: Router, media_files: list) -> None:
+def _run_with_media(config: Config, router: Router, media_files: list[MediaFile]) -> None:
     """Run a targeted pass over a pre-built list of MediaFile objects.
 
     Used by --retry-failed to re-process specific files without triggering a
@@ -456,7 +455,7 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
                 pass  # race between check and remove is harmless
 
 
-def _validate_paths(config, library_only: bool = False) -> None:
+def _validate_paths(config: Config, library_only: bool = False) -> None:
     """
     Check that critical filesystem paths are accessible before the scheduler starts.
     Logs a clear error and raises SystemExit for each fatal misconfiguration so the

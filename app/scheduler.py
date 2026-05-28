@@ -16,6 +16,8 @@
 #     docker exec m3 kill -USR1 1
 # -----------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import logging
 import os
 import platform
@@ -26,6 +28,10 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
+
+# How late a scheduled run can fire after its trigger time (in seconds).
+# 1 hour: allows for brief container restarts without silently skipping a run.
+_MISFIRE_GRACE_SECS = 3600
 
 
 def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
@@ -128,7 +134,7 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
         id="scheduled_run",
         max_instances=1,
         coalesce=True,
-        misfire_grace_time=3600,
+        misfire_grace_time=_MISFIRE_GRACE_SECS,
     )
 
     # SIGUSR1 is not available on Windows — only register the handler on Unix systems.

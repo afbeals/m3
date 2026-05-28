@@ -99,7 +99,7 @@
       <td><span class="badge badge-{{ f.status }}">{{ f.status }}</span></td>
       <td class="path">
         <a href="/files?path={{ f.path | urlencode }}" title="View file history">{{ f.path }}</a>
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('{{ f.path | e }}'); this.textContent='✓'; setTimeout(()=>this.textContent='⎘',1200);" title="Copy path">⎘</button>
+        <button class="copy-btn" data-path="{{ f.path }}" title="Copy path">⎘</button>
       </td>
       <td class="msg">{{ f.message or "" }}</td>
       <td id="retry-{{ loop.index }}">
@@ -141,4 +141,13 @@
   {% endif %}
 </div>
 {% endif %}
+<script>
+document.querySelectorAll('.copy-btn[data-path]').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(btn.dataset.path);
+    btn.textContent = '✓';
+    setTimeout(function() { btn.textContent = '⎘'; }, 1200);
+  });
+});
+</script>
 {% endblock %}

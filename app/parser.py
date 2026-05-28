@@ -97,7 +97,7 @@ def _parse_add_form(stem: str) -> ParsedFilename:
     )
 
 
-def _parse_general_form(stem: str) -> ParsedFilename:
+def _parse_general_form(stem: str) -> ParsedFilename | None:
     """Parse the general form: <Actors> [with <Genres>] % <Match Payload>"""
     percent_idx = stem.index("%")
     left = stem[:percent_idx].strip()
@@ -181,9 +181,7 @@ def _parse_general_form(stem: str) -> ParsedFilename:
         parts = tok.rsplit(" ", 1)
         return "-" in parts[0] and bool(re.match(r"^\d+$", parts[1]))
 
-    if not text_tokens and scene_id:
-        match_subtype = "exact"
-    elif not text_tokens and not scene_id:
+    if not text_tokens:
         match_subtype = "exact"
     elif len(text_tokens) == 1 and _looks_like_url_slug(text_tokens[0]):
         direct_url = text_tokens[0]
@@ -219,7 +217,7 @@ def parse(filename_stem: str) -> ParsedFilename | None:
     if re.match(r"^add\b", stem, re.IGNORECASE):
         # A stem that is exactly "Add" (nothing after the keyword) has no actors
         # and is not a valid Add form — treat it as unmatched.
-        if re.fullmatch(r"add", stem, re.IGNORECASE):
+        if stem.strip().lower() == "add":
             return None
         return _parse_add_form(stem)
 

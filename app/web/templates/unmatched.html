@@ -30,7 +30,7 @@
     <tr>
       <td class="path">
         {{ e.path }}
-        <button class="copy-btn" onclick="navigator.clipboard.writeText('{{ e.path | e }}'); this.textContent='✓'; setTimeout(()=>this.textContent='⎘',1200);" title="Copy path">⎘</button>
+        <button class="copy-btn" data-path="{{ e.path }}" title="Copy path">⎘</button>
       </td>
       <td class="{% if e.count > 10 %}stat-value red{% elif e.count > 2 %}stat-value yellow{% else %}stat-value{% endif %}" style="font-size:0.9rem;">
         {{ e.count }}
@@ -55,4 +55,13 @@
 {% else %}
 <div class="card muted">No unmatched files in the last 30 runs.</div>
 {% endif %}
+<script>
+document.querySelectorAll('.copy-btn[data-path]').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(btn.dataset.path);
+    btn.textContent = '✓';
+    setTimeout(function() { btn.textContent = '⎘'; }, 1200);
+  });
+});
+</script>
 {% endblock %}

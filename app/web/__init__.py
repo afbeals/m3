@@ -10,8 +10,24 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 
 from app.web.routes import router
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline';"
+        )
+        return response
 
 
 def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None) -> FastAPI:
@@ -89,5 +105,6 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     templates.env.globals["time_ago"] = _time_ago
     app.state.templates = templates
 
+    app.add_middleware(_SecurityHeadersMiddleware)
     app.include_router(router)
     return app

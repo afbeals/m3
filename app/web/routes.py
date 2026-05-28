@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import html as _html
 import inspect
 import logging
 import os
@@ -29,6 +30,7 @@ import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -90,7 +92,7 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
                 future = pool.submit(connect_plex, config.plex_url, config.plex_token)
                 server = future.result(timeout=5)
             if server is not None:
-                return JSONResponse({"plex": "ok", "url": config.plex_url})
+                return JSONResponse({"plex": "ok"})
             else:
                 return JSONResponse(
                     {"plex": "unreachable", "detail": "connection returned None"},
@@ -102,8 +104,9 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
                 status_code=503,
             )
         except Exception as exc:
+            logger.warning("Plex health check failed: %s", exc)
             return JSONResponse(
-                {"plex": "unreachable", "detail": str(exc)},
+                {"plex": "unreachable", "detail": "connection error — see server logs"},
                 status_code=503,
             )
 
@@ -296,6 +299,23 @@ def plugin_list(request: Request):
 # Config page
 # ---------------------------------------------------------------------------
 
+def _mask_url_creds(url: str) -> str:
+    """Mask username/password in a URL so API keys are not exposed in the config page."""
+    if not url:
+        return url
+    try:
+        p = urlparse(url)
+        if p.username or p.password:
+            host_part = p.hostname or ""
+            if p.port:
+                host_part = f"{host_part}:{p.port}"
+            masked_netloc = f"***:***@{host_part}"
+            return urlunparse(p._replace(netloc=masked_netloc))
+    except Exception:
+        pass
+    return url
+
+
 @router.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
     cfg = request.app.state.config
@@ -321,7 +341,7 @@ def config_page(request: Request):
         ("Plugin fetch timeout (s)","PLUGIN_FETCH_TIMEOUT_SECS", str(cfg.plugin_fetch_timeout_secs), None),
         ("Exclude patterns",       "LIBRARY_EXCLUDE_PATTERNS",
          ", ".join(cfg.library_exclude_patterns) if cfg.library_exclude_patterns else "(none)", None),
-        ("Notify URL",             "NOTIFY_URL",             cfg.notify_url or "(not set)", None),
+        ("Notify URL",             "NOTIFY_URL",             _mask_url_creds(cfg.notify_url) or "(not set)", None),
         ("Notify min errors",      "NOTIFY_MIN_ERRORS",      str(cfg.notify_min_errors), None),
         ("Web enabled",            "WEB_ENABLED",            str(cfg.web_enabled), None),
         ("Web host",               "WEB_HOST",               cfg.web_host,       None),
@@ -351,7 +371,7 @@ def trigger_reload(request: Request):
             logger.info("Plugin reload triggered via web UI")
         except Exception as exc:
             logger.warning("Could not send SIGUSR2 for plugin reload: %s", exc)
-            raise HTTPException(status_code=500, detail=str(exc))
+            raise HTTPException(status_code=500, detail="Internal error — see server logs")
     else:
         logger.info("Plugin reload requested on Windows — restart required instead")
 
@@ -378,7 +398,7 @@ def trigger_run(request: Request):
         logger.info("Manual run triggered via web UI")
     except Exception as exc:
         logger.warning("Could not schedule manual run: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal error — see server logs")
 
     # HTMX callers: return an inline confirmation badge instead of a redirect.
     # A 303 redirect causes HTMX to do a full-page navigation rather than a
@@ -399,9 +419,10 @@ def _htmx_error(request: Request, message: str, status_code: int = 400) -> HTMLR
     Returning 200 with an error badge lets the target cell show the problem inline.
     """
     if request.headers.get("HX-Request"):
+        safe_msg = _html.escape(message)
         html = (
             f'<span style="color:var(--red); font-size:0.75rem;" title="HTTP {status_code}">'
-            f'✗ {message}</span>'
+            f'✗ {safe_msg}</span>'
         )
         return HTMLResponse(html, status_code=200)
     raise HTTPException(status_code=status_code, detail=message)

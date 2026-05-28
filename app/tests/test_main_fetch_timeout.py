@@ -1,6 +1,6 @@
 # Tests for the per-plugin fetch timeout watchdog.
 # A plugin whose fetch() sleeps longer than the timeout should be recorded as
-# status=error and the run should continue processing remaining files.
+# status=scrape_error and the run should continue processing remaining files.
 from __future__ import annotations
 import pytest
 
@@ -66,9 +66,10 @@ def test_plugin_timeout_marks_file_as_error(tmp_path):
         run(cfg, router)
 
     report = mock_report.call_args.args[0]
-    assert report.errors == 1
+    assert report.scrape_errors == 1
+    assert report.errors == 0
     assert report.updated == 0
-    timed_out = [f for f in report.files if "exceeded" in (f.message or "").lower() or "timeout" in (f.message or "").lower()]
+    timed_out = [f for f in report.files if "timed out" in (f.message or "").lower()]
     assert len(timed_out) == 1
 
 
@@ -86,5 +87,6 @@ def test_run_continues_after_timeout(tmp_path):
         run(cfg, router)
 
     report = mock_report.call_args.args[0]
-    assert report.errors == 1
+    assert report.scrape_errors == 1
+    assert report.errors == 0
     assert report.updated == 1
