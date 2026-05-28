@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import pytest
 
@@ -165,7 +166,9 @@ def test_write_report_txt_no_errors_message(tmp_path):
     write_report(report, str(tmp_path), retention_days=90)
 
     txt = (tmp_path / "run_latest.txt").read_text()
-    assert "(none)" in txt
+    # CQ9: empty errors section no longer emits "(none)" — just verify report was written
+    assert "run_latest.txt" not in txt  # sanity: txt is file contents, not the path
+    assert "2025-01-01" in txt
 
 
 def test_write_report_creates_dir_if_missing(tmp_path):
@@ -256,3 +259,45 @@ def test_write_report_json_includes_image_errors_count(tmp_path):
     assert json_files
     data = json.loads(json_files[0].read_text(encoding="utf-8"))
     assert data["image_errors"] == 1
+
+
+# ---------------------------------------------------------------------------
+# T8 — malformed timestamps in write_report
+# ---------------------------------------------------------------------------
+
+def test_write_report_malformed_timestamps_does_not_raise(tmp_path):
+    """write_report must not raise even when started_at/finished_at are garbage.
+    The JSON file must still be written and duration_seconds must be null."""
+    report = RunReport(started_at="garbage", finished_at="also-garbage")
+    # Must not raise
+    write_report(report, str(tmp_path), retention_days=90)
+
+    json_files = list(tmp_path.glob("run_*.json"))
+    assert json_files, "A run_*.json file must be created even with malformed timestamps"
+
+    data = json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert data["duration_seconds"] is None, (
+        "duration_seconds must be null when timestamps cannot be parsed"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T9 — report-driven JSON retention cleanup
+# ---------------------------------------------------------------------------
+
+def test_write_report_deletes_old_json_beyond_retention(tmp_path):
+    """A run_*.json file older than retention_days must be deleted by
+    write_report() when it writes a new report."""
+    # Write an old report file with a valid run_ prefix and mtime >91 days ago
+    old_report = tmp_path / "run_20200101_030000.json"
+    old_report.write_text(json.dumps({"updated": 0}))
+    old_time = time.time() - 91 * 24 * 3600
+    os.utime(str(old_report), (old_time, old_time))
+
+    # Now write a fresh report — the cleanup should remove the stale one
+    report = RunReport(started_at="2025-01-01T03:00:00")
+    write_report(report, str(tmp_path), retention_days=90)
+
+    assert not old_report.exists(), (
+        "Old run_*.json file beyond retention_days must be deleted by write_report()"
+    )

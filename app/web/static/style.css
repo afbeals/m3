@@ -43,11 +43,13 @@ header {
   z-index: 10;
 }
 
-header .logo {
+header .logo,
+header a.logo {
   font-weight: bold;
   font-size: 1.1rem;
   color: var(--green);
   letter-spacing: 0.05em;
+  text-decoration: none;
 }
 
 nav a {
@@ -171,7 +173,7 @@ tr:hover td { background: var(--bg3); }
 .badge-add_form     { background: #2a1f3a; color: var(--purple); }
 .badge-scrape_error { background: #3a1a1a; color: var(--orange); }
 .badge-image_error  { background: #3a2a10; color: var(--yellow); }
-.badge-error        { background: #3a1010; color: var(--red); }
+.badge-error        { background: #2d0808; color: var(--red); }
 
 /* ---- Buttons / forms ---- */
 button, .btn {
@@ -278,7 +280,9 @@ footer {
 nav a:focus-visible,
 button:focus-visible,
 .btn:focus-visible,
-a.stat-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+a.stat-link:focus-visible,
+.filter-bar a:focus-visible,
+td a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* ---- Queued badge fade-out ---- */
 @keyframes queued-fade {

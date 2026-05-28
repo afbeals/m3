@@ -254,3 +254,22 @@ def test_aggregate_unmatched_cache_invalidated_on_deletion():
         assert not any(e["path"] == "/media/gone.mp4" for e in result_after), (
             "Cache was not invalidated after report file was deleted"
         )
+
+
+# ---------------------------------------------------------------------------
+# T10 — get_run with corrupt JSON
+# ---------------------------------------------------------------------------
+
+def test_get_run_returns_none_for_corrupt_json():
+    """get_run must return None (not raise) when the JSON file is truncated
+    or otherwise malformed."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        corrupt_path = os.path.join(tmpdir, "run_20250101_030000.json")
+        with open(corrupt_path, "w") as fh:
+            fh.write("{")  # truncated JSON
+
+        result = get_run(tmpdir, "run_20250101_030000.json")
+
+    assert result is None, (
+        "get_run must return None for a corrupt/truncated JSON file, not raise"
+    )

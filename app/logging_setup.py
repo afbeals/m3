@@ -154,6 +154,13 @@ def cleanup_old_files(
                 try:
                     os.remove(entry.path)
                     removed += 1
+                except PermissionError as exc:
+                    # On Windows, a log viewer or tail process may hold the file
+                    # open; skip silently and retry on the next cleanup pass.
+                    logger.debug(
+                        "Could not remove %s (file in use, will retry next cleanup): %s",
+                        entry.path, exc,
+                    )
                 except OSError as exc:
                     # Log but continue — a locked or unwritable file shouldn't
                     # abort cleanup of all other files

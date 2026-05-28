@@ -142,7 +142,6 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     date: str | None = None
     scene_id: str | None = None
     title: str | None = None
-    extra_actors: list[str] = []
     direct_url: str | None = None
 
     idx = 0
@@ -176,6 +175,8 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     # Plugins always have raw_match_payload available for their own parsing.
     match_subtype: MatchSubtype
 
+    _DATE_SHAPED = re.compile(r"^\d{2,4}[.\-]\d{2}[.\-]\d{2}$")
+
     def _looks_like_url_slug(tok: str) -> bool:
         # URL slugs are hyphen-separated, space-free tokens (e.g. "eager-hands",
         # "Stranger-Than-Fiction"). A token with spaces is a title or actor name,
@@ -183,6 +184,9 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
         # The only exception is a slug with an embedded numeric ID at the end
         # separated by a space (e.g. "Stranger-Than-Fiction 77675" → slug+id),
         # which is still slug-like because it contains hyphens and no title words.
+        # Date-shaped tokens (e.g. "2024-02-30", even if invalid) are never slugs.
+        if _DATE_SHAPED.match(tok):
+            return False
         if " " not in tok:
             return True
         # Space-containing token: treat as slug only if it has hyphens (slug part)
@@ -194,6 +198,7 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
         match_subtype = "exact"
     elif len(text_tokens) == 1 and _looks_like_url_slug(text_tokens[0]):
         direct_url = text_tokens[0]
+        scene_id = None  # URL slug is the authoritative lookup; scene_id from earlier token is ambiguous
         match_subtype = "exact"
     else:
         title = " - ".join(text_tokens)
@@ -209,7 +214,6 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
         scene_id=scene_id,
         direct_url=direct_url,
         title=title,
-        extra_actors=extra_actors,
         raw_match_payload=raw_payload,
     )
 

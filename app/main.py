@@ -294,7 +294,7 @@ def run(
             continue
         try:
             result = call_with_timeout(
-                lambda: plugin.fetch(parsed),
+                (lambda p=parsed, pl=plugin: pl.fetch(p)),
                 config.plugin_fetch_timeout_secs,
                 description="plugin fetch",
             )
@@ -405,7 +405,10 @@ def run(
         )
     else:
         # Write JSON + plain-text report files and clean up old ones
-        write_report(report, config.report_path, config.report_retention_days, app_name=config.app_name)
+        try:
+            write_report(report, config.report_path, config.report_retention_days, app_name=config.app_name)
+        except Exception as exc:
+            logger.error("Failed to write run report: %s", exc)
 
         # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
         # failure never aborts the run or prevents the report from being written.
@@ -451,8 +454,8 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
                 if os.path.getmtime(tmp_file) < cutoff:
                     os.remove(tmp_file)
                     logger.info("Removed stale .tmp orphan: %s", tmp_file)
-            except OSError:
-                pass  # race between check and remove is harmless
+            except OSError as exc:
+                logger.debug("Could not remove stale .tmp file %s: %s", tmp_file, exc)
 
 
 def _validate_paths(config: Config, library_only: bool = False) -> None:
@@ -812,7 +815,7 @@ def main() -> None:
         unroutable = []
         for media in media_files:
             parsed, plugin = router.dispatch(media.stem)
-            if parsed is None or plugin is None:
+            if parsed is None or (plugin is None and parsed.form != "add"):
                 unroutable.append(media.path)
         if unroutable:
             print(f"{len(unroutable)} unmatched file(s):")
@@ -906,7 +909,7 @@ def main() -> None:
     # SIGUSR2 triggers an in-place plugin reload without restarting the container.
     # The registry dict is shared with the router and the web dashboard; mutating
     # it in-place keeps all references up-to-date without rebuilding the router.
-    register_sigusr2_reload(registry, config.plugin_dir)
+    register_sigusr2_reload(registry, config.plugin_dir, scheduler=scheduler)
 
     # --watch: cross-platform file watcher that auto-reloads plugins when any .py
     # file in PLUGIN_DIR changes. Useful for local development on Windows where

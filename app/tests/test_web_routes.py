@@ -1,9 +1,11 @@
 # Tests for app/web routes using FastAPI TestClient.
 from __future__ import annotations
 
+import glob
 import json
 import os
 import tempfile
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -779,6 +781,130 @@ def test_trigger_file_htmx_returns_200_fragment_for_out_of_library_path():
 
 
 # ---------------------------------------------------------------------------
+# T2 — trigger_file background thread writes trigger record
+# ---------------------------------------------------------------------------
+
+def _make_plugin_registry(plugin_class):
+    """Build a minimal registry dict with a single plugin instance."""
+    instance = plugin_class()
+    key = plugin_class.site_id
+    return {key: instance}
+
+
+def test_trigger_file_thread_writes_trigger_record_on_success():
+    """When _run_single succeeds, a trigger_*.json file must be created in
+    config.report_path with status='updated'."""
+    from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+
+    class _TriggerGoodPlugin(MetadataPlugin):
+        site_id = "triggersite"
+
+        def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+            return MetadataResult(title="Triggered", source_id="999")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        real_file = os.path.join(tmpdir, "Jane Doe % triggersite - 999.mp4")
+        open(real_file, "w").close()
+
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]
+        config.report_path = tmpdir
+        config.plugin_fetch_timeout_secs = 30.0
+
+        registry = _make_plugin_registry(_TriggerGoodPlugin)
+        from app.router import Router
+        router_obj = Router(registry)
+
+        app = create_app(config, registry, MagicMock(), MagicMock())
+        # Inject the real router so dispatch works
+        app.state.plugin_router = router_obj
+
+        # Use a threading.Event to detect when the background thread finishes
+        done = threading.Event()
+        from app.utils import atomic_replace as _real_replace
+
+        import app.web.routes as routes_module
+        original_replace = routes_module.atomic_replace
+
+        def _replace_and_signal(src, dst):
+            original_replace(src, dst)
+            if "trigger_" in dst:
+                done.set()
+
+        with patch("app.web.routes.write_nfo"), \
+             patch("app.web.routes.write_images", return_value=True), \
+             patch("app.web.routes.connect_plex", return_value=None), \
+             patch("app.web.routes.push_to_plex", return_value=True), \
+             patch("app.web.routes.atomic_replace", side_effect=_replace_and_signal):
+            with TestClient(app) as client:
+                r = client.post("/trigger/file", data={"file_path": real_file})
+
+            # Wait up to 5 seconds for the background thread to finish
+            done.wait(timeout=5)
+
+        trigger_files = glob.glob(os.path.join(tmpdir, "trigger_*.json"))
+        assert trigger_files, "A trigger_*.json file must be written by the background thread"
+
+        with open(trigger_files[0], encoding="utf-8") as fh:
+            record = json.load(fh)
+
+        assert record["files"][0]["status"] == "updated"
+
+
+def test_trigger_file_thread_writes_error_status_when_plugin_raises():
+    """When the plugin raises inside _run_single, the trigger record must
+    have status='error'."""
+    from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+
+    class _TriggerBadPlugin(MetadataPlugin):
+        site_id = "triggersite2"
+
+        def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+            raise RuntimeError("plugin exploded")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        real_file = os.path.join(tmpdir, "Jane Doe % triggersite2 - 999.mp4")
+        open(real_file, "w").close()
+
+        config = _make_config(tmpdir)
+        config.library_paths = [tmpdir]
+        config.report_path = tmpdir
+        config.plugin_fetch_timeout_secs = 30.0
+
+        registry = _make_plugin_registry(_TriggerBadPlugin)
+        from app.router import Router
+        router_obj = Router(registry)
+
+        app = create_app(config, registry, MagicMock(), MagicMock())
+        app.state.plugin_router = router_obj
+
+        done = threading.Event()
+
+        import app.web.routes as routes_module
+        original_replace = routes_module.atomic_replace
+
+        def _replace_and_signal(src, dst):
+            original_replace(src, dst)
+            if "trigger_" in dst:
+                done.set()
+
+        with patch("app.web.routes.connect_plex", return_value=None), \
+             patch("app.web.routes.atomic_replace", side_effect=_replace_and_signal):
+            with TestClient(app) as client:
+                r = client.post("/trigger/file", data={"file_path": real_file})
+
+            done.wait(timeout=5)
+
+        trigger_files = glob.glob(os.path.join(tmpdir, "trigger_*.json"))
+        assert trigger_files, "A trigger_*.json file must be written even on plugin error"
+
+        with open(trigger_files[0], encoding="utf-8") as fh:
+            record = json.load(fh)
+
+        assert record["files"][0]["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
 # /healthz — version field
 # ---------------------------------------------------------------------------
 
@@ -858,3 +984,90 @@ def test_config_shows_missing_badge_for_absent_library_path():
             r = client.get("/config")
     assert r.status_code == 200
     assert "missing" in r.text
+
+
+# ---------------------------------------------------------------------------
+# T12 — GET /healthz?verbose=1
+# ---------------------------------------------------------------------------
+
+def test_healthz_verbose_with_run_history():
+    """?verbose=1 must return status, version, last_run, hours_since_last_run,
+    run_count; run_count >= 1 and last_run is not None when a report exists."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 1, "skipped": 0, "errors": 0,
+            "scrape_errors": 0, "unmatched": 0, "total_scanned": 1,
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/healthz?verbose=1")
+
+    assert r.status_code == 200
+    data = r.json()
+    for key in ("status", "version", "last_run", "hours_since_last_run", "run_count"):
+        assert key in data, f"Expected key {key!r} in verbose healthz response"
+    assert data["run_count"] >= 1
+    assert data["last_run"] is not None
+
+
+def test_healthz_verbose_empty_history():
+    """?verbose=1 with no reports must return last_run=None and
+    hours_since_last_run=None."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/healthz?verbose=1")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["last_run"] is None
+    assert data["hours_since_last_run"] is None
+
+
+# ---------------------------------------------------------------------------
+# T13 — /unmatched?q= filter
+# ---------------------------------------------------------------------------
+
+def test_unmatched_q_filter_shows_only_matching_entry():
+    """?q=alpha must show the alpha path and exclude the beta path."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _write_run(tmpdir, "run_20250515_030000.json", {
+            "started_at": "2025-05-15T03:00:00",
+            "updated": 0,
+            "files": [
+                {"path": "/media/alpha.mp4", "status": "unmatched", "message": "no plugin"},
+                {"path": "/media/beta.mp4", "status": "unmatched", "message": "no plugin"},
+            ],
+        })
+        app = _make_app(tmpdir)
+        with TestClient(app) as client:
+            r = client.get("/unmatched?q=alpha")
+
+    assert r.status_code == 200
+    assert "alpha.mp4" in r.text
+    assert "beta.mp4" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# T14 — _mask_url_creds
+# ---------------------------------------------------------------------------
+
+def test_mask_url_creds_masks_password():
+    from app.web.routes import _mask_url_creds
+    result = _mask_url_creds("http://user:s3cr3t@host:8080/path")
+    assert "s3cr3t" not in result
+    assert "host:8080" in result
+
+
+def test_mask_url_creds_no_credentials_unchanged():
+    from app.web.routes import _mask_url_creds
+    url = "https://host/webhook"
+    result = _mask_url_creds(url)
+    assert result == url
+
+
+def test_mask_url_creds_empty_string():
+    from app.web.routes import _mask_url_creds
+    result = _mask_url_creds("")
+    assert result == ""

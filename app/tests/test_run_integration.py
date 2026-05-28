@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.main import run
+import time
+
+from app.main import run, _sweep_tmp_orphans
 
 pytestmark = pytest.mark.integration
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
@@ -586,3 +588,66 @@ def test_retry_failed_skips_nonexistent_files(tmp_path):
     paths = [m.path for m in media_list]
     assert existing_path in paths
     assert missing_path not in paths
+
+
+# ---------------------------------------------------------------------------
+# T3 — image_error when write_images returns False
+# ---------------------------------------------------------------------------
+
+def test_run_image_error_when_write_images_returns_false(tmp_path):
+    """When write_images returns False, the file must be recorded as
+    image_error (not updated) and the image_errors counter incremented."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.write_nfo"), \
+         patch("app.main.write_images", return_value=False), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.image_errors == 1
+    assert report.updated == 0
+
+
+# ---------------------------------------------------------------------------
+# T4 — _sweep_tmp_orphans
+# ---------------------------------------------------------------------------
+
+class TestSweepTmpOrphans:
+    def test_removes_stale_tmp_file(self, tmp_path):
+        """A .tmp file with mtime older than 30 min must be deleted."""
+        stale = tmp_path / "stale_write.tmp"
+        stale.write_text("partial")
+        # Set mtime to 31 minutes ago
+        old_time = time.time() - 31 * 60
+        os.utime(str(stale), (old_time, old_time))
+
+        _sweep_tmp_orphans([str(tmp_path)])
+
+        assert not stale.exists(), "Stale .tmp file should have been removed"
+
+    def test_keeps_recent_tmp_file(self, tmp_path):
+        """A .tmp file with mtime less than 60 seconds ago must NOT be deleted."""
+        fresh = tmp_path / "fresh_write.tmp"
+        fresh.write_text("in-progress")
+        # Leave mtime as-is (just created — well within the safe window)
+
+        _sweep_tmp_orphans([str(tmp_path)])
+
+        assert fresh.exists(), "Recent .tmp file should not be removed"
+
+    def test_does_not_delete_non_tmp_files(self, tmp_path):
+        """Non-.tmp files must never be deleted, regardless of age."""
+        nfo = tmp_path / "movie.nfo"
+        nfo.write_text("<movie/>")
+        # Set mtime to 2 hours ago
+        old_time = time.time() - 2 * 3600
+        os.utime(str(nfo), (old_time, old_time))
+
+        _sweep_tmp_orphans([str(tmp_path)])
+
+        assert nfo.exists(), "Non-.tmp files must not be deleted"

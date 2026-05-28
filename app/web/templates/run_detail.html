@@ -63,7 +63,7 @@
 <h2>Files</h2>
 
 <div class="filter-bar">
-  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active"{% endif %}>All ({{ all_files_count }})</a>
+  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active" aria-current="true"{% endif %}>All ({{ all_files_count }})</a>
   {% for s, label, cls in [
     ("updated",     "updated",     "badge-updated"),
     ("renamed",     "renamed",     "badge-renamed"),
@@ -76,7 +76,7 @@
   ] %}
   {% set cnt = status_counts.get(s, 0) %}
   {% if cnt > 0 %}
-  <a href="/runs/{{ run.filename }}?status={{ s }}" {% if status_filter == s %}class="active"{% endif %}>
+  <a href="/runs/{{ run.filename }}?status={{ s }}" {% if status_filter == s %}class="active" aria-current="true"{% endif %}>
     <span class="badge {{ cls }}">{{ label }} ({{ cnt }})</span>
   </a>
   {% endif %}
@@ -99,7 +99,7 @@
       <td><span class="badge badge-{{ f.status }}">{{ f.status }}</span></td>
       <td class="path">
         <a href="/files?path={{ f.path | urlencode }}" title="View file history">{{ f.path }}</a>
-        <button class="copy-btn" data-path="{{ f.path }}" title="Copy path">⎘</button>
+        <button class="copy-btn" data-path="{{ f.path }}" title="Copy path" aria-label="Copy path">⎘</button>
       </td>
       <td class="msg">{{ f.message or "" }}</td>
       <td id="retry-{{ loop.index }}">
@@ -119,7 +119,7 @@
 </table>
 {% else %}
 <div class="muted">
-  {% if status_filter == "skipped" %}Skipped files are counted but not individually listed. Use <code>--force</code> to re-process them.
+  {% if status_filter == "skipped" %}Skipped files are up-to-date. To re-process a specific file, use the Re-process form on the <a href="/">dashboard</a>.
   {% elif status_filter %}No files with status "{{ status_filter }}" in this run.
   {% elif run.total_scanned == 0 %}No files were scanned in this run.
   {% else %}No file detail available.{% endif %}

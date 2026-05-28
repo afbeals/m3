@@ -4,9 +4,16 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Loaded Plugins</h1>
-  <form method="POST" action="/trigger/reload">
-    <button type="submit" title="Reload plugins without restarting the container (Unix only)">↺ Reload plugins</button>
-  </form>
+  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+    <form method="POST" action="/trigger/reload"
+          hx-post="/trigger/reload"
+          hx-target="#reload-feedback"
+          hx-swap="innerHTML"
+          hx-confirm="Reload all plugins now?">
+      <button type="submit" title="Reload plugins without restarting the container (Unix only)">↺ Reload plugins</button>
+    </form>
+    <span id="reload-feedback" style="font-size:0.8rem; min-height:1.2em;"></span>
+  </div>
 </div>
 
 {% if plugins %}

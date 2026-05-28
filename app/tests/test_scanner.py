@@ -148,3 +148,15 @@ class TestRenameDetection:
         results, skipped = scan_library([str(tmp_path)])
         assert len(results) == 0
         assert skipped == 1
+
+
+# ---------------------------------------------------------------------------
+# T7 — _dedup_paths with identical duplicate paths
+# ---------------------------------------------------------------------------
+
+class TestDedupIdentical:
+    def test_identical_paths_deduplicated(self):
+        """Two identical paths must be reduced to a single entry."""
+        result = _dedup_paths(["/same/path", "/same/path"])
+        assert len(result) == 1
+        assert result[0] == "/same/path"

@@ -60,7 +60,7 @@ class Router:
             return parsed, None
 
         # Step 2: O(1) plugin lookup by site id (already lowercased by the parser)
-        plugin = self._registry.get(parsed.site.lower())
+        plugin = self._registry.get(parsed.site)
         if plugin is None:
             logger.debug("No plugin registered for site %r in: %r", parsed.site, filename_stem)
 

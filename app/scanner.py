@@ -18,9 +18,10 @@
 
 from __future__ import annotations
 
-import fnmatch
+import fnmatch as _fnmatch
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,26 +69,35 @@ def _dedup_paths(paths: list[str]) -> list[str]:
         return (child.lower().startswith(prefix.lower()) if _ci
                 else child.startswith(prefix))
 
+    # Deduplicate exact-same resolved paths first, preserving order
+    seen_resolved: list[str] = []
+    seen_original: list[str] = []
+    for orig, res in zip(paths, resolved):
+        norm = res.lower() if _ci else res
+        if norm not in ([r.lower() if _ci else r for r in seen_resolved]):
+            seen_resolved.append(res)
+            seen_original.append(orig)
+
     kept = []
-    for i, p in enumerate(resolved):
+    for i, p in enumerate(seen_resolved):
         # Check whether any other path is a strict prefix of this one
         dominated = any(
-            j != i and (_eq(p, resolved[j]) or _startswith_sep(p, resolved[j]))
-            for j in range(len(resolved))
+            j != i and _startswith_sep(p, seen_resolved[j])
+            for j in range(len(seen_resolved))
         )
         if dominated:
             logger.warning(
                 "Library path %r is a subdirectory of another configured path and will be "
                 "skipped to avoid processing files twice. Remove it from LIBRARY_PATHS — "
-                "the parent path already covers it.", paths[i]
+                "the parent path already covers it.", seen_original[i]
             )
         else:
-            kept.append(paths[i])
+            kept.append(seen_original[i])
     return kept
 
 
 def scan_library(
-    library_paths: list[str], force: bool = False, exclude_patterns: list[str] = ()
+    library_paths: list[str], force: bool = False, exclude_patterns: list[str] | None = None
 ) -> tuple[list[MediaFile], int]:
     """
     Walk each path in library_paths recursively and collect video files to process.
@@ -101,6 +111,8 @@ def scan_library(
       - list of MediaFile objects ready for routing and metadata fetching
       - count of files skipped because a sidecar already exists
     """
+    if exclude_patterns is None:
+        exclude_patterns = []
     results: list[MediaFile] = []
     skipped = 0
 
@@ -110,13 +122,19 @@ def scan_library(
             logger.warning("Library path not found, skipping: %s", lib_path)
             continue
 
-        # Normalize exclude patterns once per library path (not per file).
+        # Pre-compile exclude patterns once per library path (not per file).
         # os.walk yields backslash paths on Windows, so we pre-normalize patterns
-        # to forward slashes for consistent fnmatch behaviour.
-        _norm_pats = [p.replace("\\", "/") for p in exclude_patterns]
+        # to forward slashes before compiling for consistent behaviour.
+        _compiled_pats = [
+            re.compile(_fnmatch.translate(p.replace("\\", "/")))
+            for p in exclude_patterns
+        ]
+
+        def _walk_onerror(err):
+            logger.warning("Scanner: cannot access %s: %s", err.filename, err)
 
         # os.walk recursively yields (directory, subdirs, files) for the whole tree
-        for dirpath, _, filenames in os.walk(lib_path):
+        for dirpath, _, filenames in os.walk(lib_path, onerror=_walk_onerror):
             # Build per-directory stem maps in one pass so rename detection is O(n).
             # video_stems: stem → full_path for every video file in this directory
             # nfo_stems: set of stems that already have a .nfo sidecar here
@@ -128,7 +146,7 @@ def scan_library(
                 if ext in VIDEO_EXTENSIONS:
                     full_path = os.path.join(dirpath, fname)
                     _norm_path = full_path.replace("\\", "/")
-                    if not any(fnmatch.fnmatch(_norm_path, pat) for pat in _norm_pats):
+                    if not any(pat.match(_norm_path) for pat in _compiled_pats):
                         video_stems[os.path.splitext(fname)[0]] = full_path
                     else:
                         logger.debug("Excluding (matches pattern): %s", full_path)

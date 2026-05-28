@@ -216,3 +216,50 @@ class TestDocumentedExamples:
         p = parsed("Jane Doe % SiteName - 19-01-15 - 98765 - Jane Doe - An Interesting Plot")
         assert p.date == "2019-01-15"
         assert p.scene_id == "98765"
+
+
+# ---------------------------------------------------------------------------
+# T5 — calendrically invalid dates
+# ---------------------------------------------------------------------------
+
+class TestInvalidDates:
+    def test_feb_30_date_is_none(self):
+        """Feb 30 does not exist; the date field must be None but the rest of
+        the record should still parse (scene_id still extracted)."""
+        result = parse("Jane Doe % site - 2024-02-30 - 12345")
+        # The filename may parse to a result (site/scene_id present) but date must be None
+        assert result is not None
+        assert result.date is None
+        assert result.scene_id == "12345"
+
+    def test_month_13_date_is_none(self):
+        """Month 13 is invalid; the date field must be None."""
+        result = parse("Jane Doe % site - 2019-13-01 - 12345")
+        assert result is not None
+        assert result.date is None
+
+
+# ---------------------------------------------------------------------------
+# T6 — actor name containing %
+# ---------------------------------------------------------------------------
+
+class TestActorNameWithPercent:
+    def test_actor_name_with_percent(self):
+        """'100% Natural % site - 12345' — the first % is inside the actor name,
+        the second % is the site delimiter. The parser splits on the first %, so
+        the actor token becomes '100' and '% Natural' is swallowed or discarded.
+
+        This is a known edge case: the grammar treats the first % as the site
+        delimiter, so any % in an actor name breaks the split. We document the
+        actual behaviour here rather than an idealised result.
+        """
+        result = parse("100% Natural % site - 12345")
+        # The parser either returns None or a partial result where actors=['100']
+        # because '100' is everything before the first '%'.
+        if result is None:
+            # None is acceptable — the parser failed to produce a result for this
+            # edge case (nothing after the first split looks like a valid payload).
+            return
+        # If a result was produced, it must reflect the actual (imperfect) parse:
+        # actors will be ['100'] because that's what precedes the first '%'.
+        assert result.actors == ["100"]

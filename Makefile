@@ -26,8 +26,9 @@ RUFF     := $(VENV)/bin/ruff
 MYPY     := $(VENV)/bin/mypy
 PY       := $(VENV)/bin/python
 
-# On Windows (Git Bash), bin/ is Scripts/
+# On Windows (Git Bash), bin/ is Scripts/ and the Python binary is `python`
 ifeq ($(OS),Windows_NT)
+	PYTHON := python
 	PIP    := $(VENV)/Scripts/pip
 	PYTEST := $(VENV)/Scripts/pytest
 	RUFF   := $(VENV)/Scripts/ruff

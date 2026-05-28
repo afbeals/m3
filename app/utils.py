@@ -22,6 +22,8 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
     The thread is not killed on timeout (Python limitation) — it continues until fn()'s own
     I/O timeout fires or it returns. The timeout is a *reporting* boundary, not a kill signal.
     Raises the exception from fn() directly if it throws before the timeout expires.
+
+    When timeout_secs is 0, the call runs with no timeout (waits indefinitely for fn() to return).
     """
     result_holder: list = []
     exc_holder: list = []
@@ -34,7 +36,9 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
-    t.join(timeout=timeout_secs)
+    # timeout=None means wait indefinitely; 0 is explicitly "no timeout" per our contract.
+    join_timeout = None if timeout_secs == 0 else timeout_secs
+    t.join(timeout=join_timeout)
     if t.is_alive():
         raise TimeoutError(f"{description} exceeded {timeout_secs:.0f}s")
     if exc_holder:

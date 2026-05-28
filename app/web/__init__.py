@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
@@ -24,8 +25,11 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://unpkg.com; "
-            "style-src 'self' 'unsafe-inline';"
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none';"
         )
         return response
 
@@ -55,9 +59,13 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-    # Jinja2 templates
+    # Jinja2 templates — autoescaping enabled for all .html and .xml files
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
-    templates = Jinja2Templates(directory=templates_dir)
+    env = Environment(
+        loader=FileSystemLoader(str(templates_dir)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    templates = Jinja2Templates(env=env)
     from app import __version__
     templates.env.globals["app_name"] = config.app_name
     templates.env.globals["version"] = __version__

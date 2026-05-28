@@ -14,10 +14,10 @@
 </head>
 <body>
   <header>
-    <span class="logo">▸ {{ app_name }}</span>
+    <a href="/" class="logo" aria-label="{{ app_name }} — go to dashboard">▸ {{ app_name }}</a>
     <nav aria-label="Main navigation">
       <a href="/" {% if request.url.path == "/" %}class="active" aria-current="page"{% endif %}>Latest Run</a>
-      <a href="/runs" {% if request.url.path.startswith("/runs") %}class="active" aria-current="page"{% endif %}>History</a>
+      <a href="/runs" {% if request.url.path == "/runs" %}class="active" aria-current="page"{% elif request.url.path.startswith("/runs/") %}class="active" aria-current="true"{% endif %}>History</a>
       <a href="/unmatched" {% if request.url.path == "/unmatched" %}class="active" aria-current="page"{% endif %}>Unmatched</a>
       <a href="/plugins" {% if request.url.path == "/plugins" %}class="active" aria-current="page"{% endif %}>Plugins</a>
       <a href="/config" {% if request.url.path == "/config" %}class="active" aria-current="page"{% endif %}>Config</a>

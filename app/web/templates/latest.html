@@ -19,7 +19,7 @@
 {% if latest %}
 <div id="latest-card" class="card">
 {% if request.query_params.get("msg") == "already_running" %}
-<div style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
+<div role="alert" style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
   ⚠ A run is already in progress. Wait for it to finish before triggering another.
 </div>
 {% endif %}
@@ -82,8 +82,9 @@
   <form method="POST" action="/trigger/file" class="trigger-form"
         hx-post="/trigger/file"
         hx-target="#reprocess-feedback"
-        hx-swap="innerHTML">
-    <input type="text" name="file_path" placeholder="/media/Movies/My Movie.mp4">
+        hx-swap="innerHTML"
+        hx-disabled-elt="find button[type='submit']">
+    <input type="text" name="file_path" placeholder="/media/Movies/My Movie.mp4" aria-label="File path to re-process">
     <button type="submit">Re-process</button>
     <span id="reprocess-feedback"></span>
   </form>
@@ -93,12 +94,12 @@
 </div>
 
 <!-- Auto-refresh every 10s: target only the latest-card so focus and scroll are preserved -->
-<div hx-get="/" hx-trigger="every 10s" hx-target="#latest-card" hx-select="#latest-card" hx-push-url="false" style="display:none"></div>
+<div hx-get="/" hx-trigger="every 10s" hx-target=".stats" hx-select=".stats" hx-swap="outerHTML" hx-push-url="false" style="display:none"></div>
 
 {% else %}
 <div id="latest-card" class="card muted">
 {% if request.query_params.get("msg") == "already_running" %}
-<div style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
+<div role="alert" style="border:1px solid var(--yellow); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.75rem; color:var(--yellow); font-size:0.85rem;">
   ⚠ A run is already in progress. Wait for it to finish before triggering another.
 </div>
 {% endif %}

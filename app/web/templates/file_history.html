@@ -6,6 +6,7 @@
 
 <form method="get" action="/files" style="margin-bottom:1.25rem; display:flex; gap:0.5rem;">
   <input type="search" name="path" value="{{ file_path }}" placeholder="Paste a full file path…"
+         aria-label="File path"
          style="flex:1; padding:0.35rem 0.6rem; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px;">
   <button type="submit" class="btn">Search</button>
   {% if file_path %}<a href="/files" class="btn muted">Clear</a>{% endif %}

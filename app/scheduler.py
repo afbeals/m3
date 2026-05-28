@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _MISFIRE_GRACE_SECS = 3600
 
 
-def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
+def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> None:
     """
     Register a SIGUSR2 handler that reloads plugins from plugin_dir (Unix only).
 
@@ -75,8 +75,14 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str) -> None:
             try:
                 new_registry = load_plugins(plugin_dir)
                 with _registry_lock:
-                    registry.clear()
-                    registry.update(new_registry)
+                    if scheduler is not None:
+                        scheduler.pause()
+                    try:
+                        registry.clear()
+                        registry.update(new_registry)
+                    finally:
+                        if scheduler is not None:
+                            scheduler.resume()
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
             except Exception as exc:
                 logger.warning("Plugin reload failed: %s", exc)
@@ -147,14 +153,12 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
         def _watcher():
             while True:
                 _trigger_event.wait()
+                _trigger_event.clear()  # consume the event before acting; a second signal during add_job will re-set it
                 logger.info("SIGUSR1 received — scheduling immediate run")
                 try:
                     scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)
                 except Exception as exc:
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
-                finally:
-                    # Clear after add_job so a second SIGUSR1 during add_job isn't lost
-                    _trigger_event.clear()
 
         watcher_thread = threading.Thread(target=_watcher, daemon=True)
         watcher_thread.start()

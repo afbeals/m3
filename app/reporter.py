@@ -116,8 +116,10 @@ def write_report(
 
     # Derive the filename from the run's start time so the filename is consistent
     # with the report contents. Fall back to the current time if started_at is empty.
-    raw_ts = report.started_at or datetime.now().isoformat(timespec="seconds")
-    ts = raw_ts.replace(":", "").replace("-", "").replace("T", "_")[:15]
+    try:
+        ts = datetime.fromisoformat(report.started_at).strftime("%Y%m%d_%H%M%S")
+    except (ValueError, TypeError):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     duration_str = (
         f"{report.duration_seconds}s" if report.duration_seconds is not None else "N/A"
@@ -207,9 +209,6 @@ def write_report(
             if f.message:
                 lines.append(f"    → {f.message}")
         lines.append("")
-    else:
-        lines.append("Errors:")
-        lines.append("  (none)")
 
     # Write atomically via .tmp + os.replace() so a crash mid-write never
     # leaves run_latest.txt in a corrupt/truncated state.
@@ -228,6 +227,9 @@ def write_report(
 
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.
-    removed = cleanup_old_files(report_path, retention_days, pattern_suffix=".json")
-    if removed:
-        logger.info("Cleaned up %d old report file(s)", removed)
+    try:
+        removed = cleanup_old_files(report_path, retention_days, pattern_suffix=".json")
+        if removed:
+            logger.info("Cleaned up %d old report file(s)", removed)
+    except OSError as exc:
+        logger.warning("Could not clean up old report files in %s: %s", report_path, exc)

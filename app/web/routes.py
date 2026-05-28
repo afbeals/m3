@@ -393,6 +393,8 @@ def trigger_run(request: Request):
 
     scheduler = request.app.state.scheduler
     run_fn = request.app.state.run_fn
+    if scheduler is None or run_fn is None:
+        raise HTTPException(status_code=503, detail="Scheduler not available")
     try:
         scheduler.add_job(run_fn, id="manual_trigger", replace_existing=True)
         logger.info("Manual run triggered via web UI")
@@ -501,7 +503,7 @@ async def trigger_file(request: Request):
             try:
                 timeout = config.plugin_fetch_timeout_secs
                 result = call_with_timeout(
-                    lambda: plugin.fetch(parsed),
+                    (lambda p=parsed, pl=plugin: pl.fetch(p)),
                     timeout,
                     description="trigger_file plugin fetch",
                 )
@@ -565,7 +567,14 @@ async def trigger_file(request: Request):
     # daemon=True so the thread doesn't keep the process alive if the container
     # is stopped mid-reprocess; the write is idempotent so an interrupted run is safe.
     thread = threading.Thread(target=_run_single, daemon=True, name="m3-trigger-file")
-    thread.start()
+    # Guard: if anything between acquire() and thread.start() raises (e.g. MediaFile
+    # construction or state access), release the lock so the path is not permanently
+    # blocked from future retrigger attempts.
+    try:
+        thread.start()
+    except Exception:
+        file_lock.release()
+        raise
 
     # HTMX inline retry (HX-Request header present): return a "queued" badge
     # that replaces just the action cell on the row, then fades out. Regular

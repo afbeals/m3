@@ -78,6 +78,8 @@ class Config:
     # Maximum seconds a single plugin.fetch() call may take before the run marks it
     # as an error and moves on. Prevents a hung plugin from blocking the entire run
     # indefinitely (scheduler max_instances=1 means a hung run blocks all future runs).
+    # Set to 0 to disable the timeout entirely (not recommended; a hung plugin will
+    # block the run forever since max_instances=1 prevents concurrent runs).
     plugin_fetch_timeout_secs: float = 60.0
 
     # Optional webhook URL. When set, m3 POSTs a JSON run summary to this URL
@@ -174,7 +176,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
     library_exclude_patterns = [p.strip() for p in raw_exclude.split(",") if p.strip()]
 
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
-    web_enabled = web_enabled_raw not in ("false", "0", "no", "off")
+    web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
 
     return Config(
         plex_url=require_or_empty("PLEX_URL"),
@@ -192,7 +194,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=optional("APP_NAME", "m3"),
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
-        plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=1.0),
+        plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=0.0),
         notify_url=optional("NOTIFY_URL", ""),
         notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 0),
         force=force,

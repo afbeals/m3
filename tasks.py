@@ -153,7 +153,7 @@ def gen_test_lib():
       python tasks.py gen-test-lib SITE=mysite
     """
     site = _get_arg("SITE", default="examplesite")
-    run(PY, "scripts/generate_test_library.py", "--site", site)
+    run(PY, str(ROOT / "scripts" / "generate_test_library.py"), "--site", site)
 
 
 @task("clean")

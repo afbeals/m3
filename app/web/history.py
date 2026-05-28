@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,22 @@ _MAX_RUNS = 100  # hard cap: prevents unbounded memory use on large history dire
 # Invalidated when (newest_mtime, file_count) changes.
 _list_runs_cache: dict[str, tuple] = {}  # report_path → ((newest_mtime, file_count), result)
 
+# Cache for get_run: keyed by (report_path, filename, file_mtime).
+# Avoids re-parsing the same JSON file on every dashboard request when the file hasn't changed.
+_get_run_cache: dict[tuple, dict] = {}  # (report_path, filename, mtime) → data
+_GET_RUN_CACHE_MAX = 20  # keep at most 20 parsed run files in memory
+
 # Cache for aggregate_unmatched: keyed by (report_path, max_runs).
 # Invalidated whenever (newest_mtime, file_count) changes — i.e. a new run completed
 # OR an old report was deleted. max_runs is part of the outer key so a call with a
 # different limit doesn't return a stale narrower/wider set from a prior call.
 _unmatched_cache: dict[tuple, tuple] = {}  # key → ((newest_mtime, file_count), result)
+
+# Guards all writes to _list_runs_cache and _unmatched_cache.
+# Concurrent FastAPI request handlers run in threads; without a lock, two handlers
+# could race to update the same cache key. Read operations (.get()) are not locked
+# because individual dict reads are atomic under CPython's GIL.
+_cache_lock = threading.Lock()
 
 
 def _run_invalidation_key(report_path: str) -> tuple[float | None, int]:
@@ -43,7 +55,7 @@ def _run_invalidation_key(report_path: str) -> tuple[float | None, int]:
     return (newest_mtime, file_count)
 
 
-def list_runs(report_path: str) -> list[dict]:
+def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> list[dict]:
     """
     Return a list of run summaries from run_*.json files in report_path,
     newest first, capped at _MAX_RUNS entries.
@@ -58,7 +70,7 @@ def list_runs(report_path: str) -> list[dict]:
     if not os.path.isdir(report_path):
         return []
 
-    invalidation_key = _run_invalidation_key(report_path)
+    invalidation_key = _invalidation_key if _invalidation_key is not None else _run_invalidation_key(report_path)
     cached = _list_runs_cache.get(report_path)
     if cached is not None and cached[0] == invalidation_key:
         return cached[1]
@@ -79,7 +91,8 @@ def list_runs(report_path: str) -> list[dict]:
         except Exception as exc:
             logger.warning("Could not read report file %s: %s", fpath, exc)
 
-    _list_runs_cache[report_path] = (invalidation_key, runs)
+    with _cache_lock:
+        _list_runs_cache[report_path] = (invalidation_key, runs)
     return runs
 
 
@@ -88,17 +101,30 @@ def get_run(report_path: str, filename: str) -> dict | None:
     Return the full run dict (including per-file results) for a single report
     file identified by its filename (e.g. "run_20250515_030001.json").
     Returns None if the file doesn't exist or can't be read.
+
+    Results are cached by (report_path, filename, file_mtime) so repeated
+    dashboard loads don't re-parse the same JSON file when nothing has changed.
     """
     # Sanitise: only allow bare filenames, no path traversal
     if "/" in filename or "\\" in filename or not filename.endswith(".json"):
         return None
 
     fpath = os.path.join(report_path, filename)
+
+    try:
+        mtime = os.path.getmtime(fpath)
+    except OSError:
+        mtime = None
+
+    cache_key = (report_path, filename, mtime)
+    cached = _get_run_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         with open(fpath, encoding="utf-8") as fh:
             data = json.load(fh)
         data["filename"] = filename
-        return data
     except FileNotFoundError:
         # Normal when the retention sweep deletes a file between list_runs and get_run
         logger.debug("Report file no longer present: %s", fpath)
@@ -106,6 +132,14 @@ def get_run(report_path: str, filename: str) -> dict | None:
     except Exception as exc:
         logger.warning("Could not read report file %s: %s", fpath, exc)
         return None
+
+    with _cache_lock:
+        # Evict oldest entry if over the cache size limit
+        if len(_get_run_cache) >= _GET_RUN_CACHE_MAX:
+            oldest = next(iter(_get_run_cache))
+            del _get_run_cache[oldest]
+        _get_run_cache[cache_key] = data
+    return data
 
 
 def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
@@ -125,7 +159,7 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
     if cached is not None and cached[0] == invalidation_key:
         return cached[1]
 
-    summaries = list_runs(report_path)[:max_runs]
+    summaries = list_runs(report_path, _invalidation_key=invalidation_key)[:max_runs]
     # Need the full file list — re-read only the runs that have unmatched files.
     # Skipping runs whose summary counter is 0 avoids opening JSON files unnecessarily.
     seen: dict[str, dict] = {}  # path -> aggregated entry
@@ -162,7 +196,8 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
                 entry["last_message"] = f.get("message", "")
 
     result = sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
-    _unmatched_cache[cache_key] = (invalidation_key, result)
+    with _cache_lock:
+        _unmatched_cache[cache_key] = (invalidation_key, result)
     return result
 
 
