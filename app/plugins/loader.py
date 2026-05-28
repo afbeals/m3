@@ -85,17 +85,24 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
             # Skip the base class itself and any class that isn't a subclass of MetadataPlugin
             if obj is MetadataPlugin or not issubclass(obj, MetadataPlugin):
                 continue
+            # Skip abstract subclasses (intermediate base classes without a concrete fetch())
+            if inspect.isabstract(obj):
+                continue
             # A plugin must declare a non-empty site_id to be usable
             if not obj.site_id:
                 logger.warning("Plugin class %s in %s has no site_id; skipping", obj.__name__, fname)
                 continue
 
-            instance = obj()
+            try:
+                instance = obj()
+            except Exception:
+                logger.exception("Failed to instantiate plugin class %s in %s; skipping", obj.__name__, fname)
+                continue
             # Register the plugin under its site_id and every alias
             for key in instance.all_ids():
                 if key in registry:
                     # Two plugins claim the same id — last one loaded wins
-                    logger.warning(
+                    logger.error(
                         "Plugin id %r already registered by %s; overwriting with %s",
                         key,
                         type(registry[key]).__name__,

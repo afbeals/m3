@@ -126,7 +126,7 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
                 (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600, 1
             )
         except ValueError:
-            pass
+            logger.debug("healthz: could not parse started_at timestamp %r", last_run)
 
     return JSONResponse({
         "status": "ok",
@@ -474,12 +474,16 @@ async def trigger_file(request: Request):
 
     router_obj = request.app.state.plugin_router
 
+    run_state = request.app.state.run_state
+
     def _run_single():
         import json as _json
         from datetime import datetime as _dt
         outcome_status = "error"
         outcome_message = ""
         started_at = _dt.now().isoformat(timespec="seconds")
+        if run_state is not None:
+            run_state.start()
         try:
             # Bypasses the normal run() path deliberately: no library scan, no run
             # report, no rate limiting. This is a single user-initiated re-process
@@ -531,6 +535,11 @@ async def trigger_file(request: Request):
                     logger.warning("trigger_file: Plex push error for %s: %s", file_path, exc)
             logger.info("trigger_file: reprocessed %s (status=%s)", file_path, outcome_status)
         finally:
+            # Release the per-path lock first — before any I/O that could fail —
+            # so a write error never permanently blocks future retrigger attempts.
+            file_lock.release()
+            if run_state is not None:
+                run_state.stop()
             # Write a lightweight trigger record so the file history page shows
             # the manual retrigger outcome alongside regular scheduled runs.
             finished_at = _dt.now().isoformat(timespec="seconds")
@@ -552,8 +561,6 @@ async def trigger_file(request: Request):
                 atomic_replace(tmp, fpath)
             except Exception as exc:
                 logger.warning("trigger_file: could not write trigger record: %s", exc)
-            # Always release the per-path lock so subsequent requests can proceed.
-            file_lock.release()
 
     # daemon=True so the thread doesn't keep the process alive if the container
     # is stopped mid-reprocess; the write is idempotent so an interrupted run is safe.

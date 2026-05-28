@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
@@ -98,7 +99,11 @@ def write_report(
     app_name: str = "m3",
 ) -> None:
     """Write the JSON and plain-text reports, then clean up old JSON reports."""
-    os.makedirs(report_path, exist_ok=True)
+    try:
+        os.makedirs(report_path, exist_ok=True)
+    except OSError as exc:
+        logger.error("Could not create report directory %s: %s", report_path, exc)
+        return
 
     # Compute wall-clock duration if both timestamps are present
     if report.started_at and report.finished_at:
@@ -113,6 +118,10 @@ def write_report(
     # with the report contents. Fall back to the current time if started_at is empty.
     raw_ts = report.started_at or datetime.now().isoformat(timespec="seconds")
     ts = raw_ts.replace(":", "").replace("-", "").replace("T", "_")[:15]
+
+    duration_str = (
+        f"{report.duration_seconds}s" if report.duration_seconds is not None else "N/A"
+    )
 
     # --- JSON report (full detail, machine-readable) ---
     # Written atomically via .tmp + os.replace() — same guard as the text report.
@@ -135,7 +144,7 @@ def write_report(
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
     lines = [
-        f"{app_name} run — {report.started_at}",
+        f"{app_name} run — {report.started_at}  (duration: {duration_str})",
         "─" * 40,
         f"  Total files scanned                    : {report.total_scanned}",
         f"  Updated                                : {report.updated}",
@@ -149,9 +158,12 @@ def write_report(
         "",
     ]
 
-    # List Manual Add files separately — these need the user to add a plugin
-    # or register the studio before they can be processed automatically
-    add_files = [f for f in report.files if f.status == "add_form"]
+    # Single pass over report.files to group by status (avoids 5 separate linear scans).
+    by_status: dict[str, list[FileResult]] = defaultdict(list)
+    for f in report.files:
+        by_status[f.status].append(f)
+
+    add_files = by_status.get("add_form", [])
     if add_files:
         lines.append("Manual Add files (no plugin; need studio setup):")
         for f in add_files:
@@ -160,8 +172,7 @@ def write_report(
                 lines.append(f"    → {f.message}")
         lines.append("")
 
-    # Unmatched files — either unparseable or no plugin for the site token
-    unmatched_files = [f for f in report.files if f.status == "unmatched"]
+    unmatched_files = by_status.get("unmatched", [])
     if unmatched_files:
         lines.append("Unmatched files:")
         for f in unmatched_files:
@@ -170,8 +181,7 @@ def write_report(
                 lines.append(f"    → {f.message}")
         lines.append("")
 
-    # Image errors — NFO was written but image download failed
-    image_error_files = [f for f in report.files if f.status == "image_error"]
+    image_error_files = by_status.get("image_error", [])
     if image_error_files:
         lines.append("Image errors (NFO written, images missing):")
         for f in image_error_files:
@@ -180,9 +190,7 @@ def write_report(
                 lines.append(f"    → {f.message}")
         lines.append("")
 
-    # Scrape errors — site markup changed or record no longer exists.
-    # Listed before generic errors so they're the first thing the user sees.
-    scrape_error_files = [f for f in report.files if f.status == "scrape_error"]
+    scrape_error_files = by_status.get("scrape_error", [])
     if scrape_error_files:
         lines.append("Scrape errors (site may have changed its markup):")
         for f in scrape_error_files:
@@ -191,8 +199,7 @@ def write_report(
                 lines.append(f"    → {f.message}")
         lines.append("")
 
-    # Error files — plugin crashed or writer failed
-    error_files = [f for f in report.files if f.status == "error"]
+    error_files = by_status.get("error", [])
     if error_files:
         lines.append("Errors:")
         for f in error_files:

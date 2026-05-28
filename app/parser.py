@@ -15,6 +15,7 @@ See FILENAME_PATTERNS.md for the full grammar and examples.
 from __future__ import annotations
 
 import re
+from datetime import date as _date
 
 from app.plugins.base import FilenameForm, MatchSubtype, ParsedFilename
 
@@ -35,7 +36,12 @@ def _normalise_date(token: str) -> str | None:
             y, mo, d = m.group(1), m.group(2), m.group(3)
             if len(y) == 2:
                 y = f"20{y}"
-            return f"{y}-{mo}-{d}"
+            normalised = f"{y}-{mo}-{d}"
+            try:
+                _date.fromisoformat(normalised)
+            except ValueError:
+                return None
+            return normalised
     return None
 
 
@@ -45,8 +51,9 @@ def _split_csv(text: str) -> list[str]:
 
 def _parse_add_form(stem: str) -> ParsedFilename:
     """Parse the Manual Add form: Add [Date] Actor [And Actor...] [In Title] [At Studio] [With Genre,...]"""
-    # Strip leading "Add" keyword (case-insensitive)
-    rest = stem.strip()[3:].strip()
+    # Strip leading "Add" keyword (case-insensitive) via regex so any casing variant
+    # ("ADD", "add", "Add") is handled uniformly without relying on a fixed [3:] slice.
+    rest = re.sub(r"^add\b\s*", "", stem.strip(), flags=re.IGNORECASE)
 
     actors: list[str] = []
     genres: list[str] = []
@@ -99,7 +106,9 @@ def _parse_add_form(stem: str) -> ParsedFilename:
 
 def _parse_general_form(stem: str) -> ParsedFilename | None:
     """Parse the general form: <Actors> [with <Genres>] % <Match Payload>"""
-    percent_idx = stem.index("%")
+    percent_idx = stem.find("%")
+    if percent_idx == -1:
+        return None
     left = stem[:percent_idx].strip()
     raw_payload = stem[percent_idx + 1 :].strip()
 

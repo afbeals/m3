@@ -126,33 +126,37 @@ def cleanup_old_files(
     cutoff = datetime.now() - timedelta(days=retention_days)
     removed = 0
 
-    for fname in os.listdir(directory):
-        if pattern_suffix:
-            # Python's RotatingFileHandler names backups "<app_name>.log.1", etc.
-            # — they don't end with ".log", so we need a second check for rotated files.
-            # We deliberately avoid plain `in` here: that would incorrectly match
-            # unrelated files like "<app_name>.login_data" when filtering for ".log".
-            is_rotated_log_backup = (
-                pattern_suffix == ".log"
-                and fname.startswith(f"{active_log}.")
-            )
-            if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
+    # os.scandir yields DirEntry objects that cache stat results, avoiding a
+    # separate os.stat call per file compared to os.listdir + os.path.getmtime.
+    with os.scandir(directory) as it:
+        for entry in it:
+            if not entry.is_file():
+                continue
+            fname = entry.name
+            if pattern_suffix:
+                # Python's RotatingFileHandler names backups "<app_name>.log.1", etc.
+                # — they don't end with ".log", so we need a second check for rotated files.
+                # We deliberately avoid plain `in` here: that would incorrectly match
+                # unrelated files like "<app_name>.login_data" when filtering for ".log".
+                is_rotated_log_backup = (
+                    pattern_suffix == ".log"
+                    and fname.startswith(f"{active_log}.")
+                )
+                if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
+                    continue
+
+            # Never delete the active log file — only rotated backups
+            if fname == active_log:
                 continue
 
-        # Never delete the active log file — only rotated backups
-        if fname == active_log:
-            continue
-
-        fpath = os.path.join(directory, fname)
-        if os.path.isfile(fpath):
-            mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
+            mtime = datetime.fromtimestamp(entry.stat().st_mtime)
             if mtime < cutoff:
                 try:
-                    os.remove(fpath)
+                    os.remove(entry.path)
                     removed += 1
                 except OSError as exc:
                     # Log but continue — a locked or unwritable file shouldn't
                     # abort cleanup of all other files
-                    logger.warning("Could not delete old file %s: %s", fpath, exc)
+                    logger.warning("Could not delete old file %s: %s", entry.path, exc)
 
     return removed

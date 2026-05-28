@@ -9,32 +9,22 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
           integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2uoICbeVVCcHvz0Ljr4LiGHl0sWVIbCEslA"
-          crossorigin="anonymous" defer></script>
-  <!-- Fallback: if unpkg.com is unreachable (air-gapped home lab), place htmx.min.js
-       in app/web/static/ and it will be served from /static/htmx.min.js instead. -->
-  <script>
-    window.addEventListener('load', function() {
-      if (typeof htmx === 'undefined') {
-        var s = document.createElement('script');
-        s.src = '/static/htmx.min.js';
-        document.head.appendChild(s);
-      }
-    });
-  </script>
+          crossorigin="anonymous" defer
+          onerror="var s=document.createElement('script');s.src='/static/htmx.min.js';document.head.appendChild(s)"></script>
 </head>
 <body>
   <header>
     <span class="logo">▸ {{ app_name }}</span>
-    <nav>
-      <a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Latest Run</a>
-      <a href="/runs" {% if request.url.path.startswith("/runs") %}class="active"{% endif %}>History</a>
-      <a href="/unmatched" {% if request.url.path == "/unmatched" %}class="active"{% endif %}>Unmatched</a>
-      <a href="/plugins" {% if request.url.path == "/plugins" %}class="active"{% endif %}>Plugins</a>
-      <a href="/config" {% if request.url.path == "/config" %}class="active"{% endif %}>Config</a>
-      <a href="/files" {% if request.url.path == "/files" %}class="active"{% endif %}>Files</a>
-      <a href="/logs" {% if request.url.path == "/logs" %}class="active"{% endif %}>Logs</a>
+    <nav aria-label="Main navigation">
+      <a href="/" {% if request.url.path == "/" %}class="active" aria-current="page"{% endif %}>Latest Run</a>
+      <a href="/runs" {% if request.url.path.startswith("/runs") %}class="active" aria-current="page"{% endif %}>History</a>
+      <a href="/unmatched" {% if request.url.path == "/unmatched" %}class="active" aria-current="page"{% endif %}>Unmatched</a>
+      <a href="/plugins" {% if request.url.path == "/plugins" %}class="active" aria-current="page"{% endif %}>Plugins</a>
+      <a href="/config" {% if request.url.path == "/config" %}class="active" aria-current="page"{% endif %}>Config</a>
+      <a href="/files" {% if request.url.path == "/files" %}class="active" aria-current="page"{% endif %}>Files</a>
+      <a href="/logs" {% if request.url.path == "/logs" %}class="active" aria-current="page"{% endif %}>Logs</a>
     </nav>
-    <span class="status-slot" hx-get="/api/status" hx-trigger="load, every 2s" hx-swap="innerHTML"></span>
+    <span class="status-slot" aria-live="polite" aria-label="Agent status" hx-get="/api/status" hx-trigger="load, every 2s" hx-swap="innerHTML"></span>
   </header>
 
   <main>

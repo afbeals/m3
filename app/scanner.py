@@ -110,6 +110,11 @@ def scan_library(
             logger.warning("Library path not found, skipping: %s", lib_path)
             continue
 
+        # Normalize exclude patterns once per library path (not per file).
+        # os.walk yields backslash paths on Windows, so we pre-normalize patterns
+        # to forward slashes for consistent fnmatch behaviour.
+        _norm_pats = [p.replace("\\", "/") for p in exclude_patterns]
+
         # os.walk recursively yields (directory, subdirs, files) for the whole tree
         for dirpath, _, filenames in os.walk(lib_path):
             # Build per-directory stem maps in one pass so rename detection is O(n).
@@ -122,11 +127,7 @@ def scan_library(
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in VIDEO_EXTENSIONS:
                     full_path = os.path.join(dirpath, fname)
-                    # Normalize to forward slashes for cross-platform pattern matching —
-                    # os.walk yields backslash paths on Windows, but patterns are
-                    # typically written with forward slashes (copied from Unix or .env files).
                     _norm_path = full_path.replace("\\", "/")
-                    _norm_pats = [p.replace("\\", "/") for p in exclude_patterns]
                     if not any(fnmatch.fnmatch(_norm_path, pat) for pat in _norm_pats):
                         video_stems[os.path.splitext(fname)[0]] = full_path
                     else:

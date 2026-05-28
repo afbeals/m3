@@ -918,29 +918,32 @@ def main() -> None:
 
             def _plugin_watcher():
                 logger.info("--watch: watching %s for plugin changes", config.plugin_dir)
-                for _ in _watch(config.plugin_dir, watch_filter=lambda _c, p: p.endswith(".py")):
-                    logger.info("--watch: change detected — reloading plugins")
-                    try:
-                        from app.plugins.loader import load_plugins as _lp
-                        prev_count = len(registry)
-                        new_reg = _lp(config.plugin_dir)
-                        registry.clear()
-                        registry.update(new_reg)
-                        if not new_reg:
-                            logger.warning(
-                                "--watch: reload produced an empty plugin registry — "
-                                "all files will be unmatched until a valid plugin is saved"
-                            )
-                        elif len(new_reg) < prev_count:
-                            logger.warning(
-                                "--watch: plugin count dropped from %d to %d after reload — "
-                                "check for syntax errors or removed site_id values",
-                                prev_count, len(new_reg),
-                            )
-                        else:
-                            logger.info("--watch: reloaded %d plugin(s)", len(new_reg))
-                    except Exception as exc:
-                        logger.warning("--watch: reload failed: %s", exc)
+                try:
+                    for _ in _watch(config.plugin_dir, watch_filter=lambda _c, p: p.endswith(".py")):
+                        logger.info("--watch: change detected — reloading plugins")
+                        try:
+                            from app.plugins.loader import load_plugins as _lp
+                            prev_count = len(registry)
+                            new_reg = _lp(config.plugin_dir)
+                            registry.clear()
+                            registry.update(new_reg)
+                            if not new_reg:
+                                logger.warning(
+                                    "--watch: reload produced an empty plugin registry — "
+                                    "all files will be unmatched until a valid plugin is saved"
+                                )
+                            elif len(new_reg) < prev_count:
+                                logger.warning(
+                                    "--watch: plugin count dropped from %d to %d after reload — "
+                                    "check for syntax errors or removed site_id values",
+                                    prev_count, len(new_reg),
+                                )
+                            else:
+                                logger.info("--watch: reloaded %d plugin(s)", len(new_reg))
+                        except Exception as exc:
+                            logger.warning("--watch: reload failed: %s", exc)
+                except Exception:
+                    logger.exception("--watch: watcher thread crashed; plugin auto-reload disabled")
 
             _threading.Thread(target=_plugin_watcher, daemon=True, name="m3-watcher").start()
         except ImportError:
@@ -976,6 +979,16 @@ def main() -> None:
             name="m3-web",
         )
         web_thread.start()
+
+        def _web_watchdog():
+            web_thread.join()
+            logger.error(
+                "Web server thread exited unexpectedly — dashboard is offline. "
+                "Check logs for uvicorn errors."
+            )
+
+        threading.Thread(target=_web_watchdog, daemon=True, name="m3-web-watchdog").start()
+
         if debug_mode:
             logger.info(
                 "Web dashboard started on http://%s:%d (DEBUG mode — "
@@ -1010,6 +1023,8 @@ def main() -> None:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler stopped")
+    except Exception:
+        logger.exception("Scheduler crashed unexpectedly")
 
 
 if __name__ == "__main__":

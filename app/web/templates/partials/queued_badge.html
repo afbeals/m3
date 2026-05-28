@@ -1,7 +1,1 @@
-<span class="badge badge-updated" id="queued-{{ slot_id }}" style="opacity:1; transition:opacity 1.5s ease 1.5s;">queued</span>
-<script>
-  (function() {
-    var el = document.getElementById('queued-{{ slot_id }}');
-    if (el) { setTimeout(function(){ el.style.opacity = '0'; }, 50); }
-  })();
-</script>
+<span class="badge badge-updated queued-fade">queued</span>

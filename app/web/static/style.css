@@ -205,6 +205,7 @@ button.primary:hover { background: #234d28; }
   transition: opacity 0.15s, color 0.15s;
 }
 tr:hover .copy-btn { opacity: 1; }
+tr:focus-within .copy-btn { opacity: 1; }
 .copy-btn:hover { color: var(--text); background: none; }
 
 .trigger-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
@@ -279,7 +280,16 @@ button:focus-visible,
 .btn:focus-visible,
 a.stat-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
+/* ---- Queued badge fade-out ---- */
+@keyframes queued-fade {
+  0%   { opacity: 1; }
+  50%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.queued-fade { animation: queued-fade 3s ease forwards; }
+
 /* ---- Mobile ---- */
 @media (max-width: 600px) {
   header { flex-wrap: wrap; gap: 0.75rem; }
+  nav { flex-wrap: wrap; }
 }
