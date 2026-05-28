@@ -90,9 +90,10 @@ class Config:
     # any HTTP endpoint that accepts JSON (Apprise, Gotify, Pushover relay, etc.).
     notify_url: str = ""
 
-    # Minimum combined error count (errors + scrape_errors) required before the
-    # webhook fires. Default 0 = fire after every run. Set to 1 to only be notified
-    # when something actually broke; the dashboard is always available for clean-run history.
+    # Minimum combined error count (errors + scrape_errors + image_errors) required
+    # before the webhook fires. Default 0 = fire after every run. Set to 1 to only
+    # be notified when something actually broke; the dashboard is always available
+    # for clean-run history.
     notify_min_errors: int = 0
 
     # When True, re-process files that already have .nfo sidecars.
@@ -198,6 +199,13 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
 
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
     web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
+    _KNOWN_FALSE = {"false", "0", "no", "off", ""}
+    if web_enabled_raw and web_enabled_raw not in {"true", "1", "yes", "on"} | _KNOWN_FALSE:
+        logger.warning(
+            "WEB_ENABLED=%r is not a recognised boolean value; treating as False. "
+            "Use 'true', '1', 'yes', or 'on' to enable.",
+            web_enabled_raw,
+        )
 
     plex_url = require_or_empty("PLEX_URL")
     if plex_required:

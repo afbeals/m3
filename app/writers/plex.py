@@ -100,6 +100,7 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                             _fallback_cache[part.file] = item
                         if part.file == file_path:
                             found = item
+                            break  # stop scanning parts of this item; outer loop will break too
             if found is not None:
                 # Break as soon as we find the target. This means sections scanned after
                 # this point are not cached, but we avoid scanning the entire library
@@ -266,7 +267,8 @@ def push_nfo_to_plex(
             edits["contentRating.locked"] = 1
         if year_str := _text("year"):
             try:
-                edits["year.value"] = int(year_str)
+                raw_year = year_str
+                edits["year.value"] = int(float(raw_year))
                 edits["year.locked"] = 1
             except ValueError:
                 pass

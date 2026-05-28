@@ -134,9 +134,13 @@ class MetadataResult:
                 raise ValueError(
                     f"rating must be a finite number 0–10, got {self.rating!r}"
                 )
-        # Guard against plugins passing str(None) = "None" as source_id
-        if self.source_id is not None and self.source_id.strip().lower() in ("none", ""):
-            self.source_id = None
+        # Guard against plugins passing str(None) = "None" as source_id, summary,
+        # content_rating, or source_url (common mistake when building results from
+        # API responses that may return Python None coerced to the string "None").
+        for str_field in ("source_id", "summary", "content_rating", "source_url"):
+            val = getattr(self, str_field, None)
+            if isinstance(val, str) and val.strip().lower() in ("none", ""):
+                setattr(self, str_field, None)
 
 
 class MetadataPlugin(ABC):

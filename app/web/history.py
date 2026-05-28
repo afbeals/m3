@@ -39,6 +39,32 @@ _unmatched_cache: dict[tuple, tuple] = {}  # key → ((newest_mtime, file_count)
 # because individual dict reads are atomic under CPython's GIL.
 _cache_lock = threading.Lock()
 
+# Cache for trigger records: maps file_path → list of trigger history entries.
+# Rebuilt whenever the set of trigger_*.json files changes (count or newest mtime).
+_trigger_cache: dict[str, list[dict]] = {}  # file_path → list of trigger records
+_trigger_cache_key: tuple | None = None     # (count, newest_mtime) of trigger_*.json files
+_trigger_cache_lock = threading.Lock()
+
+
+def _trigger_invalidation_key(report_path: str) -> tuple[int, float | None]:
+    """Return (count, newest_mtime) for trigger_*.json files in report_path."""
+    if not os.path.isdir(report_path):
+        return (0, None)
+    try:
+        names = [f for f in os.listdir(report_path) if f.startswith("trigger_") and f.endswith(".json")]
+        count = len(names)
+        newest_mtime: float | None = None
+        for f in names:
+            try:
+                mtime = os.path.getmtime(os.path.join(report_path, f))
+                if newest_mtime is None or mtime > newest_mtime:
+                    newest_mtime = mtime
+            except OSError:
+                pass
+        return (count, newest_mtime)
+    except OSError:
+        return (0, None)
+
 
 # NOTE: The invalidation key only watches run_*.json files. Changes to trigger_*.json
 # (manual retriggered files) do NOT invalidate the list_runs or unmatched caches.
@@ -49,13 +75,18 @@ def _run_invalidation_key(report_path: str) -> tuple[float | None, int]:
     file_count = 0
     if os.path.isdir(report_path):
         try:
-            report_files = sorted(
-                (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")),
-                reverse=True,
-            )
-            file_count = len(report_files)
-            if report_files:
-                newest_mtime = os.path.getmtime(os.path.join(report_path, report_files[0]))
+            names = [f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")]
+            file_count = len(names)
+            # Sort by actual mtime so the truly newest file is first, not lexicographic order.
+            mtimes: list[tuple[float, str]] = []
+            for f in names:
+                try:
+                    mtimes.append((os.path.getmtime(os.path.join(report_path, f)), f))
+                except OSError:
+                    # File disappeared between listdir and getmtime — skip it.
+                    file_count -= 1
+            if mtimes:
+                newest_mtime = max(mtimes, key=lambda t: t[0])[0]
         except OSError:
             pass
     return (newest_mtime, file_count)
@@ -264,36 +295,48 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
                 })
                 break  # only one entry per run
 
-    # Trigger records are not cached (infrequent and small); read directory directly.
-    try:
-        raw = os.listdir(report_path) if os.path.isdir(report_path) else []
-    except OSError:
-        logger.warning("Could not list report directory: %s", report_path)
-        raw = []
+    # Trigger records: use a simple cache keyed by file_path.
+    # Rebuild the entire per-file mapping when trigger_*.json files change.
+    global _trigger_cache, _trigger_cache_key  # noqa: PLW0603
+    current_trigger_key = _trigger_invalidation_key(report_path)
+    with _trigger_cache_lock:
+        if _trigger_cache_key != current_trigger_key:
+            # Invalidate and rebuild: scan all trigger files once.
+            new_cache: dict[str, list[dict]] = {}
+            try:
+                raw = os.listdir(report_path) if os.path.isdir(report_path) else []
+            except OSError:
+                logger.warning("Could not list report directory: %s", report_path)
+                raw = []
+            trigger_files = sorted(
+                (f for f in raw if f.startswith("trigger_") and f.endswith(".json")),
+                reverse=True,
+            )
+            for fname in trigger_files:
+                fpath = os.path.join(report_path, fname)
+                try:
+                    with open(fpath, encoding="utf-8") as fh:
+                        data = json.load(fh)
+                except Exception as exc:
+                    logger.warning("Could not read trigger record %s: %s", fpath, exc)
+                    continue
+                for f in data.get("files", []):
+                    fp = f.get("path", "")
+                    if not fp:
+                        continue
+                    new_cache.setdefault(fp, []).append({
+                        "run_filename": fname,
+                        "started_at": data.get("started_at", ""),
+                        "status": f.get("status", ""),
+                        "message": f.get("message", ""),
+                        "trigger": True,
+                    })
+            _trigger_cache = new_cache
+            _trigger_cache_key = current_trigger_key
 
-    trigger_files = sorted(
-        (f for f in raw if f.startswith("trigger_") and f.endswith(".json")),
-        reverse=True,
-    )
+        trigger_entries = list(_trigger_cache.get(file_path, []))
 
-    for fname in trigger_files[:max_runs]:
-        fpath = os.path.join(report_path, fname)
-        try:
-            with open(fpath, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception as exc:
-            logger.warning("Could not read trigger record %s: %s", fpath, exc)
-            continue
-        for f in data.get("files", []):
-            if f.get("path") == file_path:
-                history.append({
-                    "run_filename": fname,
-                    "started_at": data.get("started_at", ""),
-                    "status": f.get("status", ""),
-                    "message": f.get("message", ""),
-                    "trigger": True,
-                })
-                break
+    history.extend(trigger_entries)
 
     def _safe_dt(e):
         try:

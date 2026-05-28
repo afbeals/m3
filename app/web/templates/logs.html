@@ -8,7 +8,7 @@
     <span class="muted" style="font-size:0.8rem;">Last {{ tail }} lines · {{ log_path | basename }}</span>
     <a href="/logs?tail={{ tail }}" class="btn"
        style="font-size:0.8rem; padding:0.2rem 0.6rem;"
-       hx-get="/logs?tail={{ tail }}"
+       hx-get="/api/log-panel?tail={{ tail }}"
        hx-target="#log-panel"
        hx-swap="innerHTML"
        title="Refresh log">↺ Refresh</a>
@@ -31,7 +31,7 @@
 </div>
 
 <div id="log-panel"
-     hx-get="/logs?tail={{ tail }}"
+     hx-get="/api/log-panel?tail={{ tail }}"
      hx-trigger="every 30s"
      hx-swap="innerHTML">
 {% if error %}

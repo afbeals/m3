@@ -4,11 +4,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -98,6 +101,11 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
             now = datetime.now(timezone.utc) if dt.tzinfo else datetime.now()
             raw_secs = (now - dt).total_seconds()
             if raw_secs < 0:
+                logger.debug(
+                    "_time_ago: future timestamp %r (%.1fs ahead of server clock); "
+                    "check for clock skew or timezone mismatch",
+                    iso_str, -raw_secs,
+                )
                 return ""
             secs = int(raw_secs)
             if secs < 60:

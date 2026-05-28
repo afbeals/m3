@@ -432,6 +432,8 @@ def trigger_run(request: Request):
     run_fn = request.app.state.run_fn
     if scheduler is None or run_fn is None:
         raise HTTPException(status_code=503, detail="Scheduler not available")
+    if not scheduler.running:
+        raise HTTPException(status_code=503, detail="Scheduler not ready")
     try:
         scheduler.add_job(run_fn, id="manual_trigger", replace_existing=True)
         logger.info("Manual run triggered via web UI")
@@ -680,15 +682,19 @@ def _strip_ansi(lines: list[str]) -> list[str]:
     return [_ANSI_RE.sub('', line) for line in lines]
 
 
-@router.get("/logs", response_class=HTMLResponse)
-def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
-    tail = max(1, min(tail, _LOG_TAIL_MAX))
-    config = request.app.state.config
+def _read_log_lines(config, tail: int) -> tuple[list[str], str | None, str]:
+    """Read the last ``tail`` lines from the configured log file.
+
+    Returns (lines, error, log_path).  On success ``error`` is None and
+    ``lines`` contains the stripped log content.  On failure ``lines`` is
+    empty and ``error`` is a human-readable message.
+    """
     log_path = os.path.join(config.log_path, f"{config.app_name}.log")
-    if not Path(log_path).resolve().is_relative_to(Path(config.log_path).resolve()):
-        raise HTTPException(status_code=403, detail="Forbidden")
     lines: list[str] = []
     error: str | None = None
+    if not Path(log_path).resolve().is_relative_to(Path(config.log_path).resolve()):
+        error = "Forbidden"
+        return lines, error, log_path
     try:
         if not os.path.isfile(log_path):
             error = f"Log file not found: {log_path}"
@@ -701,8 +707,31 @@ def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
             lines = _strip_ansi(lines)
     except OSError as exc:
         error = f"Could not read log file: {exc}"
+    return lines, error, log_path
+
+
+@router.get("/logs", response_class=HTMLResponse)
+def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
+    tail = max(1, min(tail, _LOG_TAIL_MAX))
+    lines, error, log_path = _read_log_lines(request.app.state.config, tail)
+    if error == "Forbidden":
+        raise HTTPException(status_code=403, detail="Forbidden")
     return request.app.state.templates.TemplateResponse(
         request,
         "logs.html",
+        {"lines": lines, "error": error, "tail": tail, "log_path": log_path},
+    )
+
+
+@router.get("/api/log-panel", response_class=HTMLResponse)
+def log_panel_partial(request: Request, tail: int = _LOG_TAIL_LINES):
+    """Return only the inner log panel content (no base layout) for HTMX partial refresh."""
+    tail = max(1, min(tail, _LOG_TAIL_MAX))
+    lines, error, log_path = _read_log_lines(request.app.state.config, tail)
+    if error == "Forbidden":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "partials/log_panel.html",
         {"lines": lines, "error": error, "tail": tail, "log_path": log_path},
     )

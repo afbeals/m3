@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -148,7 +149,7 @@ def cleanup_old_files(
                 is_rotated_log_backup = (
                     pattern_suffix == ".log"
                     and fname.startswith(f"{active_log}.")
-                    and fname[len(active_log) + 1:].isdigit()
+                    and bool(re.fullmatch(r"[0-9]+", fname[len(active_log) + 1:]))
                 )
                 if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
                     continue

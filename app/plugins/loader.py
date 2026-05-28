@@ -122,22 +122,30 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                 logger.exception("Failed to instantiate plugin class %s in %s; skipping", obj.__name__, fname)
                 continue
             # Register the plugin under its site_id and every alias
-            for key in dict.fromkeys(instance.all_ids()):
-                if key in registry:
-                    evicted = registry[key]
-                    logger.error(
-                        "Plugin %r already registered for id %r; overwriting with %s — "
-                        "remove the duplicate from your plugin directory.",
-                        type(evicted).__name__, key, obj.__name__,
-                    )
-                    # Remove ALL keys pointing to the evicted instance before closing it
-                    # so no stale references remain after close().
-                    stale_keys = [k for k, v in registry.items() if v is evicted]
-                    for k in stale_keys:
+            try:
+                for key in dict.fromkeys(instance.all_ids()):
+                    if key in registry:
+                        evicted = registry[key]
+                        logger.error(
+                            "Plugin %r already registered for id %r; overwriting with %s — "
+                            "remove the duplicate from your plugin directory.",
+                            type(evicted).__name__, key, obj.__name__,
+                        )
+                        # Remove ALL keys pointing to the evicted instance before closing it
+                        # so no stale references remain after close().
+                        stale_keys = [k for k, v in registry.items() if v is evicted]
+                        for k in stale_keys:
+                            del registry[k]
+                        evicted.close()
+                    registry[key] = instance
+                    logger.info("Registered plugin %s for id %r", obj.__name__, key)
+            except Exception:
+                logger.exception("Failed to register plugin %s — skipping", obj.__name__)
+                # Clean up any partially-registered keys for this instance
+                for k in list(registry):
+                    if registry[k] is instance:
                         del registry[k]
-                    evicted.close()
-                registry[key] = instance
-                logger.info("Registered plugin %s for id %r", obj.__name__, key)
+                continue
 
         # Clean up sys.modules after successful extraction to prevent stale
         # module references from accumulating across reloads.

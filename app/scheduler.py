@@ -87,7 +87,12 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
                         registry.update(new_registry)
                     finally:
                         if paused:
-                            scheduler.resume()
+                            try:
+                                scheduler.resume()
+                            except Exception as resume_exc:
+                                logger.warning(
+                                    "Plugin reload: could not resume scheduler after reload: %s", resume_exc
+                                )
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
             except Exception as exc:
                 logger.warning("Plugin reload failed: %s", exc)

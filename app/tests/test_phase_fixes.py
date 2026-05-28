@@ -52,7 +52,9 @@ def test_hyphenated_with_trailing_numeric_id_is_slug():
     result = parse("Jane Doe % mysite - Stranger-Than-Fiction 77675")
     assert result is not None
     assert result.match_subtype == "exact"
-    assert result.direct_url == "Stranger-Than-Fiction 77675"
+    # DC2 fix: slug and id are split — direct_url holds only the slug part
+    assert result.direct_url == "Stranger-Than-Fiction"
+    assert result.scene_id == "77675"
 
 
 # ---------------------------------------------------------------------------

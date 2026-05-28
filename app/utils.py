@@ -54,7 +54,13 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
         raise TimeoutError(f"{description} exceeded {timeout_secs:.0f}s")
     if exc_holder:
         raise exc_holder[0]
-    return result_holder[0] if result_holder else None  # type: ignore[return-value]
+    if not result_holder:
+        # This should never happen — means fn() returned without a result or exception
+        raise RuntimeError(
+            f"call_with_timeout: worker thread completed without a result or exception "
+            f"(timeout_secs={timeout_secs!r}). This is a bug."
+        )
+    return result_holder[0]
 
 
 def retry_with_backoff(
@@ -81,6 +87,8 @@ def retry_with_backoff(
     Note: uses time.sleep() which blocks the calling thread. This is intentional
     for m3's single-threaded run() path. Do not call from async code.
     """
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts must be >= 1, got {max_attempts!r}")
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:

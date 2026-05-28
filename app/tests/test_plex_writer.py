@@ -392,6 +392,51 @@ def test_push_nfo_to_plex_does_not_remove_when_nfo_has_no_list_fields(tmp_path):
     mock_item.removeTags.assert_not_called()
 
 
+def test_push_nfo_to_plex_tolerates_float_year_string(tmp_path):
+    """NFOs written by some tools may have year="2023.0"; must not raise ValueError."""
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = str(tmp_path / "Scene.nfo")
+    _write_nfo(nfo, title="Scene", year="2023.0")
+
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        result = push_nfo_to_plex(mock_server, "/media/Scene.mp4", nfo)
+
+    assert result is True
+    call_kwargs = mock_item.edit.call_args.kwargs
+    assert call_kwargs["year.value"] == 2023
+    assert call_kwargs["year.locked"] == 1
+
+
+def test_find_plex_item_uses_fallback_cache_on_second_call(tmp_path):
+    """Second call with same path and populated cache must skip the slow scan."""
+    cache = {}
+    mock_server = MagicMock()
+    mock_part = MagicMock()
+    mock_part.file = "/media/movie.mp4"
+    mock_media_obj = MagicMock()
+    mock_media_obj.parts = [mock_part]
+    mock_item = MagicMock()
+    mock_item.media = [mock_media_obj]
+    mock_section = MagicMock()
+    mock_section.search.return_value = [mock_item]
+    mock_server.library.search.return_value = []  # force slow path
+    mock_server.library.sections.return_value = [mock_section]
+
+    result1 = find_plex_item(mock_server, "/media/movie.mp4", _fallback_cache=cache)
+    assert result1 is mock_item
+    assert "/media/movie.mp4" in cache
+
+    # Reset call counts
+    mock_server.library.sections.reset_mock()
+
+    result2 = find_plex_item(mock_server, "/media/movie.mp4", _fallback_cache=cache)
+    assert result2 is mock_item
+    mock_server.library.sections.assert_not_called()  # must use cache, not scan
+
+
 def test_connect_plex_returns_none_on_timeout(caplog):
     """connect_plex must return None and emit a WARNING when call_with_timeout raises TimeoutError.
 

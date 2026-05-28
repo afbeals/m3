@@ -54,6 +54,14 @@ _CONTENT_TYPE_EXT = {
 _IMAGE_EXTENSIONS = (".jpg", ".png", ".webp")
 
 
+def _resolve_art_filename(stem: str, kind: str, dirpath: str) -> str:
+    """Return the actual sidecar filename, probing for the right extension."""
+    for ext in _IMAGE_EXTENSIONS:
+        if os.path.exists(os.path.join(dirpath, f"{stem}-{kind}{ext}")):
+            return f"{stem}-{kind}{ext}"
+    return f"{stem}-{kind}.jpg"  # fallback when no image exists yet
+
+
 def write_nfo(
     media: MediaFile,
     result: MetadataResult,
@@ -106,12 +114,13 @@ def write_nfo(
     # (plex.py: uploadPoster / uploadArt) handles artwork independently via the API.
     if result.poster_url or result.fanart_url:
         art_el = etree.SubElement(root, "art")
+        nfo_dir = os.path.dirname(media.nfo_path)
         if result.poster_url:
             p = etree.SubElement(art_el, "poster")
-            p.text = poster_filename or f"{media.stem}-poster.jpg"
+            p.text = poster_filename or _resolve_art_filename(media.stem, "poster", nfo_dir)
         if result.fanart_url:
             f = etree.SubElement(art_el, "fanart")
-            f.text = fanart_filename or f"{media.stem}-fanart.jpg"
+            f.text = fanart_filename or _resolve_art_filename(media.stem, "fanart", nfo_dir)
 
     # Source URL and unique ID for traceability back to the originating site
     add("source", result.source_url)
@@ -270,7 +279,15 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
                     old_text = el.text
                     # Extract extension from the existing value; default to .jpg
                     _, existing_ext = os.path.splitext(old_text)
-                    ext = existing_ext if existing_ext in _IMAGE_EXTENSIONS else ".jpg"
+                    if existing_ext not in _IMAGE_EXTENSIONS:
+                        # Probe for the actual image file on disk
+                        for probe_ext in _IMAGE_EXTENSIONS:
+                            if os.path.exists(os.path.join(dirpath, f"{old_stem}{base_suffix}{probe_ext}")):
+                                existing_ext = probe_ext
+                                break
+                        else:
+                            existing_ext = ".jpg"  # fallback when no image exists yet
+                    ext = existing_ext
                     el.text = f"{new_stem}{base_suffix}{ext}"
         # Use the same header format as write_nfo (double-quoted, uppercase UTF-8)
         # so the file is byte-for-byte consistent before and after a rename.

@@ -118,19 +118,19 @@ def scan_library(
     results: list[MediaFile] = []
     skipped = 0
 
+    # Compile exclude patterns once for the entire scan, not per library path.
+    # os.walk yields backslash paths on Windows, so we pre-normalize patterns
+    # to forward slashes before compiling for consistent behaviour.
+    _compiled_pats = [
+        re.compile(_fnmatch.translate(p.replace("\\", "/")))
+        for p in exclude_patterns
+    ]
+
     for lib_path in _dedup_paths(library_paths):
         # Warn and skip paths that don't exist (e.g. misconfigured volume mount)
         if not os.path.isdir(lib_path):
             logger.warning("Library path not found, skipping: %s", lib_path)
             continue
-
-        # Pre-compile exclude patterns once per library path (not per file).
-        # os.walk yields backslash paths on Windows, so we pre-normalize patterns
-        # to forward slashes before compiling for consistent behaviour.
-        _compiled_pats = [
-            re.compile(_fnmatch.translate(p.replace("\\", "/")))
-            for p in exclude_patterns
-        ]
 
         def _walk_onerror(err, _lib=lib_path):
             logger.warning("Scanner: cannot access %s: %s", err.filename, err)

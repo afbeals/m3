@@ -28,7 +28,6 @@ import glob
 import json
 import logging
 import os
-import threading
 import time
 import traceback as _tb
 from datetime import datetime, timezone
@@ -58,10 +57,6 @@ from app.writers.nfo import write_nfo, write_images, rename_nfo_assets
 from app.writers.plex import connect_plex, push_to_plex, push_nfo_to_plex
 
 logger = logging.getLogger(__name__)
-
-# Module-level stop event used to make rate-limit sleeps interruptible.
-# Callers can set this event to wake run() out of its inter-fetch sleep.
-_stop_event = threading.Event()
 
 _WEBHOOK_TIMEOUT_SECS = 10
 _TRACEBACK_LIMIT = 5
@@ -356,7 +351,7 @@ def run(
                 report.record(FileResult(
                     path=media.path,
                     status="image_error",
-                    message="NFO written but one or more images failed to download",
+                    message="NFO not written — one or more images failed to download",
                 ))
                 # Images failed; skip NFO write and Plex push
                 continue
@@ -412,8 +407,8 @@ def run(
     if dry_run:
         logger.info(
             "[DRY RUN] Skipping report write. "
-            "updated=%d renamed=%d skipped=%d unmatched=%d scrape_errors=%d image_errors=%d errors=%d",
-            report.updated, report.renamed, report.skipped, report.unmatched,
+            "updated=%d renamed=%d skipped=%d unmatched=%d add_form=%d scrape_errors=%d image_errors=%d errors=%d",
+            report.updated, report.renamed, report.skipped, report.unmatched, report.add_form,
             report.scrape_errors, report.image_errors, report.errors,
         )
     else:
@@ -443,14 +438,14 @@ def run(
     )
 
 
-def _run_with_media(config: Config, router: Router, media_files: list[MediaFile]) -> None:
+def _run_with_media(config: Config, router: Router, media_files: list[MediaFile], dry_run: bool = False) -> None:
     """Run a targeted pass over a pre-built list of MediaFile objects.
 
     Used by --retry-failed to re-process specific files without triggering a
     full library scan. Connects to Plex and writes the run report exactly as
     a normal run does.
     """
-    run(config, router, media_files_override=media_files)
+    run(config, router, media_files_override=media_files, dry_run=dry_run)
 
 
 def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> None:
@@ -914,7 +909,7 @@ def main() -> None:
         )
 
         _sweep_tmp_orphans(config.library_paths)
-        _run_with_media(config, router, retry_media)
+        _run_with_media(config, router, retry_media, dry_run=args.dry_run)
         raise SystemExit(0)
 
     # Sweep any stale .tmp orphans from previous interrupted writes before running.

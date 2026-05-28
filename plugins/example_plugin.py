@@ -181,8 +181,14 @@ class ExampleSitePlugin(MetadataPlugin):
             return r.json()
         except httpx.HTTPStatusError as exc:
             logger.warning("[examplesite] HTTP %s for %s", exc.response.status_code, url)
+        except httpx.TimeoutException as exc:
+            logger.warning("[examplesite] Request timed out for %s: %s", url, exc)
+            raise  # main.py will catch this and record status="scrape_error"
+        except httpx.ConnectError as exc:
+            logger.warning("[examplesite] Connection error for %s: %s", url, exc)
+            raise
         except Exception:
-            logger.exception("[examplesite] Request failed: %s", url)
+            logger.exception("[examplesite] Unexpected error fetching %s", url)
 
         return None
 

@@ -26,25 +26,29 @@
   </thead>
   <tbody>
     {% for run in runs %}
-    {% set total_scanned = run.total_scanned or 0 %}
-    {% set skipped = run.get('skipped') or 0 %}
-    {% set renamed_cnt = run.get('renamed') or 0 %}
+    {% set total_scanned = run.get('total_scanned', 0) or 0 %}
+    {% set skipped = run.get('skipped', 0) or 0 %}
+    {% set renamed_cnt = run.get('renamed', 0) or 0 %}
+    {% set updated_cnt = run.get('updated', 0) or 0 %}
+    {% set scrape_errors_cnt = run.get('scrape_errors', 0) or 0 %}
+    {% set errors_cnt = run.get('errors', 0) or 0 %}
+    {% set unmatched_cnt = run.get('unmatched', 0) or 0 %}
     {% set processable = [total_scanned - skipped - renamed_cnt, 0] | max %}
-    {% set success_pct = ((run.updated / processable * 100) | int) if processable > 0 else None %}
-    {% set ago = time_ago(run.started_at) %}
+    {% set success_pct = ((updated_cnt / processable * 100) | int) if processable > 0 else None %}
+    {% set ago = time_ago(run.get('started_at')) %}
     <tr>
-      <td>{{ run.started_at or "—" }}{% if ago %} <span class="muted" style="font-size:0.75rem;">({{ ago }})</span>{% endif %}</td>
+      <td>{{ run.get('started_at') or "—" }}{% if ago %} <span class="muted" style="font-size:0.75rem;">({{ ago }})</span>{% endif %}</td>
       <td class="muted">{{ fmt_duration(run.get('duration_seconds')) }}</td>
-      <td class="{% if run.updated > 0 %}stat-value green{% endif %}">{% if run.updated > 0 %}✓ {% endif %}{{ run.updated }}</td>
+      <td class="{% if updated_cnt > 0 %}stat-value green{% endif %}">{% if updated_cnt > 0 %}✓ {% endif %}{{ updated_cnt }}</td>
       <td class="{% if renamed_cnt > 0 %}stat-value blue{% endif %} muted">{{ renamed_cnt if renamed_cnt > 0 else 0 }}</td>
       <td class="muted">{{ success_pct ~ "%" if success_pct is not none else "—" }}</td>
-      <td class="{% if run.scrape_errors > 0 %}stat-value yellow{% endif %}">{% if run.scrape_errors > 0 %}⚠ {% endif %}{{ run.scrape_errors }}</td>
-      <td class="{% if run.errors > 0 %}stat-value red{% endif %}">{% if run.errors > 0 %}✗ {% endif %}{{ run.errors }}</td>
-      <td class="{% if run.unmatched > 0 %}stat-value yellow{% endif %}">{% if run.unmatched > 0 %}⚠ {% endif %}{{ run.unmatched }}</td>
-      {% set add_form_cnt = run.get('add_form') or 0 %}
+      <td class="{% if scrape_errors_cnt > 0 %}stat-value yellow{% endif %}">{% if scrape_errors_cnt > 0 %}⚠ {% endif %}{{ scrape_errors_cnt }}</td>
+      <td class="{% if errors_cnt > 0 %}stat-value red{% endif %}">{% if errors_cnt > 0 %}✗ {% endif %}{{ errors_cnt }}</td>
+      <td class="{% if unmatched_cnt > 0 %}stat-value yellow{% endif %}">{% if unmatched_cnt > 0 %}⚠ {% endif %}{{ unmatched_cnt }}</td>
+      {% set add_form_cnt = run.get('add_form', 0) or 0 %}
       <td class="{% if add_form_cnt > 0 %}stat-value{% endif %} muted">{{ add_form_cnt }}</td>
       <td class="muted">{{ total_scanned }}</td>
-      <td><a href="/runs/{{ run.filename }}">detail →</a></td>
+      <td><a href="/runs/{{ run.get('filename', '') }}">detail →</a></td>
     </tr>
     {% endfor %}
   </tbody>

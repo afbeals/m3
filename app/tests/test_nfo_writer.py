@@ -119,6 +119,31 @@ def test_write_nfo_art_block_references_sidecar_names(tmp_path):
     assert "My Movie-fanart.jpg" in nfo
 
 
+def test_write_nfo_art_block_uses_provided_webp_filename(tmp_path):
+    media = _make_media(tmp_path, name="My Scene")
+    result = _make_result(poster_url="http://x.com/p.webp", fanart_url=None)
+
+    write_nfo(media, result, poster_filename="My Scene-poster.webp")
+
+    content = open(media.nfo_path, encoding="utf-8").read()
+    assert "My Scene-poster.webp" in content
+    assert "My Scene-poster.jpg" not in content
+
+
+def test_write_nfo_art_block_probes_disk_for_webp_when_no_filename(tmp_path):
+    """When poster_filename is None and a .webp sidecar exists, the NFO must reference it."""
+    media = _make_media(tmp_path, name="My Scene")
+    # Create a .webp image on disk next to the (future) NFO
+    (tmp_path / "My Scene-poster.webp").write_bytes(b"webp")
+
+    result = _make_result(poster_url="http://x.com/p.webp", fanart_url=None)
+    write_nfo(media, result)
+
+    content = open(media.nfo_path, encoding="utf-8").read()
+    assert "My Scene-poster.webp" in content
+    assert "My Scene-poster.jpg" not in content
+
+
 def test_write_nfo_no_art_block_when_no_urls(tmp_path):
     media = _make_media(tmp_path)
     write_nfo(media, _make_result(poster_url=None, fanart_url=None))
@@ -524,6 +549,61 @@ class TestRenameNfoAssets:
         content = dst_nfo.read_text(encoding="utf-8")
         assert "Old Title" in content, "Destination NFO must contain the source title after overwrite"
         assert "Pre-existing Title" not in content, "Pre-existing destination title must be replaced"
+
+    def test_rename_nfo_assets_preserves_webp_extension(self, tmp_path):
+        old_stem = "Old Scene"
+        new_stem = "New Scene"
+        nfo_path = tmp_path / f"{old_stem}.nfo"
+
+        # Write NFO with .webp poster reference
+        root = etree.Element("movie")
+        etree.SubElement(root, "title").text = old_stem
+        art = etree.SubElement(root, "art")
+        etree.SubElement(art, "poster").text = f"{old_stem}-poster.webp"
+        etree.ElementTree(root).write(str(nfo_path), encoding="utf-8", xml_declaration=True)
+
+        # Create the .webp image
+        (tmp_path / f"{old_stem}-poster.webp").write_bytes(b"webp")
+
+        from app.writers.nfo import rename_nfo_assets
+        rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+
+        new_nfo = tmp_path / f"{new_stem}.nfo"
+        assert new_nfo.exists()
+        assert (tmp_path / f"{new_stem}-poster.webp").exists()
+        assert not (tmp_path / f"{new_stem}-poster.jpg").exists()
+
+        tree = etree.parse(str(new_nfo))
+        poster_el = tree.find("art/poster")
+        assert poster_el is not None
+        assert poster_el.text == f"{new_stem}-poster.webp"
+
+    def test_rename_nfo_assets_probes_disk_when_nfo_art_ext_unknown(self, tmp_path):
+        """When NFO art block has no recognized extension, probe disk for actual image."""
+        old_stem = "Old Scene"
+        new_stem = "New Scene"
+        nfo_path = tmp_path / f"{old_stem}.nfo"
+
+        # Write NFO with an unrecognized extension in the art block
+        root = etree.Element("movie")
+        etree.SubElement(root, "title").text = old_stem
+        art = etree.SubElement(root, "art")
+        etree.SubElement(art, "poster").text = f"{old_stem}-poster.unknown"
+        etree.ElementTree(root).write(str(nfo_path), encoding="utf-8", xml_declaration=True)
+
+        # Actual image on disk is .png
+        (tmp_path / f"{old_stem}-poster.png").write_bytes(b"png")
+
+        from app.writers.nfo import rename_nfo_assets
+        rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+
+        new_nfo = tmp_path / f"{new_stem}.nfo"
+        assert new_nfo.exists()
+        # The renamed NFO should reference .png (probed from disk), not .jpg
+        tree = etree.parse(str(new_nfo))
+        poster_el = tree.find("art/poster")
+        assert poster_el is not None
+        assert poster_el.text == f"{new_stem}-poster.png"
 
     def test_rename_nfo_assets_partial_art_poster_only(self, tmp_path):
         from app.writers.nfo import rename_nfo_assets

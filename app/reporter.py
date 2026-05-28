@@ -199,7 +199,7 @@ def write_report(
 
     image_error_files = by_status.get("image_error", [])
     if image_error_files:
-        lines.append("Image errors (NFO written, images missing):")
+        lines.append("Image errors (NFO not written — images failed to download):")
         for f in image_error_files:
             lines.append(f"  {f.path}")
             if f.message:

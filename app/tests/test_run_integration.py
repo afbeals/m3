@@ -612,6 +612,9 @@ def test_run_image_error_when_write_images_returns_false(tmp_path):
     report = mock_report.call_args.args[0]
     assert report.image_errors == 1
     assert report.updated == 0
+    # DC4: message must say "not written" (not "NFO written")
+    image_error_result = next(f for f in report.files if f.status == "image_error")
+    assert "not written" in (image_error_result.message or "").lower()
 
 
 # ---------------------------------------------------------------------------

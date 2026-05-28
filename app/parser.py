@@ -203,7 +203,15 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     if not text_tokens:
         match_subtype = "exact"
     elif len(text_tokens) == 1 and _looks_like_url_slug(text_tokens[0]):
-        direct_url = text_tokens[0]
+        tok = text_tokens[0]
+        if " " in tok:
+            # "Stranger-Than-Fiction 77675" → direct_url="Stranger-Than-Fiction", scene_id="77675"
+            slug_part, id_part = tok.rsplit(" ", 1)
+            direct_url = slug_part
+            if scene_id is None:
+                scene_id = id_part
+        else:
+            direct_url = tok
         # URL slug is the authoritative lookup; preserve any scene_id found earlier —
         # the plugin can use both for more precise matching.
         match_subtype = "exact"

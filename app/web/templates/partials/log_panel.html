@@ -1,0 +1,10 @@
+{% if error %}
+<div class="card muted">{{ error }}</div>
+{% elif lines %}
+<div class="card" style="padding:0.75rem 1rem; overflow-x:auto;">
+  <pre id="log-pre" style="margin:0; font-size:0.75rem; line-height:1.5; white-space:pre-wrap; word-break:break-all;">{% for line in lines %}<span class="log-line">{{ line }}</span>
+{% endfor %}</pre>
+</div>
+{% else %}
+<div class="card muted">Log file is empty.</div>
+{% endif %}
