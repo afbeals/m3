@@ -108,14 +108,6 @@ def test_find_plex_item_returns_none_on_exception():
 # push_to_plex — field writes
 # ---------------------------------------------------------------------------
 
-def _server_with_item(item=None):
-    """Return a mock server whose find path returns the given item."""
-    mock_server = MagicMock()
-    if item is None:
-        item = MagicMock()
-    with patch("app.writers.plex.find_plex_item", return_value=item):
-        yield mock_server, item
-
 
 def test_push_to_plex_returns_false_when_item_not_found():
     mock_server = MagicMock()
@@ -138,8 +130,8 @@ def test_push_to_plex_calls_edit_with_scalar_fields():
     assert call_kwargs["year.value"] == 2023
 
 
-def test_push_to_plex_clears_list_fields_before_writing():
-    """Genres/labels/tags/actors must be cleared first so re-runs don't accumulate stale values."""
+def test_push_to_plex_removes_stale_list_fields_after_adding_new():
+    """Genres/labels/tags/actors must be added first, then cleared so re-runs don't accumulate stale values."""
     mock_item = MagicMock()
     mock_server = MagicMock()
     with patch("app.writers.plex.find_plex_item", return_value=mock_item):
@@ -149,6 +141,22 @@ def test_push_to_plex_clears_list_fields_before_writing():
     mock_item.removeLabels.assert_called_once()
     mock_item.removeTags.assert_called_once()
     mock_item.removeActors.assert_called_once()
+
+    # Verify add-before-remove ordering: addGenre must come before removeGenres
+    call_names = [c[0] for c in mock_item.method_calls]
+    add_idx = call_names.index("addGenre")
+    remove_idx = call_names.index("removeGenres")
+    assert add_idx < remove_idx, "addGenre must be called before removeGenres"
+
+
+def test_push_to_plex_does_not_clear_genres_when_empty():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    result = _make_result(genres=[])
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", result)
+
+    mock_item.removeGenres.assert_not_called()
 
 
 def test_push_to_plex_adds_genres_and_actors():
@@ -197,6 +205,18 @@ def test_push_to_plex_returns_true_on_success():
     assert result is True
 
 
+def test_push_to_plex_sends_zero_rating():
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    result = _make_result(rating=0.0)
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", result)
+
+    call_kwargs = mock_item.edit.call_args.kwargs
+    assert call_kwargs["rating.value"] == 0.0
+    assert call_kwargs["rating.locked"] == 1
+
+
 def test_push_to_plex_returns_false_on_exception():
     mock_item = MagicMock()
     mock_item.edit.side_effect = Exception("Plex API error")
@@ -224,7 +244,7 @@ def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
         actor_el = etree.SubElement(root, "actor")
         etree.SubElement(actor_el, "name").text = a
     for lbl in labels:
-        etree.SubElement(root, "label").text = lbl
+        etree.SubElement(root, "tag").text = f"label:{lbl}"
     tree = etree.ElementTree(root)
     with open(path, "wb") as fh:
         fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
@@ -253,8 +273,11 @@ def test_push_nfo_to_plex_pushes_labels(tmp_path):
     mock_item = MagicMock()
     with patch("app.writers.plex.find_plex_item", return_value=mock_item):
         push_nfo_to_plex(MagicMock(), "/media/movie.mp4", nfo)
+    # Labels are written as <tag>label:xxx</tag> by write_nfo; push_nfo_to_plex
+    # now correctly extracts them and calls addLabel (not addTag with the prefix).
     mock_item.addLabel.assert_called_once_with("my-label", locked=True)
     mock_item.removeLabels.assert_called_once()
+    mock_item.addTag.assert_not_called()
 
 
 def test_push_nfo_to_plex_returns_false_when_item_not_found(tmp_path):

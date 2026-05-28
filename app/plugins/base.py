@@ -17,9 +17,13 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Literal
+
+_logger = logging.getLogger(__name__)
 
 
 # The four search subtypes the parser can detect (see FILENAME_PATTERNS.md)
@@ -46,7 +50,7 @@ class ParsedFilename:
     # The site token extracted from the % payload (lowercased), e.g. "warnerbros"
     site: str | None = None
     # Which search strategy the parser recommends for this payload
-    match_subtype: MatchSubtype | None = None
+    match_subtype: MatchSubtype = "exact"
     # Release date, normalised to YYYY-MM-DD
     date: str | None = None
     # Numeric scene ID from the URL of the scene page
@@ -110,10 +114,16 @@ class MetadataResult:
         # Normalise: strip whitespace from title
         self.title = self.title.strip()
         # Ensure list fields are actually lists (guard against plugins returning None)
-        for list_field in ("genres", "labels", "tags", "actors"):
-            val = getattr(self, list_field)
-            if val is None:
-                setattr(self, list_field, [])
+        for field_name in ("actors", "genres", "tags", "labels", "directors", "studios"):
+            if getattr(self, field_name, None) is None:
+                _logger.warning(
+                    "MetadataResult.%s was None from plugin — coercing to []. "
+                    "Plugin should return an empty list, not None.",
+                    field_name,
+                )
+                # Only set attributes that actually exist on this dataclass
+                if hasattr(self, field_name):
+                    setattr(self, field_name, [])
         # Validate rating is in a sensible range if provided
         if self.rating is not None and not (0.0 <= self.rating <= 10.0):
             raise ValueError(f"MetadataResult.rating must be between 0 and 10, got {self.rating}")
@@ -126,6 +136,15 @@ class MetadataPlugin(ABC):
     # The canonical identifier that must match the site token in filenames.
     # e.g. site_id = "warnerbros" matches "% warnerbros - 12345"
     site_id: str = ""
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Only check concrete subclasses (not abstract ones)
+        if not inspect.isabstract(cls) and not cls.site_id:
+            raise TypeError(
+                f"Plugin class {cls.__name__!r} must set a non-empty class-level "
+                f"'site_id' attribute. Did you accidentally set it in __init__ instead?"
+            )
 
     # Optional shorthand aliases users can also use in filenames.
     # e.g. aliases = ("WB",) means "% WB - 12345" also routes here.
@@ -148,6 +167,10 @@ class MetadataPlugin(ABC):
         Return None if the lookup fails or returns no usable result.
         """
         ...
+
+    def close(self) -> None:
+        """Called by the loader when the plugin is being replaced. Release any open resources."""
+        pass
 
     def all_ids(self) -> list[str]:
         """Return all identifiers this plugin responds to (site_id + aliases), lowercased.

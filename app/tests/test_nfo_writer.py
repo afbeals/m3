@@ -148,6 +148,11 @@ def test_write_nfo_is_atomic_cleans_tmp_on_error(tmp_path):
     result = _make_result()
     tmp_file = media.nfo_path + ".tmp"
 
+    # Create the .tmp file first so the test proves cleanup ran, not that it
+    # was never created at all.
+    open(tmp_file, "w").close()
+    assert os.path.exists(tmp_file), "Pre-condition: .tmp file must exist before the failing write"
+
     with patch("builtins.open", side_effect=OSError("disk full")):
         with pytest.raises(OSError):
             write_nfo(media, result)
@@ -242,6 +247,33 @@ def _wrap_client_with_fresh_response(content_length_header, body_bytes):
     return mock_client
 
 
+def test_download_image_rejects_non_image_content_type(tmp_path):
+    """When the response has a non-image Content-Type, _download_image must return
+    False and must not write any file to the destination path."""
+    from app.writers.nfo import _download_image
+
+    dest = str(tmp_path / "img.jpg")
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.headers = {"content-type": "text/html"}
+    mock_response.iter_bytes = MagicMock(return_value=iter([]))
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    mock_client = MagicMock()
+    mock_client.stream.return_value = mock_response
+    mock_client.__enter__ = lambda s: s
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    with patch("app.writers.nfo.httpx") as mock_httpx:
+        mock_httpx.Client.return_value = mock_client
+        result = _download_image("http://example.com/img.jpg", dest)
+
+    assert result is False
+    assert not os.path.exists(dest), "No image file should be written for non-image content-type"
+
+
 def test_download_image_aborts_on_content_length_header_exceeding_cap(tmp_path):
     """When Content-Length header exceeds the cap the download must be rejected
     before any bytes are streamed to disk."""
@@ -332,3 +364,52 @@ class TestRenameNfoAssets:
         import pytest
         with pytest.raises(Exception):
             rename_nfo_assets(str(tmp_path), "nonexistent", "new name")
+
+    def test_rename_nfo_assets_unicode_stem(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+        from lxml import etree
+
+        old_stem = "Résumé Scene"
+        new_stem = "Resume Scene"
+
+        nfo = tmp_path / f"{old_stem}.nfo"
+        nfo.write_bytes(
+            '<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
+            f'<movie><title>{old_stem}</title></movie>'.encode("utf-8")
+        )
+
+        rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+
+        new_nfo = tmp_path / f"{new_stem}.nfo"
+        assert new_nfo.exists(), "Renamed NFO must exist with new stem"
+
+        tree = etree.parse(str(new_nfo))
+        root = tree.getroot()
+        assert root.findtext("title") == old_stem, "Title field must be preserved after rename"
+
+    def test_rename_nfo_assets_overwrites_existing_destination(self, tmp_path):
+        from app.writers.nfo import rename_nfo_assets
+
+        old_stem = "Old Title"
+        new_stem = "New Title"
+
+        src_nfo = tmp_path / f"{old_stem}.nfo"
+        src_nfo.write_bytes(
+            b'<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
+            b'<movie><title>Old Title</title></movie>'
+        )
+
+        dst_nfo = tmp_path / f"{new_stem}.nfo"
+        dst_nfo.write_bytes(
+            b'<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
+            b'<movie><title>Pre-existing Title</title></movie>'
+        )
+
+        rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+
+        assert not src_nfo.exists(), "Source NFO must be removed after rename"
+        assert dst_nfo.exists(), "Destination NFO must exist after rename"
+
+        content = dst_nfo.read_text(encoding="utf-8")
+        assert "Old Title" in content, "Destination NFO must contain the source title after overwrite"
+        assert "Pre-existing Title" not in content, "Pre-existing destination title must be replaced"

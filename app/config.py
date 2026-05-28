@@ -30,8 +30,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -103,23 +106,14 @@ class Config:
     library_exclude_patterns: list[str] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        # Redact plex_token so it never appears in logs or debug output
-        return (
-            f"Config(plex_url={self.plex_url!r}, plex_token='***', "
-            f"library_paths={self.library_paths!r}, plugin_dir={self.plugin_dir!r}, "
-            f"report_path={self.report_path!r}, log_path={self.log_path!r}, "
-            f"run_schedule={self.run_schedule!r}, log_level={self.log_level!r}, "
-            f"log_retention_days={self.log_retention_days!r}, "
-            f"report_retention_days={self.report_retention_days!r}, "
-            f"web_enabled={self.web_enabled!r}, web_port={self.web_port!r}, "
-            f"app_name={self.app_name!r}, "
-            f"plugin_rate_limit_secs={self.plugin_rate_limit_secs!r}, "
-            f"plugin_fetch_timeout_secs={self.plugin_fetch_timeout_secs!r}, "
-            f"notify_url={self.notify_url!r}, "
-            f"notify_min_errors={self.notify_min_errors!r}, "
-            f"library_exclude_patterns={self.library_exclude_patterns!r}, "
-            f"force={self.force!r})"
-        )
+        import dataclasses
+        parts = []
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if f.name == "plex_token":
+                val = "***"
+            parts.append(f"{f.name}={val!r}")
+        return f"Config({', '.join(parts)})"
 
 
 def load_config(force: bool = False, plex_required: bool = True) -> Config:
@@ -139,16 +133,21 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         return os.environ.get(key, default).strip()
 
     # Inner helper: parse an integer env var with a clear error on bad values
-    def optional_int(key: str, default: int) -> int:
+    def optional_int(key: str, default: int, min_val: int | None = None) -> int:
         raw = os.environ.get(key, "").strip()
         if not raw:
             return default
         try:
-            return int(raw)
+            val = int(raw)
         except ValueError:
             raise ValueError(
                 f"Environment variable {key!r} must be an integer, got {raw!r}"
             ) from None
+        if min_val is not None and val < min_val:
+            raise ValueError(
+                f"Environment variable {key!r} must be >= {min_val}, got {val}"
+            )
+        return val
 
     # Inner helper: parse a float env var with bounds check
     def optional_float(key: str, default: float, min_val: float = 0.0) -> float:
@@ -169,7 +168,14 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
 
     # LIBRARY_PATHS is comma-separated, e.g. "/media/Movies,/media/TV"
     # Split and strip each path, dropping empty entries
-    raw_paths = optional("LIBRARY_PATHS", "./media")
+    raw_paths_env = os.environ.get("LIBRARY_PATHS")
+    raw_paths = raw_paths_env.strip() if raw_paths_env else ""
+    if not raw_paths:
+        raw_paths = "./media"
+        logger.warning(
+            "LIBRARY_PATHS not set; defaulting to %r — set LIBRARY_PATHS to your actual media directory",
+            raw_paths,
+        )
     library_paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
 
     raw_exclude = optional("LIBRARY_EXCLUDE_PATTERNS", "")
@@ -178,25 +184,52 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
     web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
 
+    plex_url = require_or_empty("PLEX_URL")
+    if plex_required:
+        from urllib.parse import urlparse as _urlparse
+        parsed_url = _urlparse(plex_url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            raise ValueError(f"PLEX_URL must be a valid http/https URL, got: {plex_url!r}")
+
+    run_schedule = optional("RUN_SCHEDULE", "0 3 * * *")
+    try:
+        from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+        _CronTrigger.from_crontab(run_schedule)
+    except Exception as exc:
+        raise ValueError(
+            f"RUN_SCHEDULE {run_schedule!r} is not a valid cron expression: {exc}"
+        ) from exc
+
+    log_level = optional("LOG_LEVEL", "INFO").upper()
+    _VALID_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if log_level not in _VALID_LEVELS:
+        raise ValueError(
+            f"LOG_LEVEL {log_level!r} is not valid; must be one of {sorted(_VALID_LEVELS)}"
+        )
+
+    app_name = optional("APP_NAME", "m3")
+    if not app_name:
+        raise ValueError("APP_NAME must not be empty")
+
     return Config(
-        plex_url=require_or_empty("PLEX_URL"),
+        plex_url=plex_url,
         plex_token=require_or_empty("PLEX_TOKEN"),
         library_paths=library_paths,
         plugin_dir=optional("PLUGIN_DIR", "./plugins"),
         report_path=optional("REPORT_PATH", "./reports"),
         log_path=optional("LOG_PATH", "./logs"),
-        run_schedule=optional("RUN_SCHEDULE", "0 3 * * *"),
-        log_level=optional("LOG_LEVEL", "INFO").upper(),
+        run_schedule=run_schedule,
+        log_level=log_level,
         log_retention_days=optional_int("LOG_RETENTION_DAYS", 30),
         report_retention_days=optional_int("REPORT_RETENTION_DAYS", 90),
         web_enabled=web_enabled,
-        web_port=optional_int("WEB_PORT", 8765),
+        web_port=optional_int("WEB_PORT", 8765, min_val=1),
         web_host=optional("WEB_HOST", "0.0.0.0"),
-        app_name=optional("APP_NAME", "m3"),
+        app_name=app_name,
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
         plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=0.0),
         notify_url=optional("NOTIFY_URL", ""),
-        notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 0),
+        notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 0, min_val=0),
         force=force,
         library_exclude_patterns=library_exclude_patterns,
     )

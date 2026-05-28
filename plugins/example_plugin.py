@@ -27,6 +27,7 @@ Filename examples this plugin handles (site_id = "examplesite"):
 
 import logging
 import os
+from urllib.parse import quote
 
 import httpx
 
@@ -107,7 +108,8 @@ class ExampleSitePlugin(MetadataPlugin):
 
         # Replace this with your real API call.
         # Example: GET https://api.example-site.com/v1/scenes/12345?api_key=...
-        data = self._api_get(f"/scenes/{scene_id}")
+        url_path = f"/scenes/{quote(str(scene_id), safe='')}"
+        data = self._api_get(url_path)
         if data is None:
             return None
 

@@ -27,6 +27,31 @@ _DATE_PATTERNS = [
 
 _SCENE_ID_RE = re.compile(r"^\d+$")
 
+# Matches date-shaped tokens like "2024-02-30" or "24.02.30" — used to reject them
+# from URL-slug detection (a date is never a slug).
+_DATE_SHAPED = re.compile(r"^\d{2,4}[.\-]\d{2}[.\-]\d{2}$")
+
+
+def _looks_like_url_slug(tok: str) -> bool:
+    """Return True if tok looks like a URL slug rather than a title or actor name.
+
+    URL slugs are hyphen-separated, space-free tokens (e.g. "eager-hands",
+    "Stranger-Than-Fiction"). A token with spaces is a title or actor name,
+    not a slug — even if it ends in a digit (e.g. "Chapter 5" → NOT a slug).
+    The only exception is a slug with an embedded numeric ID at the end
+    separated by a space (e.g. "Stranger-Than-Fiction 77675" → slug+id),
+    which is still slug-like because it contains hyphens and no title words.
+    Date-shaped tokens (e.g. "2024-02-30", even if invalid) are never slugs.
+    """
+    if _DATE_SHAPED.match(tok):
+        return False
+    if " " not in tok:
+        return True
+    # Space-containing token: treat as slug only if it has hyphens (slug part)
+    # and the trailing word is purely numeric (an appended ID).
+    parts = tok.rsplit(" ", 1)
+    return "-" in parts[0] and bool(re.match(r"^\d+$", parts[1]))
+
 
 def _normalise_date(token: str) -> str | None:
     # All YY dates are interpreted as 20YY; this codebase has no pre-2000 content.
@@ -175,30 +200,12 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     # Plugins always have raw_match_payload available for their own parsing.
     match_subtype: MatchSubtype
 
-    _DATE_SHAPED = re.compile(r"^\d{2,4}[.\-]\d{2}[.\-]\d{2}$")
-
-    def _looks_like_url_slug(tok: str) -> bool:
-        # URL slugs are hyphen-separated, space-free tokens (e.g. "eager-hands",
-        # "Stranger-Than-Fiction"). A token with spaces is a title or actor name,
-        # not a slug — even if it ends in a digit (e.g. "Chapter 5" → NOT a slug).
-        # The only exception is a slug with an embedded numeric ID at the end
-        # separated by a space (e.g. "Stranger-Than-Fiction 77675" → slug+id),
-        # which is still slug-like because it contains hyphens and no title words.
-        # Date-shaped tokens (e.g. "2024-02-30", even if invalid) are never slugs.
-        if _DATE_SHAPED.match(tok):
-            return False
-        if " " not in tok:
-            return True
-        # Space-containing token: treat as slug only if it has hyphens (slug part)
-        # and the trailing word is purely numeric (an appended ID).
-        parts = tok.rsplit(" ", 1)
-        return "-" in parts[0] and bool(re.match(r"^\d+$", parts[1]))
-
     if not text_tokens:
         match_subtype = "exact"
     elif len(text_tokens) == 1 and _looks_like_url_slug(text_tokens[0]):
         direct_url = text_tokens[0]
-        scene_id = None  # URL slug is the authoritative lookup; scene_id from earlier token is ambiguous
+        # URL slug is the authoritative lookup; preserve any scene_id found earlier —
+        # the plugin can use both for more precise matching.
         match_subtype = "exact"
     else:
         title = " - ".join(text_tokens)

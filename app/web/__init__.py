@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -111,6 +112,10 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
             return ""
 
     templates.env.globals["time_ago"] = _time_ago
+
+    # Custom Jinja2 filters
+    templates.env.filters["basename"] = os.path.basename
+
     app.state.templates = templates
 
     app.add_middleware(_SecurityHeadersMiddleware)

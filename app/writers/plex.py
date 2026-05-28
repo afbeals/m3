@@ -25,11 +25,16 @@ import logging
 import os
 import time
 
+from lxml import etree
 from plexapi.server import PlexServer
 
 from app.plugins.base import MetadataResult
+from app.utils import call_with_timeout
 
 logger = logging.getLogger(__name__)
+
+# XXE-safe XML parser — resolve_entities=False prevents external entity expansion
+_xml_parser = etree.XMLParser(resolve_entities=False)
 
 
 def connect_plex(plex_url: str, plex_token: str) -> PlexServer | None:
@@ -38,7 +43,7 @@ def connect_plex(plex_url: str, plex_token: str) -> PlexServer | None:
     Returns None if the connection fails (app continues in sidecar-only mode).
     """
     try:
-        server = PlexServer(plex_url, plex_token)
+        server = call_with_timeout(lambda: PlexServer(plex_url, plex_token), timeout_secs=15.0)
         logger.info("Connected to Plex: %s", server.friendlyName)
         return server
     except Exception:
@@ -95,8 +100,15 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                             _fallback_cache[part.file] = item
                         if part.file == file_path:
                             found = item
+            if found is not None:
+                # Break as soon as we find the target — we forgo cache-warming for
+                # unseen items, but avoid scanning the entire library when the target
+                # is found early.
+                break
 
-        if _fallback_cache is not None and file_path not in _fallback_cache:
+        # Only cache positive results — caching None would permanently prevent retries
+        # within the same run for a file that wasn't found (e.g. Plex hasn't scanned it yet).
+        if found is not None and _fallback_cache is not None and file_path not in _fallback_cache:
             _fallback_cache[file_path] = found
         return found
 
@@ -219,8 +231,7 @@ def push_nfo_to_plex(
     Returns True on success, False if the item wasn't found or an error occurred.
     """
     try:
-        from lxml import etree
-        tree = etree.parse(nfo_path)
+        tree = etree.parse(nfo_path, _xml_parser)
         root = tree.getroot()
     except Exception:
         logger.exception("Could not parse NFO for Plex push: %s", nfo_path)
@@ -263,8 +274,12 @@ def push_nfo_to_plex(
 
         genres = [el.text.strip() for el in root.findall("genre") if el.text]
         actors = [el.text.strip() for el in root.findall("actor/name") if el.text]
-        tags = [el.text.strip() for el in root.findall("tag") if el.text]
-        labels = [el.text.strip() for el in root.findall("label") if el.text]
+        # Labels are stored in the NFO as <tag>label:<value></tag> — extract them
+        # by filtering <tag> elements whose text starts with "label:" and stripping
+        # the prefix.  Plain <label> elements are not written by write_nfo so this
+        # correctly matches the format produced by nfo.py.
+        labels = [el.text[6:] for el in root.findall("tag") if el.text and el.text.startswith("label:")]
+        tags = [el.text.strip() for el in root.findall("tag") if el.text and not el.text.startswith("label:")]
 
         # Add new values first, then remove old — same add-first ordering as
         # push_to_plex. Only call remove when we actually added something; calling

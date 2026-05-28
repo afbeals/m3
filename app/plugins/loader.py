@@ -28,10 +28,14 @@ import sys
 
 from app.plugins.base import MetadataPlugin
 
+# load_plugins() is not thread-safe — it writes to sys.modules and must only be
+# called from a single thread. Hot-reload via SIGUSR2 is serialized by _registry_lock
+# in scheduler.py, ensuring only one reload runs at a time.
+
 logger = logging.getLogger(__name__)
 
 
-def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
+def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str, MetadataPlugin]:
     """
     Discover and load MetadataPlugin subclasses from .py files in plugin_dir.
 
@@ -39,7 +43,18 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
     Returns an empty dict (without raising) if plugin_dir doesn't exist, contains no
     valid plugins, or all files fail to import — callers receive a usable empty registry
     and the warnings are logged so the user can investigate.
+
+    old_registry: if provided, close() is called on each plugin instance before loading
+    new ones. This releases any open resources (e.g. httpx.Client connection pools).
     """
+    # Close any plugins in the old registry before building the new one
+    if old_registry is not None:
+        for plugin in old_registry.values():
+            try:
+                plugin.close()
+            except Exception:
+                logger.exception("Error closing plugin %s during reload", type(plugin).__name__)
+
     # The registry maps lowercase site_id / alias → plugin instance
     registry: dict[str, MetadataPlugin] = {}
 
@@ -85,6 +100,9 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
             # Skip the base class itself and any class that isn't a subclass of MetadataPlugin
             if obj is MetadataPlugin or not issubclass(obj, MetadataPlugin):
                 continue
+            # Skip classes imported from other modules (only load classes defined here)
+            if inspect.getmodule(obj) is not module:
+                continue  # skip classes imported from other modules
             # Skip abstract subclasses (intermediate base classes without a concrete fetch())
             if inspect.isabstract(obj):
                 continue
@@ -110,5 +128,9 @@ def load_plugins(plugin_dir: str) -> dict[str, MetadataPlugin]:
                     )
                 registry[key] = instance
                 logger.info("Registered plugin %s for id %r", obj.__name__, key)
+
+        # Clean up sys.modules after successful extraction to prevent stale
+        # module references from accumulating across reloads.
+        sys.modules.pop(module_name, None)
 
     return registry

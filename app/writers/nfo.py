@@ -41,6 +41,8 @@ _DOWNLOAD_MAX_ATTEMPTS = 3
 _DOWNLOAD_BACKOFF_BASE = 2.0
 # Refuse images larger than 50 MB to prevent OOM on malicious or misconfigured URLs
 _DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024
+# Allowlist of permitted image content types; excludes SVG, HTML error pages, etc.
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def write_nfo(media: MediaFile, result: MetadataResult) -> None:
@@ -143,9 +145,10 @@ def _download_image(url: str, dest_path: str) -> bool:
             with client.stream("GET", url) as r:
                 r.raise_for_status()
 
-                # Reject non-image content types to avoid writing HTML error pages to disk
+                # Reject non-image content types to avoid writing HTML error pages to disk.
+                # Split on ";" to handle "image/jpeg; charset=..." style values.
                 content_type = r.headers.get("content-type", "")
-                if not content_type or not content_type.startswith("image/"):
+                if content_type.split(";")[0].strip() not in _ALLOWED_IMAGE_TYPES:
                     raise ValueError(
                         f"Unexpected content-type {content_type!r} for image URL {url}"
                     )
@@ -242,7 +245,13 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
             fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
             tree.write(fh, encoding="utf-8", xml_declaration=False)
         atomic_replace(tmp_nfo, new_nfo)
-        os.remove(old_nfo)
+        # tmp_nfo has been atomically replaced into new_nfo; now remove the old NFO.
+        # Give this its own try/except so a failure here does NOT attempt to clean
+        # up tmp_nfo (which no longer exists after atomic_replace succeeded).
+        try:
+            os.remove(old_nfo)
+        except OSError:
+            logger.warning("Could not remove old NFO after rename: %s", old_nfo)
     except Exception:
         try:
             os.remove(tmp_nfo)

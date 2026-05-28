@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 _LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per rotated file
 _LOG_BACKUP_COUNT = 5               # keep m3.log + 5 rotated backups
 
+# Tracks only handlers that setup_logging itself added, so we only remove our own
+# handlers on re-call (not any handlers added by pytest, third-party libs, etc.)
+_m3_handlers: list[logging.Handler] = []
+
 
 def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     # Create the log directory if it doesn't exist yet.
@@ -51,9 +55,11 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     root = logging.getLogger()
 
     # Guard against duplicate handlers if setup_logging is called more than once
-    # (e.g. during tests). Remove any previously added handlers first.
-    if root.handlers:
-        root.handlers.clear()
+    # (e.g. during tests). Remove only handlers that we previously added — leave
+    # any handlers added by pytest, third-party libraries, or the caller intact.
+    for h in _m3_handlers:
+        root.removeHandler(h)
+    _m3_handlers.clear()
 
     root.setLevel(getattr(logging, log_level, logging.INFO))
 
@@ -61,6 +67,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(fmt)
     root.addHandler(stream_handler)
+    _m3_handlers.append(stream_handler)
 
     # Rotating file handler: max 10 MB per file, keep 5 backups (m3.log, m3.log.1, ...)
     # Only added when a writable log directory is available.
@@ -81,9 +88,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
                 def _win_rotator(source: str, dest: str) -> None:
                     for attempt in range(5):
                         try:
-                            if os.path.exists(dest):
-                                os.remove(dest)
-                            os.rename(source, dest)
+                            os.replace(source, dest)
                             return
                         except PermissionError:
                             if attempt == 4:
@@ -92,6 +97,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
                 file_handler.rotator = _win_rotator  # type: ignore[assignment]
             file_handler.setFormatter(fmt)
             root.addHandler(file_handler)
+            _m3_handlers.append(file_handler)
         except OSError as exc:
             print(
                 f"{app_name} WARNING: could not open log file {log_file!r}: {exc}. "
@@ -156,8 +162,8 @@ def cleanup_old_files(
                     removed += 1
                 except PermissionError as exc:
                     # On Windows, a log viewer or tail process may hold the file
-                    # open; skip silently and retry on the next cleanup pass.
-                    logger.debug(
+                    # open; skip and retry on the next cleanup pass.
+                    logger.info(
                         "Could not remove %s (file in use, will retry next cleanup): %s",
                         entry.path, exc,
                     )

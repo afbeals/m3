@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import threading
+from collections import OrderedDict
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,8 @@ _list_runs_cache: dict[str, tuple] = {}  # report_path → ((newest_mtime, file_
 
 # Cache for get_run: keyed by (report_path, filename, file_mtime).
 # Avoids re-parsing the same JSON file on every dashboard request when the file hasn't changed.
-_get_run_cache: dict[tuple, dict] = {}  # (report_path, filename, mtime) → data
+# OrderedDict maintains insertion/access order for LRU eviction.
+_get_run_cache: OrderedDict[tuple, dict] = OrderedDict()  # (report_path, filename, mtime) → data
 _GET_RUN_CACHE_MAX = 20  # keep at most 20 parsed run files in memory
 
 # Cache for aggregate_unmatched: keyed by (report_path, max_runs).
@@ -37,6 +40,9 @@ _unmatched_cache: dict[tuple, tuple] = {}  # key → ((newest_mtime, file_count)
 _cache_lock = threading.Lock()
 
 
+# NOTE: The invalidation key only watches run_*.json files. Changes to trigger_*.json
+# (manual retriggered files) do NOT invalidate the list_runs or unmatched caches.
+# This is intentional: trigger records are supplementary and do not affect run summaries.
 def _run_invalidation_key(report_path: str) -> tuple[float | None, int]:
     """Return (newest_mtime, file_count) for run_*.json files in report_path."""
     newest_mtime: float | None = None
@@ -117,9 +123,11 @@ def get_run(report_path: str, filename: str) -> dict | None:
         mtime = None
 
     cache_key = (report_path, filename, mtime)
-    cached = _get_run_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    with _cache_lock:
+        cached = _get_run_cache.get(cache_key)
+        if cached is not None:
+            _get_run_cache.move_to_end(cache_key)
+            return cached
 
     try:
         with open(fpath, encoding="utf-8") as fh:
@@ -134,10 +142,9 @@ def get_run(report_path: str, filename: str) -> dict | None:
         return None
 
     with _cache_lock:
-        # Evict oldest entry if over the cache size limit
+        # Evict LRU entry if over the cache size limit (first item in OrderedDict is LRU)
         if len(_get_run_cache) >= _GET_RUN_CACHE_MAX:
-            oldest = next(iter(_get_run_cache))
-            del _get_run_cache[oldest]
+            _get_run_cache.popitem(last=False)
         _get_run_cache[cache_key] = data
     return data
 
@@ -195,7 +202,13 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
                 entry["last_seen"] = run_started
                 entry["last_message"] = f.get("message", "")
 
-    result = sorted(seen.values(), key=lambda e: (-e["count"], e["last_seen"] or ""))
+    def _parse_dt(s):
+        try:
+            return datetime.fromisoformat(s)
+        except (ValueError, TypeError):
+            return datetime.min
+
+    result = sorted(seen.values(), key=lambda e: (-e["count"], _parse_dt(e.get("last_seen", ""))))
     with _cache_lock:
         _unmatched_cache[cache_key] = (invalidation_key, result)
     return result

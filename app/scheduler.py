@@ -71,23 +71,26 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
     def _watcher():
         while True:
             _reload_event.wait()
+            # Clear immediately after waking so a concurrent SIGUSR2 during reload
+            # re-sets the event and triggers another reload instead of being lost.
+            _reload_event.clear()
             logger.info("SIGUSR2 received — reloading plugins from %s", plugin_dir)
             try:
-                new_registry = load_plugins(plugin_dir)
+                new_registry = load_plugins(plugin_dir, old_registry=dict(registry))
                 with _registry_lock:
-                    if scheduler is not None:
-                        scheduler.pause()
+                    paused = False
                     try:
+                        if scheduler is not None:
+                            scheduler.pause()
+                            paused = True
                         registry.clear()
                         registry.update(new_registry)
                     finally:
-                        if scheduler is not None:
+                        if paused:
                             scheduler.resume()
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
             except Exception as exc:
                 logger.warning("Plugin reload failed: %s", exc)
-            finally:
-                _reload_event.clear()
 
     watcher_thread = threading.Thread(target=_watcher, daemon=True)
     watcher_thread.start()
@@ -119,14 +122,19 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     # python:3.12-slim requires tzdata to be installed for non-UTC zones to work
     # (see Dockerfile). Falls back to UTC when TZ is unset.
     timezone = os.environ.get("TZ") or "UTC"
-    trigger = CronTrigger(
-        minute=minute,
-        hour=hour,
-        day=day,
-        month=month,
-        day_of_week=day_of_week,
-        timezone=timezone,
-    )
+    try:
+        trigger = CronTrigger(
+            minute=minute,
+            hour=hour,
+            day=day,
+            month=month,
+            day_of_week=day_of_week,
+            timezone=timezone,
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"Invalid cron schedule or timezone (TZ={timezone!r}): {exc}"
+        ) from exc
 
     # max_instances=1 prevents concurrent runs if the previous run is still in progress
     # when the next scheduled time arrives (the new fire is skipped, not queued).
@@ -154,6 +162,8 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
             while True:
                 _trigger_event.wait()
                 _trigger_event.clear()  # consume the event before acting; a second signal during add_job will re-set it
+                if scheduler is None:
+                    return
                 logger.info("SIGUSR1 received — scheduling immediate run")
                 try:
                     scheduler.add_job(run_fn, id="sigusr1_trigger", replace_existing=True)

@@ -63,7 +63,7 @@
 <h2>Files</h2>
 
 <div class="filter-bar">
-  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active" aria-current="true"{% endif %}>All ({{ all_files_count }})</a>
+  <a href="/runs/{{ run.filename }}" {% if not status_filter %}class="active" aria-current="page"{% endif %}>All ({{ all_files_count }})</a>
   {% for s, label, cls in [
     ("updated",     "updated",     "badge-updated"),
     ("renamed",     "renamed",     "badge-renamed"),
@@ -76,7 +76,7 @@
   ] %}
   {% set cnt = status_counts.get(s, 0) %}
   {% if cnt > 0 %}
-  <a href="/runs/{{ run.filename }}?status={{ s }}" {% if status_filter == s %}class="active" aria-current="true"{% endif %}>
+  <a href="/runs/{{ run.filename }}?status={{ s }}" {% if status_filter == s %}class="active" aria-current="page"{% endif %}>
     <span class="badge {{ cls }}">{{ label }} ({{ cnt }})</span>
   </a>
   {% endif %}

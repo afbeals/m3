@@ -25,6 +25,7 @@ Filename examples this plugin handles (site_id = "examplehtml"):
 """
 
 import logging
+from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
 
@@ -83,7 +84,7 @@ class ExampleHTMLPlugin(MetadataPlugin):
             logger.warning("[examplehtml] No title or actor to search with")
             return None
 
-        search_url = f"{BASE_URL}/search?q={query}"
+        search_url = f"{BASE_URL}/search?q={quote_plus(query)}"
         html = fetch_html(search_url)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -95,7 +96,11 @@ class ExampleHTMLPlugin(MetadataPlugin):
             logger.info("[examplehtml] No search results for query %r", query)
             return None
 
-        detail_url = BASE_URL + first_result["href"]
+        href = first_result.get("href")
+        if not href:
+            logger.warning("[examplehtml] Search result link has no href")
+            return None
+        detail_url = BASE_URL + href
         detail_html = fetch_html(detail_url)
         return self._parse_detail_page(detail_html, detail_url)
 
@@ -151,15 +156,15 @@ class ExampleHTMLPlugin(MetadataPlugin):
 
         # ---- Images ----
         poster_el = soup.select_one("img.poster-image")
-        poster_url = poster_el["src"] if poster_el else None
+        poster_url = poster_el.get("src") if poster_el else None
 
         fanart_el = soup.select_one("img.fanart-image")
-        fanart_url = fanart_el["src"] if fanart_el else None
+        fanart_url = fanart_el.get("src") if fanart_el else None
 
         # ---- Scene ID for traceability ----
         # Example: <meta name="scene-id" content="12345">
         id_el = soup.select_one('meta[name="scene-id"]')
-        source_id = id_el["content"] if id_el else None
+        source_id = id_el.get("content") if id_el else None
 
         return MetadataResult(
             title=title or "Unknown Title",

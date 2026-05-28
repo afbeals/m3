@@ -537,18 +537,11 @@ def test_config_shows_notify_url():
 def test_trigger_reload_redirects_to_plugins():
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _make_app(tmpdir)
-        import app.web.routes as routes_module
-        with TestClient(app, follow_redirects=True) as client:
-            orig_platform = routes_module.platform
-            orig_os = routes_module.os
-            try:
-                routes_module.platform = MagicMock()
-                routes_module.platform.system.return_value = "Linux"
-                routes_module.os = MagicMock()
+        with patch("app.web.routes.platform") as mock_platform, \
+             patch("app.web.routes.os") as mock_os:
+            mock_platform.system.return_value = "Linux"
+            with TestClient(app, follow_redirects=True) as client:
                 r = client.post("/trigger/reload")
-            finally:
-                routes_module.platform = orig_platform
-                routes_module.os = orig_os
     assert r.status_code == 200
     assert "Plugins" in r.text
 
@@ -556,15 +549,10 @@ def test_trigger_reload_redirects_to_plugins():
 def test_trigger_reload_noop_on_windows():
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _make_app(tmpdir)
-        import app.web.routes as routes_module
-        with TestClient(app, follow_redirects=True) as client:
-            orig_platform = routes_module.platform
-            try:
-                routes_module.platform = MagicMock()
-                routes_module.platform.system.return_value = "Windows"
+        with patch("app.web.routes.platform") as mock_platform:
+            mock_platform.system.return_value = "Windows"
+            with TestClient(app, follow_redirects=True) as client:
                 r = client.post("/trigger/reload")
-            finally:
-                routes_module.platform = orig_platform
     assert r.status_code == 200
 
 
@@ -839,8 +827,9 @@ def test_trigger_file_thread_writes_trigger_record_on_success():
             with TestClient(app) as client:
                 r = client.post("/trigger/file", data={"file_path": real_file})
 
-            # Wait up to 5 seconds for the background thread to finish
-            done.wait(timeout=5)
+            # Wait up to 10 seconds for the background thread to finish
+            done.wait(timeout=10)
+            assert done.is_set(), "Worker thread did not complete in time"
 
         trigger_files = glob.glob(os.path.join(tmpdir, "trigger_*.json"))
         assert trigger_files, "A trigger_*.json file must be written by the background thread"
@@ -893,7 +882,8 @@ def test_trigger_file_thread_writes_error_status_when_plugin_raises():
             with TestClient(app) as client:
                 r = client.post("/trigger/file", data={"file_path": real_file})
 
-            done.wait(timeout=5)
+            done.wait(timeout=10)
+            assert done.is_set(), "Worker thread did not complete in time"
 
         trigger_files = glob.glob(os.path.join(tmpdir, "trigger_*.json"))
         assert trigger_files, "A trigger_*.json file must be written even on plugin error"

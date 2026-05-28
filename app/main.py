@@ -28,9 +28,10 @@ import glob
 import json
 import logging
 import os
+import threading
 import time
 import traceback as _tb
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Load .env file if present (local development convenience).
 # Only applied when the file exists — production containers set env vars directly
@@ -58,6 +59,9 @@ from app.writers.plex import connect_plex, push_to_plex, push_nfo_to_plex
 
 logger = logging.getLogger(__name__)
 
+# Module-level stop event used to make rate-limit sleeps interruptible.
+# Callers can set this event to wake run() out of its inter-fetch sleep.
+_stop_event = threading.Event()
 
 _WEBHOOK_TIMEOUT_SECS = 10
 _TRACEBACK_LIMIT = 5
@@ -156,7 +160,7 @@ def run(
         if plex_server is None:
             logger.warning("Plex connection failed. Metadata will be written to sidecars only.")
 
-    report = RunReport(started_at=datetime.now().isoformat(timespec="seconds"))
+    report = RunReport(started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     # Per-run cache for the slow Plex fallback scan. On older Plex versions that
     # don't support the fast filepath filter, without this cache each file would
     # trigger a full O(library_size) scan. One dict shared across all push_to_plex
@@ -332,7 +336,7 @@ def run(
         #   - the first file in a run is not delayed
         #   - failed fetches (exception or None result) don't count toward the window
         if config.plugin_rate_limit_secs > 0:
-            time.sleep(config.plugin_rate_limit_secs)
+            _stop_event.wait(timeout=config.plugin_rate_limit_secs)
 
         # Write the NFO sidecar and download poster/fanart images alongside the video file
         if dry_run:
@@ -362,11 +366,13 @@ def run(
                     status="image_error",
                     message="NFO written but one or more images failed to download",
                 ))
+                # NFO was written but images failed; skip Plex push since missing poster would look worse than no update
                 continue
 
         # Push the same metadata to Plex with field locks so Plex's built-in agent
         # won't overwrite our values on the next scheduled refresh.
         # This is non-fatal: if Plex is unreachable we still have the NFO sidecar.
+        plex_failed = False
         if dry_run:
             logger.info("[DRY RUN] Would push to Plex for: %s", media.path)
         elif plex_server is not None:
@@ -374,10 +380,12 @@ def run(
                 ok = push_to_plex(plex_server, media.path, result, _fallback_cache=plex_item_cache)
                 if not ok:
                     logger.warning("Plex push returned failure for %s", media.path)
+                    plex_failed = True
             except Exception as exc:
                 logger.warning("Plex push failed for %s: %s", media.path, exc)
+                plex_failed = True
 
-        report.record(FileResult(path=media.path, status="updated"))
+        report.record(FileResult(path=media.path, status="updated", plex_failed=plex_failed))
         logger.info("%s Updated: %s", _pfx, media.path)
 
     # Print a structured routing summary when running in dry-run-strict mode so
@@ -392,7 +400,7 @@ def run(
             print(f"  {'Add-form (no plugin)':<30} : {report.add_form} file(s)")
         print()
 
-    report.finished_at = datetime.now().isoformat(timespec="seconds")
+    report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     # Dry runs don't write report files — they'd pollute history with zero-action entries.
     # The summary is logged to stdout instead so the user still sees what would have run.
@@ -451,6 +459,8 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
     for lib_path in library_paths:
         for tmp_file in glob.glob(os.path.join(lib_path, "**", "*.tmp"), recursive=True):
             try:
+                if not os.path.isfile(tmp_file):
+                    continue
                 if os.path.getmtime(tmp_file) < cutoff:
                     os.remove(tmp_file)
                     logger.info("Removed stale .tmp orphan: %s", tmp_file)
@@ -487,10 +497,15 @@ def _validate_paths(config: Config, library_only: bool = False) -> None:
         for path_name, path_val in [("REPORT_PATH", config.report_path), ("LOG_PATH", config.log_path)]:
             try:
                 os.makedirs(path_val, exist_ok=True)
-                test = os.path.join(path_val, ".write_test")
-                with open(test, "w") as fh:
-                    fh.write("")
-                os.remove(test)
+                test = os.path.join(path_val, f".write_test.{os.getpid()}")
+                try:
+                    with open(test, "w") as fh:
+                        fh.write("")
+                finally:
+                    try:
+                        os.remove(test)
+                    except OSError:
+                        pass
             except OSError as exc:
                 errors.append(f"{path_name} {path_val!r} is not writable: {exc}")
 
@@ -524,19 +539,25 @@ def _run_validate_plugins(plugin_dir: str) -> None:
         try:
             module_name = f"m3_plugin_validate.{fname[:-3]}"
             spec = importlib.util.spec_from_file_location(module_name, fpath)
-            module = importlib.util.module_from_spec(spec)
-            _sys.modules[module_name] = module
-            spec.loader.exec_module(module)
-            for _, obj in inspect.getmembers(module, inspect.isclass):
-                if obj is _MP or not issubclass(obj, _MP):
-                    continue
-                classes_found.append(obj.__name__)
-                if not obj.site_id:
-                    issues.append(f"  - {obj.__name__}: missing site_id")
-                elif not isinstance(obj.site_id, str):
-                    issues.append(f"  - {obj.__name__}: site_id must be a str")
-                if not callable(getattr(obj, "fetch", None)):
-                    issues.append(f"  - {obj.__name__}: missing fetch() method")
+            if spec is None or spec.loader is None:
+                issues.append(f"  - could not build module spec for {fpath}")
+            else:
+                module = importlib.util.module_from_spec(spec)
+                _sys.modules[module_name] = module
+                try:
+                    spec.loader.exec_module(module)
+                finally:
+                    _sys.modules.pop(module_name, None)
+                for _, obj in inspect.getmembers(module, inspect.isclass):
+                    if obj is _MP or not issubclass(obj, _MP):
+                        continue
+                    classes_found.append(obj.__name__)
+                    if not obj.site_id:
+                        issues.append(f"  - {obj.__name__}: missing site_id")
+                    elif not isinstance(obj.site_id, str):
+                        issues.append(f"  - {obj.__name__}: site_id must be a str")
+                    if not callable(getattr(obj, "fetch", None)):
+                        issues.append(f"  - {obj.__name__}: missing fetch() method")
         except Exception as exc:
             issues.append(f"  - import error: {exc}")
         finally:
@@ -580,10 +601,16 @@ def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
     # Load the plugin
     module_name = "m3_plugin_test._testplugin"
     spec = importlib.util.spec_from_file_location(module_name, plugin_file)
+    if spec is None or spec.loader is None:
+        print(f"ERROR: could not build module spec for {plugin_file}")
+        raise SystemExit(1)
     try:
         module = importlib.util.module_from_spec(spec)
         _sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            _sys.modules.pop(module_name, None)
     except Exception as exc:
         print(f"ERROR: could not import {plugin_file}: {exc}")
         raise SystemExit(1)
@@ -827,7 +854,6 @@ def main() -> None:
 
     if args.retry_failed is not None:
         from app.web.history import list_runs, get_run as get_run_detail
-        from app.scanner import MediaFile
 
         try:
             num_runs = max(1, int(args.retry_failed))
@@ -867,14 +893,20 @@ def main() -> None:
 
         # Build MediaFile objects only for the specific failed paths — do NOT call
         # scan_library with force=True, which would re-process the entire library.
+        retry_paths = failed_paths
         retry_media = []
-        for path in failed_paths:
+        for path in retry_paths:
             if not os.path.isfile(path):
                 logger.warning("Retry target no longer exists: %s", path)
                 continue
             stem = os.path.splitext(os.path.basename(path))[0]
             nfo_path = os.path.join(os.path.dirname(path), f"{stem}.nfo")
             retry_media.append(MediaFile(path=path, stem=stem, nfo_path=nfo_path))
+
+        logger.info(
+            "Retrying %d of %d failed files (%d paths not found on disk)",
+            len(retry_media), len(retry_paths), len(retry_paths) - len(retry_media),
+        )
 
         _sweep_tmp_orphans(config.library_paths)
         _run_with_media(config, router, retry_media)
@@ -1005,7 +1037,7 @@ def main() -> None:
     # can confirm the key configuration at a glance before the first scheduled run.
     from apscheduler.triggers.cron import CronTrigger as _CT2
     _trigger = _CT2.from_crontab(config.run_schedule)
-    _next_run = _trigger.get_next_fire_time(None, datetime.now())
+    _next_run = _trigger.get_next_fire_time(None, datetime.now(timezone.utc))
     _next_str = _next_run.strftime("%Y-%m-%d %H:%M:%S") if _next_run else "unknown"
     _lib_status = ", ".join(
         f"{p} ({'ok' if os.path.isdir(p) else 'MISSING'})"

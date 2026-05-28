@@ -43,6 +43,8 @@ class FileResult:
     status: str
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
+    # True when the NFO was written but the Plex push returned False
+    plex_failed: bool = False
 
 
 @dataclass
@@ -70,22 +72,29 @@ class RunReport:
     def record(self, result: FileResult) -> None:
         """Append a file result and increment the appropriate counter."""
         self.files.append(result)
-        self.total_scanned += 1
         if result.status == "updated":
+            self.total_scanned += 1
             self.updated += 1
         elif result.status == "renamed":
+            self.total_scanned += 1
             self.renamed += 1
         elif result.status == "skipped":
+            self.total_scanned += 1
             self.skipped += 1
         elif result.status == "unmatched":
+            self.total_scanned += 1
             self.unmatched += 1
         elif result.status == "add_form":
+            self.total_scanned += 1
             self.add_form += 1
         elif result.status == "scrape_error":
+            self.total_scanned += 1
             self.scrape_errors += 1
         elif result.status == "image_error":
+            self.total_scanned += 1
             self.image_errors += 1
         elif result.status == "error":
+            self.total_scanned += 1
             self.errors += 1
         else:
             logger.warning("Unknown FileResult status %r for %s — not counted in any bucket",
@@ -103,7 +112,7 @@ def write_report(
         os.makedirs(report_path, exist_ok=True)
     except OSError as exc:
         logger.error("Could not create report directory %s: %s", report_path, exc)
-        return
+        raise
 
     # Compute wall-clock duration if both timestamps are present
     if report.started_at and report.finished_at:
@@ -119,7 +128,7 @@ def write_report(
     try:
         ts = datetime.fromisoformat(report.started_at).strftime("%Y%m%d_%H%M%S")
     except (ValueError, TypeError):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     duration_str = (
         f"{report.duration_seconds}s" if report.duration_seconds is not None else "N/A"
@@ -136,7 +145,7 @@ def write_report(
             # asdict() converts the nested dataclasses to plain dicts for JSON serialisation
             json.dump(asdict(report), fh, indent=2)
         atomic_replace(json_tmp, json_path)
-    except OSError as exc:
+    except Exception as exc:
         logger.error("Could not write JSON report to %s: %s", json_path, exc)
         try:
             os.remove(json_tmp)
@@ -145,11 +154,13 @@ def write_report(
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
+    plex_failed_count = sum(1 for f in report.files if getattr(f, "plex_failed", False))
     lines = [
         f"{app_name} run — {report.started_at}  (duration: {duration_str})",
         "─" * 40,
         f"  Total files scanned                    : {report.total_scanned}",
-        f"  Updated                                : {report.updated}",
+        f"  Updated                                : {report.updated}"
+        + (f"  ({plex_failed_count} Plex push failed)" if plex_failed_count else ""),
         f"  Renamed (assets updated, no re-fetch)  : {report.renamed}",
         f"  Skipped (up-to-date)                   : {report.skipped}",
         f"  Manual Add (pending)                   : {report.add_form}",
@@ -218,7 +229,7 @@ def write_report(
             fh.write("\n".join(lines) + "\n")
         atomic_replace(txt_tmp, txt_path)
         logger.info("Report written to %s", txt_path)
-    except OSError as exc:
+    except Exception as exc:
         logger.error("Could not write text report to %s: %s", txt_path, exc)
         try:
             os.remove(txt_tmp)
@@ -228,7 +239,7 @@ def write_report(
     # Delete old JSON report files beyond the retention window.
     # run_latest.txt is excluded because it has no timestamp suffix.
     try:
-        removed = cleanup_old_files(report_path, retention_days, pattern_suffix=".json")
+        removed = cleanup_old_files(report_path, retention_days, pattern_suffix=".json", app_name=app_name)
         if removed:
             logger.info("Cleaned up %d old report file(s)", removed)
     except OSError as exc:

@@ -25,21 +25,32 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
 
     When timeout_secs is 0, the call runs with no timeout (waits indefinitely for fn() to return).
     """
+    # When timeout_secs is 0, call fn() directly in the calling thread (no timeout).
+    if timeout_secs == 0:
+        return fn()
+
     result_holder: list = []
     exc_holder: list = []
 
     def _worker():
         try:
             result_holder.append(fn())
-        except Exception as exc:
+        except BaseException as exc:
+            if not isinstance(exc, Exception):
+                logger.critical(
+                    "call_with_timeout: worker caught non-Exception BaseException %r in %r",
+                    exc, getattr(fn, '__name__', repr(fn)),
+                )
             exc_holder.append(exc)
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
-    # timeout=None means wait indefinitely; 0 is explicitly "no timeout" per our contract.
-    join_timeout = None if timeout_secs == 0 else timeout_secs
-    t.join(timeout=join_timeout)
+    t.join(timeout=timeout_secs)
     if t.is_alive():
+        logger.warning(
+            "call_with_timeout: function %r timed out after %ss — worker thread will continue running",
+            getattr(fn, '__name__', repr(fn)), timeout_secs,
+        )
         raise TimeoutError(f"{description} exceeded {timeout_secs:.0f}s")
     if exc_holder:
         raise exc_holder[0]

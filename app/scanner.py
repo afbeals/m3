@@ -72,9 +72,11 @@ def _dedup_paths(paths: list[str]) -> list[str]:
     # Deduplicate exact-same resolved paths first, preserving order
     seen_resolved: list[str] = []
     seen_original: list[str] = []
+    seen_set: set[str] = set()
     for orig, res in zip(paths, resolved):
         norm = res.lower() if _ci else res
-        if norm not in ([r.lower() if _ci else r for r in seen_resolved]):
+        if norm not in seen_set:
+            seen_set.add(norm)
             seen_resolved.append(res)
             seen_original.append(orig)
 
@@ -130,7 +132,7 @@ def scan_library(
             for p in exclude_patterns
         ]
 
-        def _walk_onerror(err):
+        def _walk_onerror(err, _lib=lib_path):
             logger.warning("Scanner: cannot access %s: %s", err.filename, err)
 
         # os.walk recursively yields (directory, subdirs, files) for the whole tree
@@ -141,6 +143,7 @@ def scan_library(
             video_stems: dict[str, str] = {}
             nfo_stems: set[str] = set()
 
+            excluded_video_stems: set[str] = set()
             for fname in filenames:
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in VIDEO_EXTENSIONS:
@@ -150,6 +153,7 @@ def scan_library(
                         video_stems[os.path.splitext(fname)[0]] = full_path
                     else:
                         logger.debug("Excluding (matches pattern): %s", full_path)
+                        excluded_video_stems.add(os.path.splitext(fname)[0])
                 elif ext == ".nfo":
                     nfo_stems.add(os.path.splitext(fname)[0])
 
@@ -158,8 +162,9 @@ def scan_library(
             # A "new" video has no matching NFO stem.
             # Only attempt when both counts are exactly 1 to avoid ambiguous cases
             # (e.g. two files renamed simultaneously, or stale NFOs from deletions).
+            # Excluded video stems are subtracted so their NFOs are never treated as orphans.
             if not force:
-                orphan_nfos = nfo_stems - video_stems.keys()
+                orphan_nfos = (nfo_stems - video_stems.keys()) - excluded_video_stems
                 new_videos = {s: p for s, p in video_stems.items() if s not in nfo_stems}
                 if len(orphan_nfos) == 1 and len(new_videos) == 1:
                     old_stem = next(iter(orphan_nfos))

@@ -32,7 +32,7 @@
       <td><strong>{{ p.site_id }}</strong></td>
       <td class="muted">{{ p.aliases | join(", ") or "—" }}</td>
       <td>{{ p.class_name }}</td>
-      <td class="path">{{ p.source_file }}</td>
+      <td class="path">{{ p.source_file | basename }}</td>
     </tr>
     {% endfor %}
   </tbody>

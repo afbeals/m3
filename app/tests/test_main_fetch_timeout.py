@@ -4,7 +4,7 @@
 from __future__ import annotations
 import pytest
 
-import time
+import threading
 from unittest.mock import MagicMock, patch
 
 from app.main import run
@@ -14,13 +14,15 @@ from app.scanner import MediaFile
 
 pytestmark = pytest.mark.integration
 
+_never_set = threading.Event()
+
 
 class _SlowPlugin(MetadataPlugin):
     site_id = "slowsite"
     aliases = ()
 
     def fetch(self, parsed: ParsedFilename):
-        time.sleep(10)  # always times out under a short timeout
+        _never_set.wait()  # blocks indefinitely until process exits; no real sleep
         return MetadataResult(title="Should not reach here")
 
 

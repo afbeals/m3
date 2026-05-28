@@ -25,6 +25,7 @@ import inspect
 import logging
 import os
 import platform
+import re
 import signal
 import threading
 from collections import deque
@@ -209,6 +210,9 @@ def run_history(request: Request, page: int = 1):
 
 @router.get("/runs/{filename}", response_class=HTMLResponse)
 def run_detail(request: Request, filename: str, status: str = "", page: int = 1):
+    import re
+    if not re.fullmatch(r'[\w\-]+\.json', filename):
+        raise HTTPException(status_code=404, detail="Not found")
     run = get_run(request.app.state.config.report_path, filename)
     if run is None:
         return request.app.state.templates.TemplateResponse(
@@ -312,7 +316,7 @@ def _mask_url_creds(url: str) -> str:
             masked_netloc = f"***:***@{host_part}"
             return urlunparse(p._replace(netloc=masked_netloc))
     except Exception:
-        pass
+        logger.debug("_mask_url_creds: could not parse URL for masking, returning as-is")
     return url
 
 
@@ -375,6 +379,8 @@ def trigger_reload(request: Request):
     else:
         logger.info("Plugin reload requested on Windows — restart required instead")
 
+    if request.headers.get("HX-Request") == "true":
+        return HTMLResponse('<span style="color:var(--green)">✓ Reloaded</span>')
     return RedirectResponse(url="/plugins", status_code=303)
 
 
@@ -484,8 +490,6 @@ async def trigger_file(request: Request):
         outcome_status = "error"
         outcome_message = ""
         started_at = _dt.now().isoformat(timespec="seconds")
-        if run_state is not None:
-            run_state.start()
         try:
             # Bypasses the normal run() path deliberately: no library scan, no run
             # report, no rate limiting. This is a single user-initiated re-process
@@ -570,10 +574,14 @@ async def trigger_file(request: Request):
     # Guard: if anything between acquire() and thread.start() raises (e.g. MediaFile
     # construction or state access), release the lock so the path is not permanently
     # blocked from future retrigger attempts.
+    if run_state is not None:
+        run_state.start()
     try:
         thread.start()
     except Exception:
         file_lock.release()
+        if run_state is not None:
+            run_state.stop()
         raise
 
     # HTMX inline retry (HX-Request header present): return a "queued" badge
@@ -616,12 +624,21 @@ def file_history(request: Request, path: str = ""):
 _LOG_TAIL_LINES = 200
 _LOG_TAIL_MAX = 2000
 
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def _strip_ansi(lines: list[str]) -> list[str]:
+    """Remove ANSI escape codes from log lines so they render cleanly in HTML."""
+    return [_ANSI_RE.sub('', line) for line in lines]
+
 
 @router.get("/logs", response_class=HTMLResponse)
 def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
     tail = max(1, min(tail, _LOG_TAIL_MAX))
     config = request.app.state.config
     log_path = os.path.join(config.log_path, f"{config.app_name}.log")
+    if not Path(log_path).resolve().is_relative_to(Path(config.log_path).resolve()):
+        raise HTTPException(status_code=403, detail="Forbidden")
     lines: list[str] = []
     error: str | None = None
     try:
@@ -633,6 +650,7 @@ def log_viewer(request: Request, tail: int = _LOG_TAIL_LINES):
             with open(log_path, encoding="utf-8", errors="replace") as fh:
                 tail_buf: deque[str] = deque(fh, maxlen=tail)
             lines = [line.rstrip("\n") for line in tail_buf]
+            lines = _strip_ansi(lines)
     except OSError as exc:
         error = f"Could not read log file: {exc}"
     return request.app.state.templates.TemplateResponse(
