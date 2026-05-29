@@ -109,8 +109,10 @@ def test_config_repr_redacts_plex_token(monkeypatch):
     monkeypatch.setenv("PLEX_URL", "http://localhost:32400")
     monkeypatch.setenv("PLEX_TOKEN", "super-secret-token")
     cfg = load_config()
+    # CQ1: plex_token uses field(repr=False) so it is omitted from the dataclass
+    # auto-repr entirely rather than being shown as "***".
     assert "super-secret-token" not in repr(cfg)
-    assert "***" in repr(cfg)
+    assert "plex_token" not in repr(cfg)
 
 
 # ---------------------------------------------------------------------------

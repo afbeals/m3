@@ -51,7 +51,7 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
             "call_with_timeout: function %r timed out after %ss — worker thread will continue running",
             getattr(fn, '__name__', repr(fn)), timeout_secs,
         )
-        raise TimeoutError(f"{description} exceeded {timeout_secs:.0f}s")
+        raise TimeoutError(f"{description} exceeded {timeout_secs:.1f}s")
     if exc_holder:
         raise exc_holder[0]
     if not result_holder:
@@ -111,7 +111,10 @@ def retry_with_backoff(
                     description, attempt, max_attempts, exc, wait,
                 )
                 time.sleep(wait)
-    assert last_exc is not None, "retry loop completed without capturing an exception (this is a bug)"
+    if last_exc is None:
+        raise RuntimeError(
+            "retry_with_backoff: all attempts completed without an exception — this is a bug"
+        )
     raise last_exc
 
 

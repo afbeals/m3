@@ -10,7 +10,7 @@ import logging
 import os
 import threading
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +147,24 @@ def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> li
     return runs
 
 
+def count_runs(report_path: str) -> int:
+    """Return the actual total number of run_*.json files in report_path.
+
+    Unlike list_runs(), this is not capped at _MAX_RUNS, so the caller can
+    show "Showing N of M runs" when the history is larger than the cap.
+    """
+    if not os.path.isdir(report_path):
+        return 0
+    try:
+        return sum(
+            1
+            for f in os.listdir(report_path)
+            if f.startswith("run_") and f.endswith(".json")
+        )
+    except OSError:
+        return 0
+
+
 def get_run(report_path: str, filename: str) -> dict | None:
     """
     Return the full run dict (including per-file results) for a single report
@@ -241,7 +259,7 @@ def aggregate_unmatched(report_path: str, *, max_runs: int = 30) -> list[dict]:
         try:
             return datetime.fromisoformat(s)
         except (ValueError, TypeError):
-            return datetime.min
+            return datetime.min.replace(tzinfo=timezone.utc)
 
     for summary in summaries:
         # Skip runs that explicitly report 0 unmatched files — saves opening the full JSON.
@@ -362,7 +380,7 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
         try:
             return datetime.fromisoformat(e.get("started_at", ""))
         except (ValueError, TypeError):
-            return datetime.min
+            return datetime.min.replace(tzinfo=timezone.utc)
 
     history.sort(key=_safe_dt, reverse=True)
     return history[:max_runs]

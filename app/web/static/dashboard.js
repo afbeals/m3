@@ -1,0 +1,57 @@
+/* dashboard.js — all interactive behaviour for the PM web UI.
+   Loaded on every page via base.html; each section guards itself with
+   element-existence checks so it is safe to run on pages where the
+   relevant elements are absent. */
+
+// === Copy buttons (run_detail.html, unmatched.html) ===
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.copy-btn[data-path]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(btn.dataset.path).catch(function () {
+        btn.title = 'Copy failed';
+      });
+      var orig = btn.textContent;
+      btn.textContent = '✓'; // ✓
+      setTimeout(function () { btn.textContent = orig; }, 1200);
+    });
+  });
+});
+
+// === Log filter (logs.html) ===
+function filterLogs(query) {
+  var lines = document.querySelectorAll('.log-line');
+  var q = query.trim().toLowerCase();
+  var visible = 0;
+  lines.forEach(function (el) {
+    var match = !q || el.textContent.toLowerCase().includes(q);
+    el.style.display = match ? '' : 'none';
+    if (match) { visible++; }
+  });
+  var counter = document.getElementById('log-match-count');
+  if (counter) {
+    counter.textContent = q ? visible + ' / ' + lines.length + ' lines' : '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  // Wire the filter input (replaces oninput= inline handler)
+  var filterInput = document.getElementById('log-filter');
+  if (filterInput) {
+    filterInput.addEventListener('input', function () {
+      filterLogs(filterInput.value);
+    });
+  }
+
+  // Auto-scroll to bottom on initial page load (logs page only)
+  if (document.getElementById('log-panel')) {
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+});
+
+// Re-apply filter after HTMX refreshes the log panel
+document.addEventListener('htmx:afterSwap', function (evt) {
+  if (evt.detail.target && evt.detail.target.id === 'log-panel') {
+    var q = document.getElementById('log-filter');
+    if (q && q.value) { filterLogs(q.value); }
+  }
+});

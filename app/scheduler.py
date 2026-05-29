@@ -100,7 +100,16 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
                                 "Could not resume scheduler after reload: %s", resume_exc
                             )
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
-            except Exception as exc:
+            except KeyboardInterrupt:
+                logger.info("[scheduler] SIGUSR2 watcher thread stopping due to keyboard interrupt")
+                break
+            except BaseException as exc:
+                if not isinstance(exc, Exception):
+                    logger.critical(
+                        "[scheduler] SIGUSR2 watcher thread caught unexpected %s — stopping",
+                        type(exc).__name__,
+                    )
+                    break
                 logger.warning("Plugin reload failed: %s", exc)
 
     watcher_thread = threading.Thread(target=_watcher, daemon=True)
@@ -188,7 +197,16 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
                         replace_existing=True,
                         misfire_grace_time=_MISFIRE_GRACE_SECS,
                     )
-                except Exception as exc:
+                except KeyboardInterrupt:
+                    logger.info("[scheduler] SIGUSR1 watcher thread stopping due to keyboard interrupt")
+                    break
+                except BaseException as exc:
+                    if not isinstance(exc, Exception):
+                        logger.critical(
+                            "[scheduler] SIGUSR1 watcher thread caught unexpected %s — stopping",
+                            type(exc).__name__,
+                        )
+                        break
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
 
         watcher_thread = threading.Thread(target=_watcher, daemon=True)

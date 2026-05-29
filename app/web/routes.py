@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-import dataclasses
-import hashlib
 import html as _html
 import inspect
 import logging
@@ -37,7 +35,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.utils import call_with_timeout, atomic_replace
-from app.web.history import list_runs, get_run, aggregate_unmatched, get_file_history
+from app.web.history import list_runs, count_runs, get_run, aggregate_unmatched, get_file_history
 from app.writers.nfo import write_nfo, write_images
 from app.writers.plex import connect_plex, push_to_plex
 
@@ -82,7 +80,6 @@ def healthz(request: Request, verbose: bool = False, check: str = ""):
     # Kept separate from the main healthz response so uptime monitors can
     # alert on Plex being down without flagging the m3 process itself as unhealthy.
     if check == "plex":
-        from app.writers.plex import connect_plex
         import concurrent.futures
         config = request.app.state.config
         # Run connect_plex in a thread with a hard 5-second deadline so a slow or
@@ -208,7 +205,9 @@ _RUN_DETAIL_PAGE_SIZE = 200
 
 @router.get("/runs", response_class=HTMLResponse)
 def run_history(request: Request, page: int = 1):
-    all_runs = list_runs(request.app.state.config.report_path)
+    report_path = request.app.state.config.report_path
+    all_runs = list_runs(report_path)
+    actual_run_count = count_runs(report_path)
     total = len(all_runs)
     page = max(1, page)
     start = (page - 1) * _RUNS_PAGE_SIZE
@@ -223,6 +222,7 @@ def run_history(request: Request, page: int = 1):
             "page": page,
             "total_pages": total_pages,
             "total": total,
+            "actual_run_count": actual_run_count,
         },
     )
 
@@ -233,7 +233,6 @@ VALID_STATUSES = {"", "updated", "skipped", "renamed", "unmatched", "add_form",
 
 @router.get("/runs/{filename}", response_class=HTMLResponse)
 def run_detail(request: Request, filename: str, status: str = "", page: int = 1):
-    import re
     if status not in VALID_STATUSES:
         status = ""
     if not re.fullmatch(r'[\w\-]+\.json', filename):
@@ -368,7 +367,7 @@ def config_page(request: Request):
     ]
     entries = [
         ("App name",               "APP_NAME",               cfg.app_name,      None),
-        ("Plex URL",               "PLEX_URL",               cfg.plex_url,       None),
+        ("Plex URL",               "PLEX_URL",               _mask_url_creds(cfg.plex_url),       None),
         ("Plex token",             "PLEX_TOKEN",             "***" if cfg.plex_token else "(not set)", None),
         ("Library paths",          "LIBRARY_PATHS",          None,               lib_paths_annotated),
         ("Plugin directory",       "PLUGIN_DIR",             cfg.plugin_dir,     None),
@@ -534,7 +533,7 @@ async def trigger_file(request: Request):
         from datetime import datetime as _dt
         outcome_status = "error"
         outcome_message = ""
-        started_at = _dt.now().isoformat(timespec="seconds")
+        started_at = _dt.now(timezone.utc).isoformat(timespec="seconds")
         try:
             # Bypasses the normal run() path deliberately: no library scan, no run
             # report, no rate limiting. This is a single user-initiated re-process
@@ -603,7 +602,7 @@ async def trigger_file(request: Request):
                 run_state.stop()
             # Write a lightweight trigger record so the file history page shows
             # the manual retrigger outcome alongside regular scheduled runs.
-            finished_at = _dt.now().isoformat(timespec="seconds")
+            finished_at = _dt.now(timezone.utc).isoformat(timespec="seconds")
             try:
                 ts = started_at.replace(":", "").replace("-", "").replace("T", "_")[:15]
                 record = {
@@ -645,11 +644,10 @@ async def trigger_file(request: Request):
     # form POSTs (no HTMX) fall back to the full-page redirect so the behaviour
     # is unchanged for non-JS environments.
     if request.headers.get("HX-Request"):
-        slot_id = hashlib.sha256(file_path.encode()).hexdigest()[:16]
         return request.app.state.templates.TemplateResponse(
             request,
             "partials/queued_badge.html",
-            {"slot_id": slot_id},
+            {},
         )
 
     return RedirectResponse(url="/", status_code=303)

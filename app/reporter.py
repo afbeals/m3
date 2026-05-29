@@ -30,9 +30,15 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
+from typing import Literal
 
 from app.logging_setup import cleanup_old_files
 from app.utils import atomic_replace
+
+FileStatus = Literal[
+    "updated", "skipped", "renamed", "unmatched", "add_form",
+    "scrape_error", "image_error", "error", "plugin_error",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +48,7 @@ class FileResult:
     path: str
     # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error",
     #         "image_error", "plugin_error", "error"
-    status: str
+    status: FileStatus
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
     # True when the NFO was written but the Plex push returned False
@@ -114,20 +120,26 @@ def write_report(
         logger.error("Could not create report directory %s: %s", report_path, exc)
         raise
 
+    # CQ16: parse started_at once and reuse for both duration and filename derivation.
+    _start_dt = None
+    try:
+        _start_dt = datetime.fromisoformat(report.started_at)
+    except (ValueError, AttributeError):
+        pass
+
     # Compute wall-clock duration if both timestamps are present
-    if report.started_at and report.finished_at:
+    if _start_dt is not None and report.finished_at:
         try:
-            start = datetime.fromisoformat(report.started_at)
             end = datetime.fromisoformat(report.finished_at)
-            report.duration_seconds = max(0, int(round((end - start).total_seconds())))
+            report.duration_seconds = max(0, int(round((end - _start_dt).total_seconds())))
         except ValueError:
-            pass  # malformed timestamp — leave duration_seconds as None
+            pass  # malformed finished_at timestamp — leave duration_seconds as None
 
     # Derive the filename from the run's start time so the filename is consistent
     # with the report contents. Fall back to the current time if started_at is empty.
-    try:
-        ts = datetime.fromisoformat(report.started_at).strftime("%Y%m%d_%H%M%S")
-    except (ValueError, TypeError):
+    if _start_dt is not None:
+        ts = _start_dt.strftime("%Y%m%d_%H%M%S")
+    else:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     duration_str = (
@@ -178,7 +190,7 @@ def write_report(
         f"  Manual Add (pending)                   : {report.add_form}",
         f"  Unmatched                              : {report.unmatched}",
         f"  Scrape errors (site change / not found): {report.scrape_errors}",
-        f"  Image errors (NFO ok, images failed)   : {report.image_errors}",
+        f"  Image errors (NFO not written — images failed): {report.image_errors}",
         f"  Plugin errors (invalid data returned)  : {report.plugin_errors}",
         f"  Errors (unexpected)                    : {report.errors}",
         "",
@@ -236,6 +248,20 @@ def write_report(
             lines.append(f"  {f.path}")
             if f.message:
                 lines.append(f"    → {f.message}")
+        lines.append("")
+
+    # CQ17: renamed files detail block — shows what each file was previously named.
+    # main.py stores the old stem as: message="renamed from '<old_stem>'"
+    renamed_files = by_status.get("renamed", [])
+    if renamed_files:
+        lines.append("Renamed:")
+        for f in renamed_files:
+            # Extract the old stem from the message if present (e.g. "renamed from 'Old Name'")
+            if f.message and "from " in f.message:
+                old_stem = f.message.split("from ", 1)[-1].strip("'\"() \t")
+                lines.append(f"  {f.path}  (was: {old_stem})")
+            else:
+                lines.append(f"  {f.path}")
         lines.append("")
 
     # Write atomically via .tmp + os.replace() so a crash mid-write never

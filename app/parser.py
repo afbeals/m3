@@ -78,7 +78,7 @@ def _parse_add_form(stem: str) -> ParsedFilename:
     """Parse the Manual Add form: Add [Date] Actor [And Actor...] [In Title] [At Studio] [With Genre,...]"""
     # Strip leading "Add" keyword (case-insensitive) via regex so any casing variant
     # ("ADD", "add", "Add") is handled uniformly without relying on a fixed [3:] slice.
-    rest = re.sub(r"^add\b\s*", "", stem.strip(), flags=re.IGNORECASE)
+    rest = re.sub(r"^add\b\s*", "", stem.strip(), count=1, flags=re.IGNORECASE)
 
     actors: list[str] = []
     genres: list[str] = []
@@ -152,7 +152,7 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     # Split on " - " (with optional surrounding spaces)
     # An empty payload (e.g. stem ending with " %") means there is no site token —
     # return None rather than a partially-filled object with site="".
-    tokens = [t for t in (t.strip() for t in re.split(r"\s+-\s+", raw_payload)) if t]
+    tokens = [tok for tok in (s.strip() for s in re.split(r"\s+-\s+", raw_payload)) if tok]
     if not tokens or not tokens[0]:
         return None
 
@@ -161,6 +161,10 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     # encoded character (e.g. "Actor % %20 - real-site - 12345") and the split
     # landed on the wrong % boundary.
     if "%" in site:
+        return None
+    # Reject purely numeric site tokens (e.g. "Actor % 12345 - title" where 12345
+    # is not a site but a scene ID that was placed before the real site token).
+    if _SCENE_ID_RE.match(site):
         return None
     rest_tokens = tokens[1:]
 
@@ -216,8 +220,15 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
         # the plugin can use both for more precise matching.
         match_subtype = "exact"
     else:
-        title = " - ".join(text_tokens)
-        match_subtype = "enhanced" if (scene_id or date) else "limited"
+        # CQ10: if all remaining tokens are purely numeric they're likely duplicate IDs
+        # (e.g. "% mysite - 12345 - 67890"), not a title — don't concatenate them into
+        # a misleading title string.
+        if all(_SCENE_ID_RE.match(tok) for tok in text_tokens):
+            title = None
+            match_subtype = "enhanced" if (scene_id or date) else "exact"
+        else:
+            title = " - ".join(text_tokens)
+            match_subtype = "enhanced" if (scene_id or date) else "limited"
 
     return ParsedFilename(
         form="general",

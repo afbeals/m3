@@ -73,7 +73,7 @@ def config(tmp_path):
     cfg.plugin_rate_limit_secs = 0.0
     cfg.plugin_fetch_timeout_secs = 30.0
     cfg.notify_url = ""
-    cfg.notify_min_errors = 0
+    cfg.notify_min_errors = 1  # match production default (changed in Cycle 34)
     cfg.force = False
     cfg.library_exclude_patterns = []
     return cfg

@@ -56,13 +56,4 @@
 {% else %}
 <div class="card muted">No unmatched files in the last 30 runs.</div>
 {% endif %}
-<script>
-document.querySelectorAll('.copy-btn[data-path]').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    navigator.clipboard.writeText(btn.dataset.path);
-    btn.textContent = '✓';
-    setTimeout(function() { btn.textContent = '⎘'; }, 1200);
-  });
-});
-</script>
 {% endblock %}

@@ -288,7 +288,7 @@ def test_api_status_returns_running_when_active():
 def test_healthz_plex_check_returns_200_on_success():
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _make_app(tmpdir)
-        with patch("app.writers.plex.connect_plex", return_value=MagicMock()):
+        with patch("app.web.routes.connect_plex", return_value=MagicMock()):
             with TestClient(app) as client:
                 r = client.get("/healthz?check=plex")
     assert r.status_code == 200
@@ -298,7 +298,7 @@ def test_healthz_plex_check_returns_200_on_success():
 def test_healthz_plex_check_returns_503_on_failure():
     with tempfile.TemporaryDirectory() as tmpdir:
         app = _make_app(tmpdir)
-        with patch("app.writers.plex.connect_plex", side_effect=Exception("refused")):
+        with patch("app.web.routes.connect_plex", side_effect=Exception("refused")):
             with TestClient(app) as client:
                 r = client.get("/healthz?check=plex")
     assert r.status_code == 503

@@ -609,6 +609,12 @@ class TestRenameNfoAssets:
         assert poster_el is not None
         assert poster_el.text == f"{new_stem}-poster.png"
 
+        # T6: verify the actual image file was renamed on disk
+        assert (tmp_path / f"{new_stem}-poster.png").exists(), \
+            "Renamed poster image file should exist at new path"
+        assert not (tmp_path / f"{old_stem}-poster.png").exists(), \
+            "Old poster image file should be removed after rename"
+
     def test_rename_nfo_assets_partial_art_poster_only(self, tmp_path):
         from app.writers.nfo import rename_nfo_assets
 

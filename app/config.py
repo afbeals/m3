@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 class Config:
     # Connection details for your Plex Media Server
     plex_url: str
-    # plex_token is excluded from __repr__ so it never appears in logs or tracebacks
-    plex_token: str
+    # repr=False excludes plex_token from __repr__ so it never appears in logs or tracebacks
+    plex_token: str = field(repr=False)
 
     # Directories inside the container that will be scanned for media files
     library_paths: list[str]
@@ -90,8 +90,8 @@ class Config:
     # any HTTP endpoint that accepts JSON (Apprise, Gotify, Pushover relay, etc.).
     notify_url: str = ""
 
-    # Minimum combined error count (errors + scrape_errors + image_errors) required
-    # before the webhook fires. Webhook fires when total error count >= this value
+    # Minimum combined error count (errors + scrape_errors + image_errors + plugin_errors)
+    # required before the webhook fires. Webhook fires when total error count >= this value
     # (default: 1). Set to 0 to always fire regardless of errors.
     notify_min_errors: int = 1
 
@@ -104,16 +104,6 @@ class Config:
     # Matched against the full absolute path. Example: "*.part,/media/incoming/**"
     # Useful for excluding temp files, hidden directories, or work-in-progress media.
     library_exclude_patterns: list[str] = field(default_factory=list)
-
-    def __repr__(self) -> str:
-        import dataclasses
-        parts = []
-        for f in dataclasses.fields(self):
-            val = getattr(self, f.name)
-            if f.name == "plex_token":
-                val = "***"
-            parts.append(f"{f.name}={val!r}")
-        return f"Config({', '.join(parts)})"
 
 
 def load_config(force: bool = False, plex_required: bool = True) -> Config:
@@ -203,8 +193,10 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
 
     web_enabled_raw = optional("WEB_ENABLED", "true").lower()
     web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
-    _KNOWN_FALSE = {"false", "0", "no", "off", ""}
-    if web_enabled_raw and web_enabled_raw not in {"true", "1", "yes", "on"} | _KNOWN_FALSE:
+    # CQ2: single set covers both true and false values — avoids the confusing set-union
+    # expression and makes the intent clear.
+    _KNOWN_BOOL = {"true", "1", "yes", "on", "false", "0", "no", "off", ""}
+    if web_enabled_raw and web_enabled_raw not in _KNOWN_BOOL:
         logger.warning(
             "WEB_ENABLED=%r is not a recognised boolean value; treating as False. "
             "Use 'true', '1', 'yes', or 'on' to enable.",

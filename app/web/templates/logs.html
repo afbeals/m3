@@ -11,6 +11,7 @@
        hx-get="/api/log-panel?tail={{ tail }}"
        hx-target="#log-panel"
        hx-swap="innerHTML"
+       hx-push-url="false"
        title="Refresh log">↺ Refresh</a>
   </div>
 </div>
@@ -26,7 +27,7 @@
   <input id="log-filter" type="search" placeholder="e.g. ERROR, mysite, /path/to/file" aria-label="Filter log lines"
          style="font-size:0.8rem; padding:0.2rem 0.5rem; background:var(--bg3); color:var(--text);
                 border:1px solid var(--text); border-radius:4px; width:280px;"
-         oninput="filterLogs(this.value)">
+         >
   <span id="log-match-count" class="muted" style="font-size:0.75rem;"></span>
 </div>
 
@@ -47,37 +48,4 @@
 {% endif %}
 </div>
 
-<script>
-  function filterLogs(query) {
-    const lines = document.querySelectorAll(".log-line");
-    const q = query.trim().toLowerCase();
-    let visible = 0;
-    lines.forEach(function(el) {
-      const match = !q || el.textContent.toLowerCase().includes(q);
-      el.style.display = match ? "" : "none";
-      if (match) visible++;
-    });
-    const counter = document.getElementById("log-match-count");
-    if (counter) {
-      counter.textContent = q ? visible + " / " + lines.length + " lines" : "";
-    }
-  }
-
-  // Re-apply filter after HTMX refreshes the log panel
-  document.body.addEventListener("htmx:afterSwap", function(evt) {
-    if (evt.detail.target && evt.detail.target.id === "log-panel") {
-      const q = document.getElementById("log-filter");
-      if (q && q.value) filterLogs(q.value);
-    }
-  });
-
-  // Auto-scroll to bottom on initial page load only
-  let _logInitialLoad = true;
-  document.addEventListener("DOMContentLoaded", function() {
-    if (_logInitialLoad) {
-      window.scrollTo(0, document.body.scrollHeight);
-      _logInitialLoad = false;
-    }
-  });
-</script>
 {% endblock %}

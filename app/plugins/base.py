@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from datetime import date as _date
 from typing import Literal
 
+from app.scrape import ScrapeError as ScrapeError  # re-exported for plugin author convenience
+
 _logger = logging.getLogger(__name__)
 
 
@@ -131,6 +133,12 @@ class MetadataResult:
     def __post_init__(self) -> None:
         # Validate at the plugin boundary so bad data never reaches the writers.
         # A missing title would produce a corrupt NFO and garbage in Plex.
+        # Check title specifically for str(None) pattern before the general check.
+        if isinstance(self.title, str) and self.title.strip().lower() in ("none", "null", ""):
+            raise PluginValidationError(
+                f"MetadataResult.title is {self.title!r} — did you call str(None) on an API response? "
+                "Return a real title string."
+            )
         if not isinstance(self.title, str) or not self.title.strip():
             raise PluginValidationError(
                 f"MetadataResult.title must be a non-empty string, got {self.title!r}"
@@ -165,6 +173,16 @@ class MetadataResult:
                     f"MetadataResult.{field_name} must be a list, not None. "
                     "Return an empty list [] instead of None."
                 )
+        # Validate that all elements in list fields are strings.
+        for field_name in ("actors", "genres", "tags", "labels", "directors"):
+            lst = getattr(self, field_name)
+            if lst is not None:  # None case already handled above
+                bad = [x for x in lst if not isinstance(x, str)]
+                if bad:
+                    raise PluginValidationError(
+                        f"MetadataResult.{field_name} contains non-string elements: {bad!r}. "
+                        "All elements must be strings."
+                    )
         # Validate release_date is a proper ISO date (YYYY-MM-DD); clear it if not.
         if self.release_date is not None:
             try:
@@ -175,15 +193,36 @@ class MetadataResult:
                     self.release_date,
                 )
                 self.release_date = None
+        # H16: strip whitespace (and collapse whitespace-only strings to None) for
+        # all string fields that may come from API responses with extra padding.
+        # Runs after the str(None) guard so "None" strings are already cleared.
+        for str_field in ("summary", "content_rating", "source_url", "studio", "source_id"):
+            val = getattr(self, str_field)
+            if isinstance(val, str):
+                stripped = val.strip()
+                setattr(self, str_field, stripped if stripped else None)
+
         # Auto-derive year from release_date if year is not explicitly set
         if self.release_date and self.year is None:
             try:
                 self.year = int(self.release_date[:4])
-            except (ValueError, TypeError) as _e:
+            except ValueError as _e:
+                # CQ11: TypeError cannot occur here because release_date has already
+                # been validated as a proper ISO date string above.
                 _logger.warning(
                     "Could not derive year from release_date %r: %s",
                     self.release_date, _e,
                 )
+        # H15: validate year is within an expected range (1900 – current_year+1).
+        if self.year is not None:
+            import datetime as _dt_mod
+            current_year = _dt_mod.date.today().year
+            if not (1900 <= self.year <= current_year + 1):
+                _logger.warning(
+                    "MetadataResult.year %r is out of expected range (1900-%d) — clearing.",
+                    self.year, current_year + 1,
+                )
+                self.year = None
 
 
 class MetadataPlugin(ABC):
@@ -194,7 +233,7 @@ class MetadataPlugin(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Only check concrete subclasses (not abstract ones)
-        if not inspect.isabstract(cls) and not cls.site_id:
+        if not inspect.isabstract(cls) and not (cls.site_id or "").strip():
             raise TypeError(
                 f"Plugin class {cls.__name__!r} must set a non-empty class-level "
                 f"'site_id' attribute. Did you accidentally set it in __init__ instead?"
@@ -255,5 +294,5 @@ class MetadataPlugin(ABC):
         if not self.site_id:
             return []
         ids = [self.site_id.lower()]
-        ids.extend(a.lower() for a in self.aliases if a)
+        ids.extend(a.strip().lower() for a in self.aliases if a.strip())
         return ids

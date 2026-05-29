@@ -344,7 +344,9 @@ def run(
         # Placed here (after fetch, after the None-result guard) so that:
         #   - the first file in a run is not delayed
         #   - failed fetches (exception or None result) don't count toward the window
-        if config.plugin_rate_limit_secs > 0:
+        # DC9: skip rate limiting in dry-run mode — no real API calls are made so
+        # there's no site to throttle, and sleeping would just waste developer time.
+        if not dry_run and config.plugin_rate_limit_secs > 0:
             time.sleep(config.plugin_rate_limit_secs)
 
         # Write images first so we know the actual filenames (extension derived from
@@ -372,8 +374,8 @@ def run(
                             logger.debug("Removed partial image file: %s", partial_path)
                         except OSError as exc:
                             logger.debug("Could not remove partial image %s: %s", partial_path, exc)
-                result = FileResult(status="image_error", path=media.path, message="NFO not written — one or more images failed to download")
-                report.record(result)
+                file_result = FileResult(status="image_error", path=media.path, message="NFO not written — one or more images failed to download")
+                report.record(file_result)
                 continue
 
             # Build bare filenames for the NFO <art> block using the actual written paths
@@ -440,8 +442,10 @@ def run(
 
         # Fire the optional webhook with a compact run summary. Non-fatal: a webhook
         # failure never aborts the run or prevents the report from being written.
-        # NOTIFY_MIN_ERRORS gates the webhook: when set to 1 the webhook only fires
-        # when something broke, avoiding noise on clean nightly runs.
+        # NOTIFY_MIN_ERRORS gates the webhook: fires when total error count
+        # (errors + scrape_errors + image_errors + plugin_errors) >= notify_min_errors.
+        # When set to 1 the webhook only fires when something broke, avoiding noise
+        # on clean nightly runs.
         if config.notify_url:
             total_errors = report.errors + report.scrape_errors + report.image_errors + report.plugin_errors
             should_notify = (
@@ -908,7 +912,7 @@ def main() -> None:
                 print(f"Could not read run report: {summary['filename']}")
                 continue
             for f in full_run.get("files", []):
-                if f.get("status") in ("error", "scrape_error") and f.get("path"):
+                if f.get("status") in ("error", "scrape_error", "image_error", "plugin_error") and f.get("path"):
                     p = f["path"]
                     if p not in seen_paths:
                         seen_paths.add(p)
@@ -987,6 +991,12 @@ def main() -> None:
             from watchfiles import watch as _watch
             import threading as _threading
 
+            # BUG8: a lock guards the clear()+update() two-step so the router never
+            # sees an empty dict between the two operations.  Must be acquired around
+            # both operations together; individual dict ops are GIL-safe but the pair
+            # is not atomic without an explicit lock.
+            _watch_registry_lock = _threading.Lock()
+
             def _plugin_watcher():
                 logger.info("--watch: watching %s for plugin changes", config.plugin_dir)
                 try:
@@ -996,8 +1006,9 @@ def main() -> None:
                             from app.plugins.loader import load_plugins as _lp
                             prev_count = len(registry)
                             new_reg = _lp(config.plugin_dir)
-                            registry.clear()
-                            registry.update(new_reg)
+                            with _watch_registry_lock:
+                                registry.clear()
+                                registry.update(new_reg)
                             if not new_reg:
                                 logger.warning(
                                     "--watch: reload produced an empty plugin registry — "

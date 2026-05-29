@@ -36,6 +36,10 @@ from app.utils import retry_with_backoff, atomic_replace
 
 logger = logging.getLogger(__name__)
 
+# XXE-safe XML parser — resolve_entities=False prevents external entity expansion.
+# Used by rename_nfo_assets when parsing existing NFO files.
+_xml_parser = etree.XMLParser(resolve_entities=False)
+
 # Retry settings for image downloads.
 # Exponential backoff: wait 2s, 4s, 8s between attempts before giving up.
 _DOWNLOAD_MAX_ATTEMPTS = 3
@@ -55,7 +59,19 @@ _IMAGE_EXTENSIONS = (".jpg", ".png", ".webp")
 
 
 def _resolve_art_filename(stem: str, kind: str, dirpath: str) -> str:
-    """Return the actual sidecar filename, probing for the right extension."""
+    """Return the actual sidecar filename, probing for the right extension.
+
+    Probes disk for an existing image file with any supported extension
+    (.jpg, .png, .webp).  If no image is found, returns a .jpg fallback.
+
+    H9 note: this function is only called from write_nfo() when the caller did
+    NOT pass explicit poster_filename / fanart_filename arguments.  In normal
+    operation main.py always calls write_images() first and passes the returned
+    filenames, so this path is only taken when images were not attempted or
+    failed.  In that case the .jpg fallback is an acceptable placeholder — there
+    is no image file to reference anyway.  The probe still adds value for the
+    rename path, where images already exist on disk.
+    """
     for ext in _IMAGE_EXTENSIONS:
         if os.path.exists(os.path.join(dirpath, f"{stem}-{kind}{ext}")):
             return f"{stem}-{kind}{ext}"
@@ -211,10 +227,15 @@ def _download_image(url: str, dest_base: str) -> str | None:
                         cl_int = int(cl)
                     except (ValueError, OverflowError):
                         cl_int = None  # malformed header; fall through to streaming check
-                    if cl_int is not None and cl_int > 0 and cl_int > _DOWNLOAD_MAX_BYTES:
-                        raise ValueError(
-                            f"Image Content-Length ({cl_int} bytes) exceeds limit from {url}"
-                        )
+                    if cl_int is not None:
+                        if cl_int == 0:
+                            # H17: server advertised an empty body — reject before
+                            # downloading to avoid writing a 0-byte image file.
+                            raise ValueError(f"Server returned Content-Length: 0 for {url}")
+                        if cl_int > _DOWNLOAD_MAX_BYTES:
+                            raise ValueError(
+                                f"Image Content-Length ({cl_int} bytes) exceeds limit from {url}"
+                            )
 
                 # Write atomically: accumulate chunks into .tmp, abort if size cap
                 # exceeded mid-stream, then os.replace() into final path.
@@ -275,7 +296,7 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
     # even if etree.parse() raises before tmp_nfo would have been assigned inside the try.
     tmp_nfo = new_nfo + ".tmp"
     try:
-        tree = etree.parse(old_nfo)
+        tree = etree.parse(old_nfo, _xml_parser)
         root = tree.getroot()
         art = root.find("art")
         if art is not None:
@@ -294,6 +315,12 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
                                 break
                         else:
                             existing_ext = ".jpg"  # fallback when no image exists yet
+                            # BUG10: warn when no image file was found at any extension
+                            logger.warning(
+                                "[nfo] rename_nfo_assets: no image found for %s%s at any "
+                                "extension; NFO art reference may be stale",
+                                old_stem, base_suffix,
+                            )
                     ext = existing_ext
                     el.text = f"{new_stem}{base_suffix}{ext}"
         # Use the same header format as write_nfo (double-quoted, uppercase UTF-8)

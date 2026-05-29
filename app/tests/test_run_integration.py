@@ -83,6 +83,14 @@ class _ScrapeGenericPlugin(MetadataPlugin):
         raise ScrapeError("HTTP 503 after 3 attempts")
 
 
+class _ValidationErrorPlugin(MetadataPlugin):
+    site_id = "validsite"
+
+    def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+        from app.plugins.base import PluginValidationError
+        raise PluginValidationError("rating must be finite, got nan")
+
+
 # ---------------------------------------------------------------------------
 # run() — core routing outcomes
 # ---------------------------------------------------------------------------
@@ -291,6 +299,22 @@ def test_run_scrape_error_message_included_in_result(tmp_path):
     assert report.scrape_errors == 1
     file_result = next(f for f in report.files if f.status == "scrape_error")
     assert "HTTP 503" in file_result.message
+
+
+def test_run_marks_file_plugin_error_on_validation_failure(tmp_path):
+    """When plugin.fetch() raises PluginValidationError, status='plugin_error'."""
+    media = _make_media(tmp_path, "Jane Doe % validsite - 12345")
+    router = Router({"validsite": _ValidationErrorPlugin()})
+    cfg = _config(tmp_path)
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.plugin_errors == 1
+    assert report.files[0].status == "plugin_error"
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +694,21 @@ class TestSweepTmpOrphans:
         _sweep_tmp_orphans([str(tmp_path)])
 
         assert nfo.exists(), "Non-.tmp files must not be deleted"
+
+    def test_removes_stale_tmp_in_subdirectory(self, tmp_path):
+        """_sweep_tmp_orphans must find and remove stale .tmp files in subdirectories."""
+        subdir = tmp_path / "subdir" / "nested"
+        subdir.mkdir(parents=True)
+        stale_tmp = subdir / "old.nfo.tmp"
+        stale_tmp.write_bytes(b"stale")
+
+        # Set mtime to more than 30 minutes ago
+        old_mtime = time.time() - 2000
+        os.utime(str(stale_tmp), (old_mtime, old_mtime))
+
+        _sweep_tmp_orphans([str(tmp_path)])
+
+        assert not stale_tmp.exists(), "Stale .tmp in subdirectory should be removed"
 
 
 # ---------------------------------------------------------------------------

@@ -101,7 +101,9 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                             _fallback_cache[part.file] = item
                         if part.file == file_path:
                             found = item
-                            break  # stop scanning parts of this item; outer loop will break too
+                            break  # exit for-part loop
+                    if found is not None:
+                        break  # exit for-media loop
             if found is not None:
                 # Break as soon as we find the target. This means sections scanned after
                 # this point are not cached, but we avoid scanning the entire library

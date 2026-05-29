@@ -174,6 +174,7 @@ tr:hover td { background: var(--bg3); }
 .badge-scrape_error { background: #3a1a1a; color: var(--orange); }
 .badge-image_error  { background: #3a2a10; color: var(--yellow); }
 .badge-error        { background: #2d0808; color: var(--red); }
+.badge-plugin_error { background: #2a1a2a; color: var(--purple); }
 
 /* ---- Buttons / forms ---- */
 button, .btn {

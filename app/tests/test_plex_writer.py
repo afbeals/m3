@@ -232,7 +232,7 @@ def test_push_to_plex_returns_false_on_exception():
 
 def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
                mpaa="NR", year="2023", genres=(), actors=(), labels=(),
-               directors=()):
+               directors=(), premiered=None, studio=None):
     from lxml import etree
     root = etree.Element("movie")
     for tag, val in (("title", title), ("plot", plot), ("rating", rating),
@@ -248,6 +248,10 @@ def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
         etree.SubElement(root, "tag").text = f"label:{lbl}"
     for d in directors:
         etree.SubElement(root, "director").text = d
+    if premiered is not None:
+        etree.SubElement(root, "premiered").text = premiered
+    if studio is not None:
+        etree.SubElement(root, "studio").text = studio
     tree = etree.ElementTree(root)
     with open(path, "wb") as fh:
         fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
@@ -497,3 +501,75 @@ def test_push_to_plex_does_not_push_empty_studio(tmp_path):
         call_kwargs = mock_item.edit.call_args[1] if mock_item.edit.call_args else {}
         assert "studio.value" not in call_kwargs, \
             "studio.value should not be pushed when studio is empty/None"
+
+
+# T3 — push_nfo_to_plex: <premiered> pushed as originallyAvailableAt
+
+def test_push_nfo_to_plex_pushes_premiered_date(tmp_path):
+    """push_nfo_to_plex must push <premiered> as originallyAvailableAt."""
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = str(tmp_path / "Scene.nfo")
+    _write_nfo(nfo, premiered="2024-03-15")
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), nfo)
+
+    call_kwargs = mock_item.edit.call_args[1] if mock_item.edit.called else {}
+    assert call_kwargs.get("originallyAvailableAt.value") == "2024-03-15"
+    assert call_kwargs.get("originallyAvailableAt.locked") == 1
+
+
+# T4 — push_to_plex: director add-before-remove ordering
+
+def test_push_to_plex_directors_add_before_remove():
+    """addDirector must be called before removeDirectors in push_to_plex."""
+    mock_item = MagicMock()
+    mock_server = MagicMock()
+    result = _make_result()
+    # Inject a director into the result
+    from app.plugins.base import MetadataResult
+    result_with_director = MetadataResult(
+        title=result.title,
+        summary=result.summary,
+        rating=result.rating,
+        year=result.year,
+        genres=result.genres,
+        labels=result.labels,
+        tags=result.tags,
+        actors=result.actors,
+        directors=["Christopher Nolan"],
+        source_id=result.source_id,
+    )
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/movie.mp4", result_with_director)
+
+    call_names = [c[0] for c in mock_item.method_calls]
+    assert "addDirector" in call_names, "addDirector should have been called"
+    assert "removeDirectors" in call_names, "removeDirectors should have been called"
+    assert call_names.index("addDirector") < call_names.index("removeDirectors"), \
+        "addDirector must precede removeDirectors"
+
+
+# T5 — push_nfo_to_plex: <studio> pushed
+
+def test_push_nfo_to_plex_pushes_studio(tmp_path):
+    """push_nfo_to_plex must push <studio> element."""
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = str(tmp_path / "Scene.nfo")
+    _write_nfo(nfo, studio="Test Studio")
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), nfo)
+
+    call_kwargs = mock_item.edit.call_args[1] if mock_item.edit.called else {}
+    assert call_kwargs.get("studio.value") == "Test Studio"
+    assert call_kwargs.get("studio.locked") == 1

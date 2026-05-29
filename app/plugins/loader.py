@@ -35,7 +35,10 @@ from app.plugins.base import MetadataPlugin
 logger = logging.getLogger(__name__)
 
 
-def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str, MetadataPlugin]:
+def load_plugins(
+    plugin_dir: str,
+    old_registry: "dict[str, MetadataPlugin] | None" = None,
+) -> "dict[str, MetadataPlugin]":
     """
     Discover and load MetadataPlugin subclasses from .py files in plugin_dir.
 
@@ -47,22 +50,14 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
     old_registry: if provided, close() is called on each plugin instance before loading
     new ones. This releases any open resources (e.g. httpx.Client connection pools).
     """
-    # Close any plugins in the old registry before building the new one.
-    # Deduplicate by object identity: a plugin registered under both its site_id
-    # and one or more aliases appears multiple times in .values(), and calling
-    # close() twice raises RuntimeError on httpx.Client.
-    if old_registry is not None:
-        for plugin in set(old_registry.values()):
-            try:
-                plugin.close()
-            except Exception:
-                logger.exception("Error closing plugin %s during reload", type(plugin).__name__)
-
     # The registry maps lowercase site_id / alias → plugin instance
     registry: dict[str, MetadataPlugin] = {}
 
     if not os.path.isdir(plugin_dir):
-        logger.warning("Plugin directory not found: %s", plugin_dir)
+        if os.path.exists(plugin_dir):
+            logger.warning("Plugin path %r exists but is not a directory — check your PLUGIN_DIR setting", plugin_dir)
+        else:
+            logger.warning("Plugin directory not found: %r — no plugins will be loaded", plugin_dir)
         return registry
 
     modules_to_cleanup: list[str] = []
@@ -131,8 +126,8 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                 logger.exception("Failed to instantiate plugin class %s in %s; skipping", obj.__name__, fname)
                 continue
             # Register the plugin under its site_id and every alias
+            closed_instances: set[int] = set()
             try:
-                closed_instances: set[int] = set()
                 for key in dict.fromkeys(instance.all_ids()):
                     if key in registry:
                         evicted = registry[key]
@@ -150,7 +145,11 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                             evicted.close()
                             closed_instances.add(id(evicted))
                     registry[key] = instance
-                    logger.info("Registered plugin %s for id %r", obj.__name__, key)
+                logger.info(
+                    "Registered plugin %s (ids: %s)",
+                    obj.__name__,
+                    ", ".join(dict.fromkeys(instance.all_ids())),
+                )
             except Exception:
                 logger.exception("Failed to register plugin %s — skipping", obj.__name__)
                 # Clean up any partially-registered keys for this instance
@@ -169,5 +168,17 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
     # for the full duration of loading.
     for module_name in modules_to_cleanup:
         sys.modules.pop(module_name, None)
+
+    # Close any plugins in the old registry AFTER the new registry is fully built.
+    # This ensures the new registry is usable even if close() raises.
+    # Deduplicate by object identity: a plugin registered under both its site_id
+    # and one or more aliases appears multiple times in .values(), and calling
+    # close() twice raises RuntimeError on httpx.Client.
+    if old_registry is not None:
+        for plugin in set(old_registry.values()):
+            try:
+                plugin.close()
+            except Exception:
+                logger.exception("Error closing plugin %s during reload", type(plugin).__name__)
 
     return registry

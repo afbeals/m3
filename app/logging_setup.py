@@ -38,23 +38,26 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
     # Create the log directory if it doesn't exist yet.
     # If this fails (e.g. permission error) we print to stderr and fall back to
     # stdout-only logging so startup messages are never silently swallowed.
+    # CQ5: track whether log directory creation succeeded, avoiding a type lie on log_path.
+    log_file: str | None = None
     try:
         os.makedirs(log_path, exist_ok=True)
+        # Sanitize app_name for use as a filename — remove path separators that would
+        # cause the log file to be created in an unexpected subdirectory.
+        # CQ6: strip trailing dots and spaces which are illegal in Windows filenames.
+        safe_app_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', app_name).strip('. ')
+        log_file = os.path.join(log_path, f"{safe_app_name}.log")
     except OSError as exc:
         print(
             f"{app_name} WARNING: could not create log directory {log_path!r}: {exc}. "
             "Falling back to stdout-only logging.",
             file=sys.stderr,
         )
-        log_path = None  # type: ignore[assignment]
+        # log_file remains None — file logging is skipped
 
-    # Sanitize app_name for use as a filename — remove path separators that would
-    # cause the log file to be created in an unexpected subdirectory.
-    safe_app_name = re.sub(r'[<>:"/\\|?*]', '_', app_name)
-    log_file = os.path.join(log_path, f"{safe_app_name}.log") if log_path else None
-
-    # Shared format: timestamp, level, logger name, message
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    # Shared format: timestamp, level (fixed 8-char width for alignment), logger name, message
+    # CQ7: %-8s pads shorter level names (e.g. INFO, DEBUG) so columns align across log lines.
+    fmt = logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s")
     fmt.converter = time.gmtime  # force UTC timestamps in log output
 
     root = logging.getLogger()
@@ -186,4 +189,10 @@ def cleanup_old_files(
                     # abort cleanup of all other files
                     logger.warning("Could not delete old file %s: %s", entry.path, exc)
 
+    # CQ8: log the number of files cleaned up so operators can see retention in action.
+    if removed > 0:
+        logger.info(
+            "Cleaned up %d old file(s) from %s (retention: %d days)",
+            removed, directory, retention_days,
+        )
     return removed
