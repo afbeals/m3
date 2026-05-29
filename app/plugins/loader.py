@@ -124,6 +124,7 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                 continue
             # Register the plugin under its site_id and every alias
             try:
+                closed_instances: set[int] = set()
                 for key in dict.fromkeys(instance.all_ids()):
                     if key in registry:
                         evicted = registry[key]
@@ -137,7 +138,9 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                         stale_keys = [k for k, v in registry.items() if v is evicted]
                         for k in stale_keys:
                             del registry[k]
-                        evicted.close()
+                        if id(evicted) not in closed_instances:
+                            evicted.close()
+                            closed_instances.add(id(evicted))
                     registry[key] = instance
                     logger.info("Registered plugin %s for id %r", obj.__name__, key)
             except Exception:

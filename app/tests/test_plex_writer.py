@@ -231,7 +231,8 @@ def test_push_to_plex_returns_false_on_exception():
 # ---------------------------------------------------------------------------
 
 def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
-               mpaa="NR", year="2023", genres=(), actors=(), labels=()):
+               mpaa="NR", year="2023", genres=(), actors=(), labels=(),
+               directors=()):
     from lxml import etree
     root = etree.Element("movie")
     for tag, val in (("title", title), ("plot", plot), ("rating", rating),
@@ -245,6 +246,8 @@ def _write_nfo(path, *, title="Test Title", plot="A plot.", rating="7.5",
         etree.SubElement(actor_el, "name").text = a
     for lbl in labels:
         etree.SubElement(root, "tag").text = f"label:{lbl}"
+    for d in directors:
+        etree.SubElement(root, "director").text = d
     tree = etree.ElementTree(root)
     with open(path, "wb") as fh:
         fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
@@ -410,6 +413,29 @@ def test_push_nfo_to_plex_tolerates_float_year_string(tmp_path):
     assert call_kwargs["year.locked"] == 1
 
 
+def test_push_nfo_to_plex_pushes_directors_with_add_before_remove(tmp_path):
+    """push_nfo_to_plex must add new directors before removing stale ones."""
+    from app.writers.plex import push_nfo_to_plex
+
+    nfo = tmp_path / "Scene.nfo"
+    _write_nfo(str(nfo), directors=("Christopher Nolan",))
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+    mock_item.directors = []  # no existing directors
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), str(nfo))
+
+    # addDirector must be called
+    mock_item.addDirector.assert_called()
+
+    # Ordering: addDirector before removeDirectors
+    call_names = [c[0] for c in mock_item.method_calls]
+    if "removeDirectors" in call_names and "addDirector" in call_names:
+        assert call_names.index("addDirector") < call_names.index("removeDirectors")
+
+
 def test_find_plex_item_uses_fallback_cache_on_second_call(tmp_path):
     """Second call with same path and populated cache must skip the slow scan."""
     cache = {}
@@ -451,3 +477,22 @@ def test_connect_plex_returns_none_on_timeout(caplog):
     assert result is None
     # connect_plex catches all exceptions with a single WARNING — verify one was emitted
     assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_push_to_plex_does_not_push_empty_studio(tmp_path):
+    """studio="" is coerced to None and must not be pushed to Plex."""
+    # studio="" should be coerced to None by MetadataResult.__post_init__
+    result = MetadataResult(title="Test", studio="")
+    assert result.studio is None  # verify coercion happened
+
+    mock_server = MagicMock()
+    mock_item = MagicMock()
+
+    with patch("app.writers.plex.find_plex_item", return_value=mock_item):
+        push_to_plex(mock_server, "/media/test.mp4", result)
+
+    # edit() should not include studio.value
+    if mock_item.edit.called:
+        call_kwargs = mock_item.edit.call_args[1] if mock_item.edit.call_args else {}
+        assert "studio.value" not in call_kwargs, \
+            "studio.value should not be pushed when studio is empty/None"

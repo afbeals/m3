@@ -48,7 +48,10 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
         )
         log_path = None  # type: ignore[assignment]
 
-    log_file = os.path.join(log_path, f"{app_name}.log") if log_path else None
+    # Sanitize app_name for use as a filename — remove path separators that would
+    # cause the log file to be created in an unexpected subdirectory.
+    safe_app_name = app_name.replace("/", "_").replace("\\", "_")
+    log_file = os.path.join(log_path, f"{safe_app_name}.log") if log_path else None
 
     # Shared format: timestamp, level, logger name, message
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -125,6 +128,11 @@ def cleanup_old_files(
 
     Returns the number of files deleted.
     """
+    if retention_days < 1:
+        raise ValueError(
+            f"retention_days must be >= 1 to avoid deleting all files, got {retention_days!r}"
+        )
+
     if not os.path.isdir(directory):
         return 0
 
@@ -133,6 +141,9 @@ def cleanup_old_files(
     # Any file older than this timestamp will be deleted
     cutoff = datetime.now(tz=timezone.utc) - timedelta(days=retention_days)
     removed = 0
+
+    # Compiled once here so it is not recompiled on every iteration of the scan loop.
+    _backup_suffix_re = re.compile(r"[0-9]+$")
 
     # os.scandir yields DirEntry objects that cache stat results, avoiding a
     # separate os.stat call per file compared to os.listdir + os.path.getmtime.
@@ -149,7 +160,7 @@ def cleanup_old_files(
                 is_rotated_log_backup = (
                     pattern_suffix == ".log"
                     and fname.startswith(f"{active_log}.")
-                    and bool(re.fullmatch(r"[0-9]+", fname[len(active_log) + 1:]))
+                    and bool(_backup_suffix_re.fullmatch(fname[len(active_log) + 1:]))
                 )
                 if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
                     continue

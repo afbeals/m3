@@ -569,7 +569,7 @@ async def trigger_file(request: Request):
                 return
             if not images_ok:
                 outcome_status = "image_error"
-                outcome_message = "NFO written but one or more images failed to download"
+                outcome_message = "NFO not written — one or more images failed to download"
             else:
                 poster_filename = os.path.basename(poster_path) if poster_path else None
                 fanart_filename = os.path.basename(fanart_path) if fanart_path else None

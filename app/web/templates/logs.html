@@ -70,9 +70,13 @@
     }
   });
 
-  // Auto-scroll to bottom only on initial page load, not after HTMX refreshes
-  if (!document.documentElement.hasAttribute("hx-request")) {
-    window.scrollTo(0, document.body.scrollHeight);
-  }
+  // Auto-scroll to bottom on initial page load only
+  let _logInitialLoad = true;
+  document.addEventListener("DOMContentLoaded", function() {
+    if (_logInitialLoad) {
+      window.scrollTo(0, document.body.scrollHeight);
+      _logInitialLoad = false;
+    }
+  });
 </script>
 {% endblock %}

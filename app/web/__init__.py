@@ -101,11 +101,12 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
             now = datetime.now(timezone.utc) if dt.tzinfo else datetime.now()
             raw_secs = (now - dt).total_seconds()
             if raw_secs < 0:
-                logger.debug(
-                    "_time_ago: future timestamp %r (%.1fs ahead of server clock); "
-                    "check for clock skew or timezone mismatch",
-                    iso_str, -raw_secs,
-                )
+                if raw_secs < -5:  # only log if more than 5 seconds ahead — minor skew is normal
+                    logger.debug(
+                        "_time_ago: future timestamp %r (%.1fs ahead); "
+                        "possible clock skew or timezone mismatch",
+                        iso_str, -raw_secs,
+                    )
                 return ""
             secs = int(raw_secs)
             if secs < 60:

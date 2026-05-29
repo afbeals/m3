@@ -130,21 +130,32 @@ class MetadataResult:
     def __post_init__(self) -> None:
         # Validate at the plugin boundary so bad data never reaches the writers.
         # A missing title would produce a corrupt NFO and garbage in Plex.
-        if not self.title or not self.title.strip():
-            raise PluginValidationError("MetadataResult.title must be a non-empty string")
+        if not isinstance(self.title, str) or not self.title.strip():
+            raise PluginValidationError(
+                f"MetadataResult.title must be a non-empty string, got {self.title!r}"
+            )
         # Normalise: strip whitespace from title
         self.title = self.title.strip()
         # Ensure list fields are actually lists (guard against plugins returning None)
         for field_name in ("actors", "genres", "tags", "labels", "directors"):
-            if getattr(self, field_name, None) is None:
+            if getattr(self, field_name) is None:
                 _logger.warning(
                     "MetadataResult.%s was None from plugin — coercing to []. "
                     "Plugin should return an empty list, not None.",
                     field_name,
                 )
-                # Only set attributes that actually exist on this dataclass
-                if hasattr(self, field_name):
-                    setattr(self, field_name, [])
+                setattr(self, field_name, [])
+        # Validate release_date is a proper ISO date (YYYY-MM-DD); clear it if not.
+        if self.release_date is not None:
+            try:
+                from datetime import date as _date
+                _date.fromisoformat(self.release_date)
+            except ValueError:
+                _logger.warning(
+                    "MetadataResult.release_date %r is not a valid ISO date (expected YYYY-MM-DD) — clearing.",
+                    self.release_date,
+                )
+                self.release_date = None
         # Auto-derive year from release_date if year is not explicitly set
         if self.release_date and self.year is None:
             try:

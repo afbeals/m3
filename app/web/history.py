@@ -117,7 +117,11 @@ def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> li
         (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")),
         reverse=True,
     )
-    for fname in filenames[:_MAX_RUNS]:
+    # Do NOT pre-slice filenames[:_MAX_RUNS] here — if some files were deleted between
+    # os.listdir and the open() calls, we'd end up with fewer than _MAX_RUNS valid runs
+    # even when more valid files exist beyond the slice boundary. Instead, cap after
+    # successful loads so we always return up to _MAX_RUNS successfully-read entries.
+    for fname in filenames:
         fpath = os.path.join(report_path, fname)
         try:
             with open(fpath, encoding="utf-8") as fh:
@@ -127,6 +131,8 @@ def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> li
             runs.append(data)
         except Exception as exc:
             logger.warning("Could not read report file %s: %s", fpath, exc)
+        if len(runs) >= _MAX_RUNS:
+            break
 
     with _cache_lock:
         _list_runs_cache[report_path] = (invalidation_key, runs)
@@ -169,12 +175,15 @@ def get_run(report_path: str, filename: str) -> dict | None:
         return data
 
     cache_key = (report_path, filename, mtime)
+
+    # 1. Check cache first (fast path, inside lock)
     with _cache_lock:
         cached = _get_run_cache.get(cache_key)
         if cached is not None:
             _get_run_cache.move_to_end(cache_key)
             return cached
 
+    # 2. Read JSON outside lock (slow path) — avoids blocking other threads during I/O
     try:
         with open(fpath, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -187,11 +196,14 @@ def get_run(report_path: str, filename: str) -> dict | None:
         logger.warning("Could not read report file %s: %s", fpath, exc)
         return None
 
+    # 3. Write to cache inside lock (double-check before inserting to avoid duplicate
+    #    evictions when two threads both miss the cache for the same key)
     with _cache_lock:
-        # Evict LRU entry if over the cache size limit (first item in OrderedDict is LRU)
-        if len(_get_run_cache) >= _GET_RUN_CACHE_MAX:
-            _get_run_cache.popitem(last=False)
-        _get_run_cache[cache_key] = data
+        if cache_key not in _get_run_cache:
+            # Evict LRU entry if over the cache size limit (first item in OrderedDict is LRU)
+            if len(_get_run_cache) >= _GET_RUN_CACHE_MAX:
+                _get_run_cache.popitem(last=False)
+            _get_run_cache[cache_key] = data
     return data
 
 

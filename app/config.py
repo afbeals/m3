@@ -178,6 +178,11 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
             raw_paths,
         )
     library_paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
+    if not library_paths:
+        raise ValueError(
+            "LIBRARY_PATHS produced an empty list after parsing — "
+            "check that your comma-separated paths are valid."
+        )
 
     raw_exclude = optional("LIBRARY_EXCLUDE_PATTERNS", "")
     library_exclude_patterns = [p.strip() for p in raw_exclude.split(",") if p.strip()]

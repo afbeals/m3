@@ -188,6 +188,10 @@ def test_write_nfo_is_atomic_cleans_tmp_on_error(tmp_path):
 
 def test_write_nfo_cleans_tmp_when_atomic_replace_raises(tmp_path):
     """If atomic_replace raises, the .tmp file must be removed."""
+    # The test pre-creates the .tmp file at the same path write_nfo would use.
+    # When atomic_replace raises, write_nfo's except block calls os.remove(tmp_path)
+    # on that pre-created file. The assertion verifies the cleanup actually ran.
+    # Note: this tests the cleanup path specifically, not the write-then-atomicreplace flow.
     media = MediaFile(
         path=str(tmp_path / "Scene.mp4"),
         stem="Scene",
@@ -639,3 +643,54 @@ class TestRenameNfoAssets:
         poster_el = tree.find("art/poster")
         assert poster_el is not None
         assert new_stem in poster_el.text
+
+    def test_rename_nfo_assets_cleans_tmp_when_atomic_replace_raises(self, tmp_path):
+        """If atomic_replace raises during rename, the .tmp NFO must be cleaned up."""
+        old_stem = "Old Scene"
+        new_stem = "New Scene"
+        nfo_path = tmp_path / f"{old_stem}.nfo"
+
+        # Write minimal NFO
+        root = etree.Element("movie")
+        etree.SubElement(root, "title").text = old_stem
+        etree.ElementTree(root).write(str(nfo_path), encoding="utf-8", xml_declaration=True)
+
+        from app.writers.nfo import rename_nfo_assets
+
+        with patch("app.writers.nfo.atomic_replace", side_effect=OSError("disk full")):
+            try:
+                rename_nfo_assets(str(tmp_path), old_stem, new_stem)
+            except OSError:
+                pass  # expected to raise
+
+        # .tmp file must not be left behind
+        tmp_nfo = tmp_path / f"{new_stem}.nfo.tmp"
+        assert not tmp_nfo.exists(), ".tmp file was not cleaned up after atomic_replace failure"
+
+        # Original NFO should still exist (it was not renamed)
+        assert nfo_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# write_nfo — release_date / premiered
+# ---------------------------------------------------------------------------
+
+def test_write_nfo_writes_premiered_from_release_date(tmp_path):
+    """write_nfo must emit <premiered> when MetadataResult.release_date is set."""
+    from app.writers.nfo import write_nfo
+
+    media = MediaFile(
+        path=str(tmp_path / "Scene.mp4"),
+        stem="Scene",
+        nfo_path=str(tmp_path / "Scene.nfo"),
+    )
+    result = MetadataResult(
+        title="Scene",
+        release_date="2024-03-15",
+    )
+
+    write_nfo(media, result)
+
+    content = (tmp_path / "Scene.nfo").read_text(encoding="utf-8")
+    assert "<premiered>2024-03-15</premiered>" in content
+    assert "<year>2024</year>" in content  # auto-derived from release_date

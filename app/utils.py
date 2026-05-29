@@ -23,10 +23,10 @@ def call_with_timeout(fn: Callable[[], T], timeout_secs: float, description: str
     I/O timeout fires or it returns. The timeout is a *reporting* boundary, not a kill signal.
     Raises the exception from fn() directly if it throws before the timeout expires.
 
-    When timeout_secs is 0, the call runs with no timeout (waits indefinitely for fn() to return).
+    When timeout_secs is 0 or negative, fn() is called directly with no timeout (waits indefinitely for fn() to return).
     """
-    # When timeout_secs is 0, call fn() directly in the calling thread (no timeout).
-    if timeout_secs == 0:
+    # When timeout_secs is 0 or negative, call fn() directly in the calling thread (no timeout).
+    if timeout_secs <= 0:
         return fn()
 
     result_holder: list = []
@@ -89,6 +89,8 @@ def retry_with_backoff(
     """
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts!r}")
+    if backoff_base < 0:
+        raise ValueError(f"backoff_base must be >= 0, got {backoff_base!r}")
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -104,7 +106,8 @@ def retry_with_backoff(
                     description, attempt, max_attempts, exc, wait,
                 )
                 time.sleep(wait)
-    raise last_exc  # type: ignore[misc]  # always set after at least one attempt
+    assert last_exc is not None, "retry loop completed without capturing an exception (this is a bug)"
+    raise last_exc
 
 
 def atomic_replace(src: str, dst: str) -> None:

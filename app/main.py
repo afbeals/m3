@@ -24,13 +24,13 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import logging
 import os
 import time
 import traceback as _tb
 from datetime import datetime, timezone
+from pathlib import Path
 
 # Load .env file if present (local development convenience).
 # Only applied when the file exists — production containers set env vars directly
@@ -439,7 +439,7 @@ def run(
         # NOTIFY_MIN_ERRORS gates the webhook: when set to 1 the webhook only fires
         # when something broke, avoiding noise on clean nightly runs.
         if config.notify_url:
-            total_errors = report.errors + report.scrape_errors + report.image_errors
+            total_errors = report.errors + report.scrape_errors + report.image_errors + report.plugin_errors
             if total_errors >= config.notify_min_errors:
                 _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
@@ -473,7 +473,9 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
     """
     cutoff = time.time() - max_age_secs
     for lib_path in library_paths:
-        for tmp_file in glob.glob(os.path.join(lib_path, "**", "*.tmp"), recursive=True):
+        tmp_files = list(Path(lib_path).rglob("*.tmp"))
+        for tmp_path in tmp_files:
+            tmp_file = str(tmp_path)
             try:
                 if not os.path.isfile(tmp_file):
                     continue
@@ -672,7 +674,7 @@ def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
 
     try:
         _cfg = load_config(plex_required=False)
-        timeout = _cfg.plugin_fetch_timeout_secs or 30.0
+        timeout = _cfg.plugin_fetch_timeout_secs if _cfg.plugin_fetch_timeout_secs is not None else 30.0
     except Exception:
         timeout = 30.0
     print(f"\nCalling plugin.fetch() with {timeout:.0f}s timeout…")
@@ -925,6 +927,9 @@ def main() -> None:
                 continue
             stem = os.path.splitext(os.path.basename(path))[0]
             nfo_path = os.path.join(os.path.dirname(path), f"{stem}.nfo")
+            # Note: renamed_from is not set here — files that failed during a rename workflow
+            # will be retried as fresh plugin fetches, not as renames. This is a known
+            # limitation of --retry-failed; to re-run a rename, use --force instead.
             retry_media.append(MediaFile(path=path, stem=stem, nfo_path=nfo_path))
 
         logger.info(

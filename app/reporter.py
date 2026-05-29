@@ -165,7 +165,16 @@ def write_report(
 
     # --- Plain-text summary (human-readable, always overwritten) ---
     txt_path = os.path.join(report_path, "run_latest.txt")
-    plex_failed_count = sum(1 for f in report.files if f.plex_failed)
+
+    # Single pass over report.files to group by status (avoids 5 separate linear scans).
+    by_status: dict[str, list[FileResult]] = defaultdict(list)
+    for f in report.files:
+        by_status[f.status].append(f)
+
+    # plex_failed is only set for "updated" files (Plex push attempted but failed).
+    # Compute from by_status to avoid a second pass over report.files.
+    plex_failed_count = sum(1 for f in by_status.get("updated", []) if f.plex_failed)
+
     lines = [
         f"{app_name} run — {report.started_at}  (duration: {duration_str})",
         "─" * 40,
@@ -182,11 +191,6 @@ def write_report(
         f"  Errors (unexpected)                    : {report.errors}",
         "",
     ]
-
-    # Single pass over report.files to group by status (avoids 5 separate linear scans).
-    by_status: dict[str, list[FileResult]] = defaultdict(list)
-    for f in report.files:
-        by_status[f.status].append(f)
 
     add_files = by_status.get("add_form", [])
     if add_files:

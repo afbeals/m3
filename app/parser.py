@@ -50,7 +50,7 @@ def _looks_like_url_slug(tok: str) -> bool:
     # Space-containing token: treat as slug only if it has hyphens (slug part)
     # and the trailing word is purely numeric (an appended ID).
     parts = tok.rsplit(" ", 1)
-    return "-" in parts[0] and bool(re.match(r"^\d+$", parts[1]))
+    return "-" in parts[0] and bool(_SCENE_ID_RE.match(parts[1]))
 
 
 def _normalise_date(token: str) -> str | None:

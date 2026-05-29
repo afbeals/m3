@@ -30,6 +30,7 @@ from plexapi.server import PlexServer
 
 from app.plugins.base import MetadataResult
 from app.utils import call_with_timeout
+from app.writers.nfo import _IMAGE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ def push_to_plex(
         if result.actors:
             item.removeActors()
         if result.directors:
-            item.removeDirectors([d for d in item.directors if d.tag not in result.directors])
+            item.removeDirectors()
 
         # Upload poster and background art directly to Plex from the remote URLs
         if result.poster_url:
@@ -318,11 +319,10 @@ def push_nfo_to_plex(
         if labels:
             item.removeLabels()
         if directors:
-            item.removeDirectors([d for d in item.directors if d.tag not in directors])
+            item.removeDirectors()
 
         # Upload images from the local renamed files — avoids a redundant network
         # round-trip to the source site since the content hasn't changed.
-        from app.writers.nfo import _IMAGE_EXTENSIONS
         dirpath = os.path.dirname(nfo_path)
         stem = os.path.splitext(os.path.basename(nfo_path))[0]
         poster_path = None

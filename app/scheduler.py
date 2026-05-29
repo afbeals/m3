@@ -83,6 +83,12 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
                         if scheduler is not None:
                             scheduler.pause()
                             paused = True
+                        # NOTE: registry.clear() followed by registry.update() is a
+                        # two-step non-atomic operation. During the window between
+                        # clear() and update(), concurrent reads of registry will see
+                        # an empty dict. Callers of registry must use .get(key) and
+                        # handle None gracefully — never access registry[key] directly,
+                        # as that will raise KeyError during this brief window.
                         registry.clear()
                         registry.update(new_registry)
                     finally:
