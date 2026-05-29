@@ -179,12 +179,16 @@ def scan_library(
                         nfo_path=nfo_path,
                         renamed_from=old_stem,
                     ))
-                    # Account for the remaining matched videos as normal skip/new
+                    # Account for the remaining matched videos as normal skip/new.
+                    # Exclude old_stem from the nfo check: it's an orphan NFO whose
+                    # video was renamed, so no other video should be classified as
+                    # "skipped" because its stem happens to equal old_stem.
+                    _remaining_nfo_stems = nfo_stems - {old_stem}
                     for stem, full_path in video_stems.items():
                         if stem == new_stem:
                             continue
                         _loop_nfo_path = os.path.join(dirpath, f"{stem}.nfo")
-                        if stem in nfo_stems:
+                        if stem in _remaining_nfo_stems:
                             logger.debug("Skipping (sidecar exists): %s", full_path)
                             skipped += 1
                         else:

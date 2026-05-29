@@ -267,21 +267,17 @@ class TestMetadataResultValidation:
         assert result.rating == rating
 
     # ---------------------------------------------------------------------------
-    # H10 — None list field coercion + WARNING log
+    # CQ3 — None list field raises PluginValidationError
     # ---------------------------------------------------------------------------
 
-    def test_none_actors_coerced_to_empty_list(self, caplog):
-        import logging
-        with caplog.at_level(logging.WARNING, logger="app.plugins.base"):
-            result = MetadataResult(title="Test", actors=None)
-        assert result.actors == []
-        assert any("actors" in r.message for r in caplog.records), \
-            "Expected WARNING about None actors field"
+    def test_none_actors_raises_plugin_validation_error(self):
+        with pytest.raises(PluginValidationError, match="actors must be a list"):
+            MetadataResult(title="Test", actors=None)
 
     @pytest.mark.parametrize("field", ["genres", "tags", "labels"])
-    def test_none_list_fields_coerced(self, field):
-        result = MetadataResult(title="Test", **{field: None})
-        assert getattr(result, field) == []
+    def test_none_list_fields_raises(self, field):
+        with pytest.raises(PluginValidationError, match=f"{field} must be a list"):
+            MetadataResult(title="Test", **{field: None})
 
     # ---------------------------------------------------------------------------
     # T3 — str(None) coercion for summary/content_rating/source_url

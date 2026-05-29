@@ -22,6 +22,7 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date as _date
 from typing import Literal
 
 _logger = logging.getLogger(__name__)
@@ -136,32 +137,6 @@ class MetadataResult:
             )
         # Normalise: strip whitespace from title
         self.title = self.title.strip()
-        # Ensure list fields are actually lists (guard against plugins returning None)
-        for field_name in ("actors", "genres", "tags", "labels", "directors"):
-            if getattr(self, field_name) is None:
-                _logger.warning(
-                    "MetadataResult.%s was None from plugin — coercing to []. "
-                    "Plugin should return an empty list, not None.",
-                    field_name,
-                )
-                setattr(self, field_name, [])
-        # Validate release_date is a proper ISO date (YYYY-MM-DD); clear it if not.
-        if self.release_date is not None:
-            try:
-                from datetime import date as _date
-                _date.fromisoformat(self.release_date)
-            except ValueError:
-                _logger.warning(
-                    "MetadataResult.release_date %r is not a valid ISO date (expected YYYY-MM-DD) — clearing.",
-                    self.release_date,
-                )
-                self.release_date = None
-        # Auto-derive year from release_date if year is not explicitly set
-        if self.release_date and self.year is None:
-            try:
-                self.year = int(self.release_date[:4])
-            except (ValueError, TypeError):
-                pass
         # Validate rating is in a sensible range if provided.
         # math.isfinite() explicitly rejects float('nan') and float('inf').
         # Note: nan is also caught by the chained comparison alone (0.0 <= nan
@@ -175,11 +150,40 @@ class MetadataResult:
         # content_rating, source_url, release_date, or studio (common mistake when
         # building results from API responses that may return Python None coerced to
         # the string "None").
+        # This runs BEFORE ISO validation so "None" release_date is cleared to None
+        # rather than failing the ISO check with a misleading error.
         for str_field in ("source_id", "summary", "content_rating", "source_url",
                           "release_date", "studio"):
             val = getattr(self, str_field, None)
             if isinstance(val, str) and val.strip().lower() in ("none", ""):
                 setattr(self, str_field, None)
+        # Ensure list fields are actually lists (guard against plugins returning None).
+        # Raise so plugin authors are forced to fix the bug rather than getting silent coercion.
+        for field_name in ("actors", "genres", "tags", "labels", "directors"):
+            if getattr(self, field_name) is None:
+                raise PluginValidationError(
+                    f"MetadataResult.{field_name} must be a list, not None. "
+                    "Return an empty list [] instead of None."
+                )
+        # Validate release_date is a proper ISO date (YYYY-MM-DD); clear it if not.
+        if self.release_date is not None:
+            try:
+                _date.fromisoformat(self.release_date)
+            except ValueError:
+                _logger.warning(
+                    "MetadataResult.release_date %r is not a valid ISO date (expected YYYY-MM-DD) — clearing.",
+                    self.release_date,
+                )
+                self.release_date = None
+        # Auto-derive year from release_date if year is not explicitly set
+        if self.release_date and self.year is None:
+            try:
+                self.year = int(self.release_date[:4])
+            except (ValueError, TypeError) as _e:
+                _logger.warning(
+                    "Could not derive year from release_date %r: %s",
+                    self.release_date, _e,
+                )
 
 
 class MetadataPlugin(ABC):

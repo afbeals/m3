@@ -114,7 +114,8 @@
         <form method="POST" action="/trigger/file" class="inline-form"
               hx-post="/trigger/file"
               hx-target="#retry-{{ loop.index }}"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML"
+              hx-disabled-elt="find button[type='submit']">
           <input type="hidden" name="file_path" value="{{ f.path }}">
           <button type="submit" title="Re-process this file">↺</button>
         </form>
@@ -133,7 +134,7 @@
 </div>
 {% endif %}
 {% if total_pages > 1 %}
-{% set status_qs = ("status=" ~ status_filter ~ "&") if status_filter else "" %}
+{% set status_qs = ("status=" ~ (status_filter | urlencode) ~ "&") if status_filter else "" %}
 <div class="pagination">
   {% if page > 1 %}
     <a href="/runs/{{ run.filename }}?{{ status_qs }}page={{ page - 1 }}" class="btn">← Prev</a>

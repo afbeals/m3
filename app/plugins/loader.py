@@ -52,7 +52,7 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
     # and one or more aliases appears multiple times in .values(), and calling
     # close() twice raises RuntimeError on httpx.Client.
     if old_registry is not None:
-        for plugin in {id(p): p for p in old_registry.values()}.values():
+        for plugin in set(old_registry.values()):
             try:
                 plugin.close()
             except Exception:
@@ -65,6 +65,8 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
         logger.warning("Plugin directory not found: %s", plugin_dir)
         return registry
 
+    modules_to_cleanup: list[str] = []
+
     # Process files in sorted order for deterministic loading
     for fname in sorted(os.listdir(plugin_dir)):
         # Only load .py files; skip __init__.py and other dunder files.
@@ -74,6 +76,9 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
         if not fname.endswith(".py"):
             continue
         fpath = os.path.join(plugin_dir, fname)
+        if not os.path.isfile(fpath):
+            logger.debug("Skipping non-file entry: %s", fpath)
+            continue
         if fname.startswith("_"):
             logger.debug("Skipping non-plugin file (underscore prefix): %s", fpath)
             continue
@@ -106,8 +111,11 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
             if obj is MetadataPlugin or not issubclass(obj, MetadataPlugin):
                 continue
             # Skip classes imported from other modules (only load classes defined here)
-            if inspect.getmodule(obj) is not module:
-                continue  # skip classes imported from other modules
+            obj_module = inspect.getmodule(obj)
+            if obj_module is None:
+                continue  # built-in or dynamically created class; skip
+            if obj_module is not module:
+                continue  # imported from another module; skip
             # Skip abstract subclasses (intermediate base classes without a concrete fetch())
             if inspect.isabstract(obj):
                 continue
@@ -151,8 +159,15 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
                         del registry[k]
                 continue
 
-        # Clean up sys.modules after successful extraction to prevent stale
-        # module references from accumulating across reloads.
+        # Defer sys.modules cleanup until after all files are processed.
+        # Popping too early would break inter-plugin shared helpers: if plugin A
+        # imports _shared.py (registered as m3_plugin._shared) and we pop it here,
+        # plugin B's import of _shared.py would fail to find the cached module.
+        modules_to_cleanup.append(module_name)
+
+    # Clean up all module entries after the loop so shared helpers remain available
+    # for the full duration of loading.
+    for module_name in modules_to_cleanup:
         sys.modules.pop(module_name, None)
 
     return registry

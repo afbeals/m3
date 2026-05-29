@@ -37,6 +37,8 @@ def _config(tmp_path, library_path=None):
     cfg.plugin_rate_limit_secs = 0.0  # no delay in tests
     cfg.plugin_fetch_timeout_secs = 30.0
     cfg.notify_url = ""  # disable webhook in tests
+    cfg.library_exclude_patterns = []
+    cfg.notify_min_errors = 1  # default changed to 1 in this cycle
     return cfg
 
 
@@ -431,6 +433,19 @@ def test_dry_run_strict_skips_connect_plex(tmp_path):
          patch("app.main.connect_plex") as mock_connect, \
          patch("app.main.write_report"):
         run(cfg, router, dry_run=True, dry_run_strict=True)
+
+    mock_connect.assert_not_called()
+
+
+def test_dry_run_strict_without_dry_run_also_skips_plex(tmp_path):
+    """Passing dry_run_strict=True alone (without dry_run=True) must also skip Plex."""
+    config = _config(tmp_path)
+    router = MagicMock()
+    router.dispatch.return_value = (MagicMock(), None)
+
+    with patch("app.main.connect_plex") as mock_connect:
+        with patch("app.main.scan_library", return_value=([], 0)):
+            run(config, router, dry_run=False, dry_run_strict=True)
 
     mock_connect.assert_not_called()
 

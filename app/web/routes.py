@@ -227,9 +227,15 @@ def run_history(request: Request, page: int = 1):
     )
 
 
+VALID_STATUSES = {"", "updated", "skipped", "renamed", "unmatched", "add_form",
+                  "scrape_error", "image_error", "error", "plugin_error"}
+
+
 @router.get("/runs/{filename}", response_class=HTMLResponse)
 def run_detail(request: Request, filename: str, status: str = "", page: int = 1):
     import re
+    if status not in VALID_STATUSES:
+        status = ""
     if not re.fullmatch(r'[\w\-]+\.json', filename):
         raise HTTPException(status_code=404, detail="Not found")
     run = get_run(request.app.state.config.report_path, filename)

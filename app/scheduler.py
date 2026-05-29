@@ -77,12 +77,12 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
             logger.info("SIGUSR2 received — reloading plugins from %s", plugin_dir)
             try:
                 new_registry = load_plugins(plugin_dir, old_registry=dict(registry))
-                with _registry_lock:
-                    paused = False
-                    try:
-                        if scheduler is not None:
-                            scheduler.pause()
-                            paused = True
+                paused = False
+                try:
+                    if scheduler is not None:
+                        scheduler.pause()
+                        paused = True
+                    with _registry_lock:
                         # NOTE: registry.clear() followed by registry.update() is a
                         # two-step non-atomic operation. During the window between
                         # clear() and update(), concurrent reads of registry will see
@@ -91,14 +91,14 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
                         # as that will raise KeyError during this brief window.
                         registry.clear()
                         registry.update(new_registry)
-                    finally:
-                        if paused:
-                            try:
-                                scheduler.resume()
-                            except Exception as resume_exc:
-                                logger.warning(
-                                    "Plugin reload: could not resume scheduler after reload: %s", resume_exc
-                                )
+                finally:
+                    if paused:
+                        try:
+                            scheduler.resume()
+                        except Exception as resume_exc:
+                            logger.warning(
+                                "Could not resume scheduler after reload: %s", resume_exc
+                            )
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
             except Exception as exc:
                 logger.warning("Plugin reload failed: %s", exc)
@@ -125,7 +125,10 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     # Belt-and-suspenders check for callers that bypass main() (e.g. tests).
     # main() already validates fully via CronTrigger.from_crontab() before calling here.
     if len(parts) != 5:
-        raise ValueError(f"RUN_SCHEDULE must be a 5-field cron expression, got: {schedule!r}")
+        raise ValueError(
+            f"RUN_SCHEDULE must be a 5-field cron expression, "
+            f"got {len(parts)} fields: {schedule!r}"
+        )
 
     minute, hour, day, month, day_of_week = parts
     # Pass the TZ env var as the trigger timezone so cron times are interpreted

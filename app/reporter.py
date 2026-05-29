@@ -17,7 +17,7 @@
 #   "add_form"     — filename used the Manual Add form; needs human follow-up
 #   "scrape_error" — plugin raised ScrapeError/SelectorMissingError; site may
 #                    have changed its markup or the record no longer exists
-#   "image_error"  — NFO written successfully but one or more images failed to download
+#   "image_error"  — images failed to download; NFO was NOT written
 #   "plugin_error" — plugin returned invalid MetadataResult data (PluginValidationError)
 #   "error"        — plugin or writer raised an unexpected exception
 # -----------------------------------------------------------------------------
@@ -77,32 +77,24 @@ class RunReport:
     def record(self, result: FileResult) -> None:
         """Append a file result and increment the appropriate counter."""
         self.files.append(result)
+        self.total_scanned += 1  # always count regardless of status
         if result.status == "updated":
-            self.total_scanned += 1
             self.updated += 1
         elif result.status == "renamed":
-            self.total_scanned += 1
             self.renamed += 1
         elif result.status == "skipped":
-            self.total_scanned += 1
             self.skipped += 1
         elif result.status == "unmatched":
-            self.total_scanned += 1
             self.unmatched += 1
         elif result.status == "add_form":
-            self.total_scanned += 1
             self.add_form += 1
         elif result.status == "scrape_error":
-            self.total_scanned += 1
             self.scrape_errors += 1
         elif result.status == "image_error":
-            self.total_scanned += 1
             self.image_errors += 1
         elif result.status == "plugin_error":
-            self.total_scanned += 1
             self.plugin_errors += 1
         elif result.status == "error":
-            self.total_scanned += 1
             self.errors += 1
         else:
             logger.warning("Unknown FileResult status %r for %s — not counted in any bucket",

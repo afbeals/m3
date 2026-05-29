@@ -50,7 +50,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
 
     # Sanitize app_name for use as a filename — remove path separators that would
     # cause the log file to be created in an unexpected subdirectory.
-    safe_app_name = app_name.replace("/", "_").replace("\\", "_")
+    safe_app_name = re.sub(r'[<>:"/\\|?*]', '_', app_name)
     log_file = os.path.join(log_path, f"{safe_app_name}.log") if log_path else None
 
     # Shared format: timestamp, level, logger name, message

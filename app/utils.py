@@ -91,6 +91,11 @@ def retry_with_backoff(
         raise ValueError(f"max_attempts must be >= 1, got {max_attempts!r}")
     if backoff_base < 0:
         raise ValueError(f"backoff_base must be >= 0, got {backoff_base!r}")
+    if not isinstance(reraise_on, tuple):
+        raise TypeError(
+            f"reraise_on must be a tuple of exception types, got {type(reraise_on).__name__!r}. "
+            "Did you mean reraise_on=(MyError,) with a trailing comma?"
+        )
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:

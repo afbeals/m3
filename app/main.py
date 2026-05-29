@@ -143,11 +143,11 @@ def run(
     else:
         logger.info("Run started")
 
-    # In dry-run mode skip the Plex connection entirely — connecting is a network
-    # side-effect that would produce confusing warnings when the intent is a zero-
-    # impact parse/route test pass.
+    # In dry-run mode (or dry-run-strict mode) skip the Plex connection entirely —
+    # connecting is a network side-effect that would produce confusing warnings when
+    # the intent is a zero-impact parse/route test pass.
     plex_server = None
-    if not dry_run:
+    if not dry_run and not dry_run_strict:
         # Reconnect to Plex at the start of every run (not once at startup) so that
         # a Plex restart between scheduled runs doesn't leave us with a dead connection.
         plex_server = connect_plex(config.plex_url, config.plex_token)
@@ -364,12 +364,16 @@ def run(
                     "Recording as image_error.",
                     media.path,
                 )
-                report.record(FileResult(
-                    path=media.path,
-                    status="image_error",
-                    message="NFO not written — one or more images failed to download",
-                ))
-                # Images failed; skip NFO write and Plex push
+                # Clean up any partially-written image files
+                for partial_path in (poster_path, fanart_path):
+                    if partial_path and os.path.exists(partial_path):
+                        try:
+                            os.remove(partial_path)
+                            logger.debug("Removed partial image file: %s", partial_path)
+                        except OSError as exc:
+                            logger.debug("Could not remove partial image %s: %s", partial_path, exc)
+                result = FileResult(status="image_error", path=media.path, message="NFO not written — one or more images failed to download")
+                report.record(result)
                 continue
 
             # Build bare filenames for the NFO <art> block using the actual written paths
@@ -440,7 +444,10 @@ def run(
         # when something broke, avoiding noise on clean nightly runs.
         if config.notify_url:
             total_errors = report.errors + report.scrape_errors + report.image_errors + report.plugin_errors
-            if total_errors >= config.notify_min_errors:
+            should_notify = (
+                config.notify_min_errors == 0 or total_errors >= config.notify_min_errors
+            )
+            if should_notify:
                 _fire_webhook(config.notify_url, report, app_name=config.app_name)
 
     # Delete old log files beyond the retention window (runs regardless of dry_run)
@@ -454,14 +461,14 @@ def run(
     )
 
 
-def _run_with_media(config: Config, router: Router, media_files: list[MediaFile], dry_run: bool = False) -> None:
+def _run_with_media(config: Config, router: Router, media_files: list[MediaFile], dry_run: bool = False, dry_run_strict: bool = False) -> None:
     """Run a targeted pass over a pre-built list of MediaFile objects.
 
     Used by --retry-failed to re-process specific files without triggering a
     full library scan. Connects to Plex and writes the run report exactly as
     a normal run does.
     """
-    run(config, router, media_files_override=media_files, dry_run=dry_run)
+    run(config, router, media_files_override=media_files, dry_run=dry_run, dry_run_strict=dry_run_strict)
 
 
 def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> None:
@@ -938,7 +945,7 @@ def main() -> None:
         )
 
         _sweep_tmp_orphans(config.library_paths)
-        _run_with_media(config, router, retry_media, dry_run=args.dry_run)
+        _run_with_media(config, router, retry_media, dry_run=args.dry_run, dry_run_strict=args.dry_run_strict)
         raise SystemExit(0)
 
     # Sweep any stale .tmp orphans from previous interrupted writes before running.

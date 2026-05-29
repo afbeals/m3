@@ -169,6 +169,9 @@ def push_to_plex(
         if result.year is not None:
             edits["year.value"] = result.year
             edits["year.locked"] = 1
+        if result.release_date is not None:
+            edits["originallyAvailableAt.value"] = result.release_date
+            edits["originallyAvailableAt.locked"] = 1
         if result.studio is not None:
             edits["studio.value"] = result.studio
             edits["studio.locked"] = 1
@@ -283,6 +286,9 @@ def push_nfo_to_plex(
         if studio := _text("studio"):
             edits["studio.value"] = studio
             edits["studio.locked"] = 1
+        if premiered := _text("premiered"):
+            edits["originallyAvailableAt.value"] = premiered
+            edits["originallyAvailableAt.locked"] = 1
         if edits:
             item.edit(**edits)
 

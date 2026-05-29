@@ -7,10 +7,7 @@
   <title>{% block title %}{% endblock %} — {{ app_name }}</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>▸</text></svg>">
   <link rel="stylesheet" href="/static/style.css">
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"
-          integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2uoICbeVVCcHvz0Ljr4LiGHl0sWVIbCEslA"
-          crossorigin="anonymous" defer
-          onerror="var s=document.createElement('script');s.src='/static/htmx.min.js';document.head.appendChild(s)"></script>
+  <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
   <header>
@@ -24,7 +21,7 @@
       <a href="/files" {% if request.url.path == "/files" %}class="active" aria-current="page"{% endif %}>Files</a>
       <a href="/logs" {% if request.url.path == "/logs" %}class="active" aria-current="page"{% endif %}>Logs</a>
     </nav>
-    <span class="status-slot" aria-live="polite" aria-label="Agent status" hx-get="/api/status" hx-trigger="load, every 2s" hx-swap="innerHTML"></span>
+    <span class="status-slot" aria-live="polite" aria-label="Agent status" hx-get="/api/status" hx-trigger="load, every 2s" hx-swap="innerHTML" hx-push-url="false"></span>
   </header>
 
   <main>

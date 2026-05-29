@@ -152,7 +152,7 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     # Split on " - " (with optional surrounding spaces)
     # An empty payload (e.g. stem ending with " %") means there is no site token —
     # return None rather than a partially-filled object with site="".
-    tokens = [t.strip() for t in re.split(r"\s+-\s+", raw_payload)]
+    tokens = [t for t in (t.strip() for t in re.split(r"\s+-\s+", raw_payload)) if t]
     if not tokens or not tokens[0]:
         return None
 

@@ -694,3 +694,28 @@ def test_write_nfo_writes_premiered_from_release_date(tmp_path):
     content = (tmp_path / "Scene.nfo").read_text(encoding="utf-8")
     assert "<premiered>2024-03-15</premiered>" in content
     assert "<year>2024</year>" in content  # auto-derived from release_date
+
+
+def test_write_nfo_invalid_release_date_not_written(tmp_path):
+    """Invalid release_date must be silently cleared — no <premiered> or auto-derived <year>."""
+    from app.writers.nfo import write_nfo
+    from app.scanner import MediaFile
+    from app.plugins.base import MetadataResult
+
+    media = MediaFile(
+        path=str(tmp_path / "Scene.mp4"),
+        stem="Scene",
+        nfo_path=str(tmp_path / "Scene.nfo"),
+    )
+    # release_date with month 13 is invalid — should be cleared by __post_init__
+    result = MetadataResult(title="Scene", release_date="2024-13-01")
+
+    # After __post_init__, release_date should be None (invalid ISO cleared)
+    assert result.release_date is None
+    assert result.year is None  # not auto-derived since release_date was cleared
+
+    write_nfo(media, result)
+
+    content = (tmp_path / "Scene.nfo").read_text(encoding="utf-8")
+    assert "<premiered>" not in content
+    assert "<year>" not in content

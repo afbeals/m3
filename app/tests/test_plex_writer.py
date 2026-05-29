@@ -428,12 +428,13 @@ def test_push_nfo_to_plex_pushes_directors_with_add_before_remove(tmp_path):
         push_nfo_to_plex(mock_server, str(tmp_path / "Scene.mp4"), str(nfo))
 
     # addDirector must be called
-    mock_item.addDirector.assert_called()
 
     # Ordering: addDirector before removeDirectors
     call_names = [c[0] for c in mock_item.method_calls]
-    if "removeDirectors" in call_names and "addDirector" in call_names:
-        assert call_names.index("addDirector") < call_names.index("removeDirectors")
+    assert "addDirector" in call_names, "addDirector should have been called"
+    assert "removeDirectors" in call_names, "removeDirectors should have been called"
+    assert call_names.index("addDirector") < call_names.index("removeDirectors"), \
+        "addDirector must precede removeDirectors"
 
 
 def test_find_plex_item_uses_fallback_cache_on_second_call(tmp_path):

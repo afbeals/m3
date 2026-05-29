@@ -91,10 +91,9 @@ class Config:
     notify_url: str = ""
 
     # Minimum combined error count (errors + scrape_errors + image_errors) required
-    # before the webhook fires. Default 0 = fire after every run. Set to 1 to only
-    # be notified when something actually broke; the dashboard is always available
-    # for clean-run history.
-    notify_min_errors: int = 0
+    # before the webhook fires. Webhook fires when total error count >= this value
+    # (default: 1). Set to 0 to always fire regardless of errors.
+    notify_min_errors: int = 1
 
     # When True, re-process files that already have .nfo sidecars.
     # Set via --force CLI flag, not an env var (running with --force every
@@ -239,6 +238,13 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
     if not app_name:
         raise ValueError("APP_NAME must not be empty")
 
+    _plugin_fetch_timeout_secs = optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=0.0)
+    if _plugin_fetch_timeout_secs == 0.0:
+        logger.warning(
+            "PLUGIN_FETCH_TIMEOUT_SECS=0 disables the per-plugin fetch timeout; "
+            "a hung plugin will block the scheduler indefinitely."
+        )
+
     return Config(
         plex_url=plex_url,
         plex_token=require_or_empty("PLEX_TOKEN"),
@@ -255,9 +261,9 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=app_name,
         plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
-        plugin_fetch_timeout_secs=optional_float("PLUGIN_FETCH_TIMEOUT_SECS", 60.0, min_val=0.0),
+        plugin_fetch_timeout_secs=_plugin_fetch_timeout_secs,
         notify_url=optional("NOTIFY_URL", ""),
-        notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 0, min_val=0),
+        notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 1, min_val=0),
         force=force,
         library_exclude_patterns=library_exclude_patterns,
     )

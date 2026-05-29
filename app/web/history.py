@@ -113,8 +113,16 @@ def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> li
         return cached[1]
 
     runs = []
+
+    def _safe_mtime(fname: str) -> float:
+        try:
+            return os.path.getmtime(os.path.join(report_path, fname))
+        except OSError:
+            return 0.0
+
     filenames = sorted(
-        (f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")),
+        [f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")],
+        key=_safe_mtime,
         reverse=True,
     )
     # Do NOT pre-slice filenames[:_MAX_RUNS] here — if some files were deleted between
