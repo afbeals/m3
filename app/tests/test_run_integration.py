@@ -655,3 +655,74 @@ class TestSweepTmpOrphans:
         _sweep_tmp_orphans([str(tmp_path)])
 
         assert nfo.exists(), "Non-.tmp files must not be deleted"
+
+
+# ---------------------------------------------------------------------------
+# H8 — Full-stack plugin→NFO round-trip integration test
+# ---------------------------------------------------------------------------
+
+def test_plugin_fetch_result_roundtrips_through_nfo(tmp_path):
+    """Full-stack: plugin.fetch() → write_nfo() → parse NFO and verify fields."""
+    from app.plugins.base import MetadataResult, ParsedFilename
+    from app.writers.nfo import write_nfo
+    from lxml import etree
+
+    # Build a minimal concrete plugin inline (plain class — no site_id required)
+    class _TestPlugin:
+        def fetch(self, parsed):
+            return MetadataResult(
+                title="Round Trip Scene",
+                actors=["Jane Doe", "John Smith"],
+                genres=["Drama", "Thriller"],
+                year=2024,
+                rating=7.5,
+                summary="A test scene for round-trip verification.",
+                source_id="rt-12345",
+                source_url="https://example.com/scenes/rt-12345",
+            )
+
+    plugin = _TestPlugin()
+    parsed = ParsedFilename(
+        form="general",
+        actors=["Jane Doe"],
+        genres=[],
+        site="testsite",
+        match_subtype="exact",
+        scene_id="rt-12345",
+        raw_match_payload="testsite - rt-12345",
+    )
+
+    media = MediaFile(
+        path=str(tmp_path / "Jane Doe % testsite - rt-12345.mp4"),
+        stem="Jane Doe % testsite - rt-12345",
+        nfo_path=str(tmp_path / "Jane Doe % testsite - rt-12345.nfo"),
+    )
+
+    # Call plugin and write NFO
+    result = plugin.fetch(parsed)
+    assert result is not None
+    write_nfo(media, result)
+
+    # Parse and verify
+    nfo_path = tmp_path / "Jane Doe % testsite - rt-12345.nfo"
+    assert nfo_path.exists(), "NFO file was not created"
+
+    tree = etree.parse(str(nfo_path))
+    root = tree.getroot()
+
+    assert root.findtext("title") == "Round Trip Scene"
+    assert root.findtext("year") == "2024"
+    assert root.findtext("rating") == "7.5"
+    assert root.findtext("plot") == "A test scene for round-trip verification."
+    # uniqueid has a type="m3" attribute; findtext still works for the text content
+    uid_el = root.find("uniqueid")
+    assert uid_el is not None, "uniqueid element missing"
+    assert uid_el.text == "rt-12345"
+
+    actor_names = [el.findtext("name") for el in root.findall("actor")]
+    assert "Jane Doe" in actor_names
+    assert "John Smith" in actor_names
+
+    genres = [el.text for el in root.findall("genre")]
+    assert "Drama" in genres
+    assert "Thriller" in genres

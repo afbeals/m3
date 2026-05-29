@@ -168,6 +168,9 @@ def push_to_plex(
         if result.year is not None:
             edits["year.value"] = result.year
             edits["year.locked"] = 1
+        if result.studio is not None:
+            edits["studio.value"] = result.studio
+            edits["studio.locked"] = 1
 
         # Apply all scalar field edits in one API call
         if edits:
@@ -188,6 +191,8 @@ def push_to_plex(
             item.addTag(tag, locked=True)
         for actor in result.actors:
             item.addActor(actor, locked=True)
+        for director in result.directors:
+            item.addDirector(director, locked=True)
 
         if result.genres:
             item.removeGenres()
@@ -197,6 +202,8 @@ def push_to_plex(
             item.removeTags()
         if result.actors:
             item.removeActors()
+        if result.directors:
+            item.removeDirectors([d for d in item.directors if d.tag not in result.directors])
 
         # Upload poster and background art directly to Plex from the remote URLs
         if result.poster_url:
@@ -272,11 +279,15 @@ def push_nfo_to_plex(
                 edits["year.locked"] = 1
             except ValueError:
                 pass
+        if studio := _text("studio"):
+            edits["studio.value"] = studio
+            edits["studio.locked"] = 1
         if edits:
             item.edit(**edits)
 
         genres = [el.text.strip() for el in root.findall("genre") if el.text]
         actors = [el.text.strip() for el in root.findall("actor/name") if el.text]
+        directors = [el.text.strip() for el in root.findall("director") if el.text and el.text.strip()]
         # Labels are stored in the NFO as <tag>label:<value></tag> — extract them
         # by filtering <tag> elements whose text starts with "label:" and stripping
         # the prefix.  Plain <label> elements are not written by write_nfo so this
@@ -295,6 +306,8 @@ def push_nfo_to_plex(
             item.addTag(tag, locked=True)
         for label in labels:
             item.addLabel(label, locked=True)
+        for director in directors:
+            item.addDirector(director, locked=True)
 
         if genres:
             item.removeGenres()
@@ -304,6 +317,8 @@ def push_nfo_to_plex(
             item.removeTags()
         if labels:
             item.removeLabels()
+        if directors:
+            item.removeDirectors([d for d in item.directors if d.tag not in directors])
 
         # Upload images from the local renamed files — avoids a redundant network
         # round-trip to the source site since the content hasn't changed.

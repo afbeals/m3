@@ -18,6 +18,7 @@
 #   "scrape_error" — plugin raised ScrapeError/SelectorMissingError; site may
 #                    have changed its markup or the record no longer exists
 #   "image_error"  — NFO written successfully but one or more images failed to download
+#   "plugin_error" — plugin returned invalid MetadataResult data (PluginValidationError)
 #   "error"        — plugin or writer raised an unexpected exception
 # -----------------------------------------------------------------------------
 
@@ -39,12 +40,15 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FileResult:
     path: str
-    # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error", "image_error", "error"
+    # One of: "updated", "renamed", "skipped", "unmatched", "add_form", "scrape_error",
+    #         "image_error", "plugin_error", "error"
     status: str
     # Optional detail message (e.g. error text, parsed tokens for add_form)
     message: str = ""
     # True when the NFO was written but the Plex push returned False
     plex_failed: bool = False
+    # Truncated traceback for unexpected exceptions (status="error"); None otherwise
+    traceback_short: str | None = None
 
 
 @dataclass
@@ -64,6 +68,7 @@ class RunReport:
     add_form: int = 0
     scrape_errors: int = 0
     image_errors: int = 0
+    plugin_errors: int = 0
     errors: int = 0
 
     # Full per-file results list (written verbatim to the JSON report)
@@ -93,6 +98,9 @@ class RunReport:
         elif result.status == "image_error":
             self.total_scanned += 1
             self.image_errors += 1
+        elif result.status == "plugin_error":
+            self.total_scanned += 1
+            self.plugin_errors += 1
         elif result.status == "error":
             self.total_scanned += 1
             self.errors += 1
@@ -170,6 +178,7 @@ def write_report(
         f"  Unmatched                              : {report.unmatched}",
         f"  Scrape errors (site change / not found): {report.scrape_errors}",
         f"  Image errors (NFO ok, images failed)   : {report.image_errors}",
+        f"  Plugin errors (invalid data returned)  : {report.plugin_errors}",
         f"  Errors (unexpected)                    : {report.errors}",
         "",
     ]
@@ -210,6 +219,15 @@ def write_report(
     if scrape_error_files:
         lines.append("Scrape errors (site may have changed its markup):")
         for f in scrape_error_files:
+            lines.append(f"  {f.path}")
+            if f.message:
+                lines.append(f"    → {f.message}")
+        lines.append("")
+
+    plugin_error_files = by_status.get("plugin_error", [])
+    if plugin_error_files:
+        lines.append("Plugin errors (invalid data returned by plugin):")
+        for f in plugin_error_files:
             lines.append(f"  {f.path}")
             if f.message:
                 lines.append(f"    → {f.message}")

@@ -101,7 +101,14 @@
         <a href="/files?path={{ f.path | urlencode }}" title="View file history">{{ f.path }}</a>
         <button class="copy-btn" data-path="{{ f.path }}" title="Copy path" aria-label="Copy path">⎘</button>
       </td>
-      <td class="msg">{{ f.message or "" }}</td>
+      <td class="msg">{{ f.message or "" }}
+        {% if f.get('traceback_short') %}
+        <details style="margin-top:0.25rem;">
+          <summary class="muted" style="font-size:0.75rem; cursor:pointer;">traceback</summary>
+          <pre style="font-size:0.7rem; white-space:pre-wrap; margin-top:0.25rem; color:var(--dim);">{{ f.get('traceback_short') }}</pre>
+        </details>
+        {% endif %}
+      </td>
       <td id="retry-{{ loop.index }}">
         {% if f.status in ("error", "scrape_error", "image_error", "unmatched") and f.path %}
         <form method="POST" action="/trigger/file" class="inline-form"

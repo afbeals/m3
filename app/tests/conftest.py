@@ -24,6 +24,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.web import create_app
+from app.plugins.base import ParsedFilename
+
+
+def make_parsed_filename(**overrides) -> ParsedFilename:
+    """Factory for ParsedFilename with sensible defaults for testing."""
+    defaults = {
+        "form": "general",
+        "actors": ["Test Actor"],
+        "genres": [],
+        "site": "testsite",
+        "match_subtype": "exact",
+        "date": None,
+        "scene_id": "12345",
+        "direct_url": None,
+        "title": None,
+        "raw_match_payload": "testsite - 12345",
+    }
+    defaults.update(overrides)
+    return ParsedFilename(**defaults)
+
+
+@pytest.fixture
+def parsed_filename():
+    return make_parsed_filename()
 
 
 @pytest.fixture()

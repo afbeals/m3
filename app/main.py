@@ -46,6 +46,7 @@ from app import __version__
 from app.config import Config, load_config
 from app.utils import call_with_timeout
 from app.logging_setup import setup_logging, cleanup_old_files
+from app.plugins.base import PluginValidationError
 from app.plugins.loader import load_plugins
 from app.reporter import RunReport, FileResult, write_report
 from app.router import Router
@@ -308,10 +309,25 @@ def run(
             logger.warning("Plugin fetch timed out for %s: %s", media.path, exc)
             report.record(FileResult(path=media.path, status="scrape_error", message=f"fetch timed out: {exc}"))
             continue
+        except PluginValidationError as exc:
+            # Plugin returned a MetadataResult with invalid data — distinct from a network
+            # error so operators can see "my plugin is producing bad data" clearly.
+            logger.warning("Plugin validation error for %s: %s", media.path, exc)
+            report.record(FileResult(
+                path=media.path,
+                status="plugin_error",
+                message=f"Plugin returned invalid data: {exc}",
+            ))
+            continue
         except Exception as exc:
             tb_short = _tb.format_exc(limit=_TRACEBACK_LIMIT)[-_TRACEBACK_MAX_CHARS:]
             logger.warning("Plugin error for %s: %s\n%s", media.path, exc, tb_short)
-            report.record(FileResult(path=media.path, status="error", message=str(exc)))
+            report.record(FileResult(
+                path=media.path,
+                status="error",
+                message=str(exc)[:200],
+                traceback_short=tb_short,
+            ))
             continue
 
         # Plugin can return None if the lookup found nothing (e.g. scene not in database)
@@ -654,9 +670,17 @@ def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
     if parsed.site and parsed.site.lower() not in plugin.all_ids():
         print(f"\nWARNING: parsed site {parsed.site!r} does not match plugin ids {plugin.all_ids()}")
 
-    print("\nCalling plugin.fetch() …")
     try:
-        result = plugin.fetch(parsed)
+        _cfg = load_config(plex_required=False)
+        timeout = _cfg.plugin_fetch_timeout_secs or 30.0
+    except Exception:
+        timeout = 30.0
+    print(f"\nCalling plugin.fetch() with {timeout:.0f}s timeout…")
+    try:
+        result = call_with_timeout(lambda: plugin.fetch(parsed), timeout_secs=timeout)
+    except TimeoutError:
+        print(f"\nERROR: Plugin fetch() timed out after {timeout:.0f}s")
+        raise SystemExit(1)
     except Exception as exc:
         print(f"\nERROR: plugin.fetch() raised: {exc}")
         raise SystemExit(1)

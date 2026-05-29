@@ -28,6 +28,7 @@ import logging
 import re
 from urllib.parse import quote, quote_plus, urljoin
 
+import httpx
 from bs4 import BeautifulSoup
 
 from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
@@ -37,10 +38,43 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://example-html-site.com"
 
+# All CSS selectors in one place — update here when the site changes its markup.
+_SEL = {
+    "title":         "h1.scene-title",
+    "summary":       "div.scene-description",
+    "year":          "span.release-year",
+    "rating":        "span.rating-value",
+    "genres":        "a.genre-tag",
+    "actors":        "a.performer-name",
+    "poster":        "img.poster-image",
+    "fanart":        "img.fanart-image",
+    "scene_id_meta": 'meta[name="scene-id"]',
+    "result_link":   "a.result-link",
+}
+
 
 class ExampleHTMLPlugin(MetadataPlugin):
     site_id = "examplehtml"
     aliases = ("EH",)
+
+    def __init__(self) -> None:
+        # Most sites block the default python-httpx/x.x.x User-Agent with 403
+        # or CAPTCHA pages. Using a browser UA is required for HTML scraping.
+        self._client = httpx.Client(
+            follow_redirects=True,
+            timeout=30,
+            limits=httpx.Limits(keepalive_expiry=30),
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            },
+        )
+
+    def close(self) -> None:
+        self._client.close()
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         logger.info(
@@ -80,9 +114,20 @@ class ExampleHTMLPlugin(MetadataPlugin):
     # ------------------------------------------------------------------
 
     def _fetch_by_search(self, parsed: ParsedFilename) -> MetadataResult | None:
-        query = parsed.title or (parsed.actors[0] if parsed.actors else None)
-        if not query:
-            logger.warning("[examplehtml] No title or actor to search with")
+        if parsed.title:
+            query = parsed.title
+        elif parsed.actors:
+            logger.warning(
+                "[examplehtml] No title available for %r; searching by actor name %r — "
+                "result may be wrong if the site returns performer pages for actor queries",
+                parsed.site, parsed.actors[0],
+            )
+            query = parsed.actors[0]
+        else:
+            logger.warning(
+                "[examplehtml] No title or actors available for %r — cannot search",
+                parsed.site,
+            )
             return None
 
         search_url = f"{BASE_URL}/search?q={quote_plus(query)}"
@@ -90,7 +135,7 @@ class ExampleHTMLPlugin(MetadataPlugin):
         soup = BeautifulSoup(html, "html.parser")
 
         # Example selector: search results are <a class="result-link"> elements
-        first_result = soup.select_one("a.result-link")
+        first_result = soup.select_one(_SEL["result_link"])
         if not first_result:
             # No results — the query just didn't match anything. Return None
             # (not a ScrapeError) so main.py records this as "unmatched".
@@ -113,62 +158,83 @@ class ExampleHTMLPlugin(MetadataPlugin):
         soup = BeautifulSoup(html, "html.parser")
 
         # ---- Title ----
-        title_el = soup.select_one("h1.scene-title")
+        title_el = soup.select_one(_SEL["title"])
         if not title_el:
             # Raise SelectorMissingError so the run report names the broken
             # selector. This tells you exactly what to update if the site
             # changes its markup.
             raise SelectorMissingError("title not found at h1.scene-title")
         title = title_el.get_text(strip=True)
+        if not title:
+            raise SelectorMissingError(
+                f"Title selector '{_SEL['title']}' matched but contained no text"
+            )
 
         # ---- Summary / plot ----
-        summary_el = soup.select_one("div.scene-description")
+        summary_el = soup.select_one(_SEL["summary"])
         summary = summary_el.get_text(strip=True) if summary_el else None
 
         # ---- Year ----
-        year_el = soup.select_one("span.release-year")
+        year_el = soup.select_one(_SEL["year"])
         year: int | None = None
         year_text = year_el.get_text(strip=True) if year_el else ""
         year_match = re.match(r"\d{4}", year_text)
         year = int(year_match.group()) if year_match else None
 
         # ---- Rating ----
-        rating_el = soup.select_one("span.rating-value")
+        rating_el = soup.select_one(_SEL["rating"])
         rating: float | None = None
         if rating_el:
-            try:
-                rating = float(rating_el.get_text(strip=True))
-            except ValueError:
-                pass
+            raw_rating = rating_el.get_text(strip=True)
+            m = re.search(r"\d+(?:\.\d+)?", raw_rating)
+            if m:
+                try:
+                    rating = float(m.group())
+                except ValueError:
+                    logger.warning("[examplehtml] Could not parse rating from %r", raw_rating)
+            else:
+                logger.warning("[examplehtml] No numeric value found in rating %r", raw_rating)
 
         # ---- Genres ----
-        genres = [
-            el.get_text(strip=True)
-            for el in soup.select("a.genre-tag")
-        ]
+        genres = list(dict.fromkeys(
+            name
+            for el in soup.select(_SEL["genres"])
+            if (name := el.get_text(strip=True).replace("\xa0", " ").strip())
+        ))
 
         # ---- Actors ----
-        actors = [
-            el.get_text(strip=True)
-            for el in soup.select("a.performer-name")
-        ]
+        actors = list(dict.fromkeys(
+            name
+            for el in soup.select(_SEL["actors"])
+            if (name := el.get_text(strip=True).replace("\xa0", " ").strip())
+        ))
 
         # ---- Images ----
-        poster_el = soup.select_one("img.poster-image")
-        raw_poster = poster_el.get("src") if poster_el else None
+        poster_el = soup.select_one(_SEL["poster"])
+        # Try data-src first (used by lazy-loading sites), then src
+        raw_poster = (
+            poster_el.get("data-src")
+            or poster_el.get("data-lazy")
+            or poster_el.get("src")
+        ) if poster_el else None
         poster_url = urljoin(BASE_URL, raw_poster) if raw_poster else None
 
-        fanart_el = soup.select_one("img.fanart-image")
-        raw_fanart = fanart_el.get("src") if fanart_el else None
+        fanart_el = soup.select_one(_SEL["fanart"])
+        # Try data-src first (used by lazy-loading sites), then src
+        raw_fanart = (
+            fanart_el.get("data-src")
+            or fanart_el.get("data-lazy")
+            or fanart_el.get("src")
+        ) if fanart_el else None
         fanart_url = urljoin(BASE_URL, raw_fanart) if raw_fanart else None
 
         # ---- Scene ID for traceability ----
         # Example: <meta name="scene-id" content="12345">
-        id_el = soup.select_one('meta[name="scene-id"]')
+        id_el = soup.select_one(_SEL["scene_id_meta"])
         source_id = id_el.get("content") if id_el else None
 
         return MetadataResult(
-            title=title or "Unknown Title",
+            title=title,
             summary=summary,
             year=year,
             rating=rating,

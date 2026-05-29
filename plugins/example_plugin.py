@@ -60,7 +60,11 @@ class ExampleSitePlugin(MetadataPlugin):
         # p.close() when the plugin is no longer needed if you want deterministic
         # connection teardown. In normal m3 usage the process exits after each run,
         # so the OS reclaims the connection automatically.
-        self._client = httpx.Client(timeout=15, follow_redirects=True)
+        self._client = httpx.Client(
+            timeout=15,
+            follow_redirects=True,
+            limits=httpx.Limits(keepalive_expiry=30),
+        )
 
     def close(self) -> None:
         """Release the underlying connection pool."""
@@ -101,18 +105,20 @@ class ExampleSitePlugin(MetadataPlugin):
     # ------------------------------------------------------------------
 
     def _fetch_by_id(self, parsed: ParsedFilename) -> MetadataResult | None:
-        scene_id = parsed.scene_id or parsed.direct_url
-        if not scene_id:
-            logger.warning("[examplesite] Exact match but no scene_id or direct_url")
+        if parsed.direct_url:
+            # URL slug — use the slug-based endpoint (adapt path to your site's API)
+            url_path = f"/scenes/by-slug/{quote(parsed.direct_url, safe='-_')}"
+            logger.debug("[examplesite] Slug lookup: %s", url_path)
+        elif parsed.scene_id:
+            # Numeric ID — use the direct ID endpoint
+            url_path = f"/scenes/{quote(parsed.scene_id, safe='')}"
+            logger.debug("[examplesite] ID lookup: %s", url_path)
+        else:
+            logger.warning("[examplesite] Exact match but no scene_id or direct_url in parsed filename")
             return None
-
-        # Replace this with your real API call.
-        # Example: GET https://api.example-site.com/v1/scenes/12345?api_key=...
-        url_path = f"/scenes/{quote(str(scene_id), safe='')}"
         data = self._api_get(url_path)
         if not isinstance(data, dict):
             return None
-
         return self._to_result(data)
 
     # ------------------------------------------------------------------
@@ -120,6 +126,13 @@ class ExampleSitePlugin(MetadataPlugin):
     # ------------------------------------------------------------------
 
     def _fetch_enhanced(self, parsed: ParsedFilename) -> MetadataResult | None:
+        # If we have a scene ID, use the direct endpoint — faster and unambiguous.
+        if parsed.scene_id:
+            result = self._fetch_by_id(parsed)
+            if result is not None:
+                return result
+            logger.debug("[examplesite] Direct ID lookup failed; falling back to search")
+
         params: dict = {}
         if parsed.title:
             params["q"] = parsed.title
@@ -137,8 +150,15 @@ class ExampleSitePlugin(MetadataPlugin):
         if not result_dicts:
             return None
 
-        # Take the first (best) result
-        return self._to_result(result_dicts[0])
+        # Prefer the result whose ID matches parsed.scene_id exactly
+        if parsed.scene_id:
+            match = next(
+                (r for r in result_dicts if str(r.get("id", "")) == str(parsed.scene_id)),
+                result_dicts[0],
+            )
+        else:
+            match = result_dicts[0]
+        return self._to_result(match)
 
     # ------------------------------------------------------------------
     # Limited search — site supports title and/or actor only
@@ -158,7 +178,22 @@ class ExampleSitePlugin(MetadataPlugin):
         if not result_dicts:
             return None
 
-        return self._to_result(result_dicts[0])
+        # Prefer result whose title exactly matches (case-insensitive)
+        if parsed.title:
+            title_lower = parsed.title.lower()
+            match = next(
+                (r for r in result_dicts if r.get("title", "").lower() == title_lower),
+                result_dicts[0],  # fallback to first if no exact match
+            )
+        else:
+            match = result_dicts[0]
+
+        if len(result_dicts) > 1:
+            logger.debug(
+                "[examplesite] Limited search returned %d results; selected %r",
+                len(result_dicts), match.get("title", "?"),
+            )
+        return self._to_result(match)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -169,8 +204,10 @@ class ExampleSitePlugin(MetadataPlugin):
         # Read the key at call time so key rotation takes effect without restart.
         api_key = os.environ.get("EXAMPLESITE_API_KEY", "")
         if not api_key:
-            logger.error("[examplesite] EXAMPLESITE_API_KEY is not set")
-            return None
+            raise RuntimeError(
+                "EXAMPLESITE_API_KEY environment variable is not set. "
+                "Add it to your .env file or container environment."
+            )
 
         url = f"{BASE_URL}{path}"
         all_params = {"api_key": api_key, **(params or {})}
@@ -180,7 +217,16 @@ class ExampleSitePlugin(MetadataPlugin):
             r.raise_for_status()
             return r.json()
         except httpx.HTTPStatusError as exc:
-            logger.warning("[examplesite] HTTP %s for %s", exc.response.status_code, url)
+            status = exc.response.status_code
+            if status == 429:
+                logger.warning("[examplesite] Rate-limited (429) for %s — site is throttling requests", exc.request.url)
+                # Import and raise ScrapeError so main.py records this as scrape_error
+                from app.scrape import ScrapeError
+                raise ScrapeError(f"Rate-limited (429) by {exc.request.url}") from exc
+            if status == 404:
+                logger.debug("[examplesite] Scene not found (404) for %s", exc.request.url)
+                return None
+            logger.warning("[examplesite] HTTP %s for %s", status, url)
         except httpx.TimeoutException as exc:
             logger.warning("[examplesite] Request timed out for %s: %s", url, exc)
             raise  # main.py will catch this and record status="scrape_error"

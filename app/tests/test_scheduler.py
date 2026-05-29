@@ -84,3 +84,46 @@ def test_cron_trigger_defaults_to_utc_when_tz_unset():
         call_kwargs = mock_trigger.call_args
         tz_used = call_kwargs.kwargs.get("timezone")
         assert tz_used == "UTC", f"Expected default 'UTC', got {tz_used!r}"
+
+
+# ---------------------------------------------------------------------------
+# T6 — SIGUSR2 end-to-end test
+# ---------------------------------------------------------------------------
+
+import os
+import signal
+import platform
+import time as _time
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="SIGUSR2 not available on Windows")
+def test_sigusr2_reloads_registry_and_pauses_scheduler():
+    """SIGUSR2 triggers registry reload: watcher pauses scheduler, swaps registry, resumes."""
+    from app.scheduler import register_sigusr2_reload
+
+    registry: dict = {"oldsite": MagicMock()}
+    mock_scheduler = MagicMock()
+    mock_scheduler.running = True
+
+    # The new registry that load_plugins will return after the reload
+    fake_new_registry = {"reloaded": MagicMock()}
+
+    with patch("app.plugins.loader.load_plugins", return_value=fake_new_registry):
+        register_sigusr2_reload(registry, "/tmp/fake_plugin_dir", scheduler=mock_scheduler)
+        # Give the watcher thread a moment to start before sending the signal
+        _time.sleep(0.1)
+        # Send SIGUSR2 to ourselves
+        os.kill(os.getpid(), signal.SIGUSR2)
+        # Poll until registry is updated (up to 5 seconds)
+        deadline = _time.monotonic() + 5.0
+        while _time.monotonic() < deadline:
+            if "reloaded" in registry:
+                break
+            _time.sleep(0.05)
+
+    assert "reloaded" in registry, f"Expected 'reloaded' in registry after reload, got {list(registry.keys())}"
+    assert "oldsite" not in registry, "Old registry key should have been cleared"
+
+    # Verify scheduler was paused and resumed
+    mock_scheduler.pause.assert_called_once()
+    mock_scheduler.resume.assert_called_once()

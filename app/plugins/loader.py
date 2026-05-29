@@ -118,6 +118,7 @@ def load_plugins(plugin_dir: str, old_registry: dict | None = None) -> dict[str,
 
             try:
                 instance = obj()
+                instance.setup()
             except Exception:
                 logger.exception("Failed to instantiate plugin class %s in %s; skipping", obj.__name__, fname)
                 continue

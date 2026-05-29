@@ -87,9 +87,11 @@ def write_nfo(
     # Core metadata fields
     add("title", result.title)
     add("year", str(result.year) if result.year is not None else None)
+    add("premiered", result.release_date)
     add("rating", str(result.rating) if result.rating is not None else None)
     add("mpaa", result.content_rating)   # content rating, e.g. "NR", "R"
     add("plot", result.summary)
+    add("studio", result.studio)
 
     # Each genre, tag, and label gets its own element (Kodi/Jellyfin expect this)
     for genre in result.genres:
@@ -105,6 +107,11 @@ def write_nfo(
         actor_el = etree.SubElement(root, "actor")
         name_el = etree.SubElement(actor_el, "name")
         name_el.text = actor
+
+    # Each director gets its own <director> element
+    for director in result.directors:
+        d_el = etree.SubElement(root, "director")
+        d_el.text = director
 
     # <art> block references the sidecar image filenames.
     # Kodi and Jellyfin resolve bare filenames relative to the NFO file's directory,

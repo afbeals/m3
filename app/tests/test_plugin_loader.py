@@ -176,3 +176,196 @@ class TestInitRaises:
 
         # The valid plugin should still be registered
         assert "testsite" in registry
+
+
+# ---------------------------------------------------------------------------
+# H7 — old_registry close() path tests
+# ---------------------------------------------------------------------------
+
+class TestOldRegistryClose:
+    def test_close_called_on_old_registry_plugins(self, tmp_path):
+        """load_plugins with old_registry calls close() on each plugin."""
+        plugin_code = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+
+class MockPlugin(MetadataPlugin):
+    site_id = "testclose"
+    def fetch(self, parsed): return None
+    def close(self): self.closed = True
+'''
+        (tmp_path / "mock_plugin.py").write_text(plugin_code)
+        registry = load_plugins(str(tmp_path))
+        instance = registry["testclose"]
+
+        # Reload with old_registry — should call close() on old instance
+        load_plugins(str(tmp_path), old_registry=dict(registry))
+        assert getattr(instance, "closed", False), "close() was not called"
+
+    def test_close_called_once_for_aliased_plugin(self, tmp_path):
+        """When a plugin is registered under site_id AND an alias, close() fires exactly once."""
+        plugin_code = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+
+class AliasedPlugin(MetadataPlugin):
+    site_id = "mainid"
+    aliases = ("otherid",)
+    def __init__(self):
+        self.close_count = 0
+    def fetch(self, parsed): return None
+    def close(self): self.close_count += 1
+'''
+        (tmp_path / "aliased_plugin.py").write_text(plugin_code)
+        registry = load_plugins(str(tmp_path))
+        instance = registry["mainid"]
+        assert registry["mainid"] is registry["otherid"]
+
+        load_plugins(str(tmp_path), old_registry=dict(registry))
+        assert instance.close_count == 1, f"close() called {instance.close_count} times, expected 1"
+
+    def test_close_exception_does_not_abort_reload(self, tmp_path):
+        """If close() raises, reload still completes and registry is updated."""
+        plugin_code = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+
+class ErrorCloser(MetadataPlugin):
+    site_id = "errclose"
+    def fetch(self, parsed): return None
+    def close(self): raise RuntimeError("close failed")
+'''
+        (tmp_path / "error_closer.py").write_text(plugin_code)
+        registry = load_plugins(str(tmp_path))
+        old_instance = registry["errclose"]
+
+        # Should not raise despite close() failing
+        new_registry = load_plugins(str(tmp_path), old_registry=dict(registry))
+        assert "errclose" in new_registry
+        assert new_registry["errclose"] is not old_instance
+
+
+# ---------------------------------------------------------------------------
+# H9 — rating validation edge cases
+# ---------------------------------------------------------------------------
+
+import math
+from app.plugins.base import MetadataResult, PluginValidationError
+
+
+class TestMetadataResultValidation:
+    def _make(self, **kwargs):
+        defaults = {"title": "Test Scene", "actors": ["Actor One"]}
+        defaults.update(kwargs)
+        return MetadataResult(**defaults)
+
+    @pytest.mark.parametrize("rating", [float("nan"), float("inf"), float("-inf"), -0.1, 10.001])
+    def test_invalid_rating_raises(self, rating):
+        with pytest.raises((ValueError, PluginValidationError)):
+            self._make(rating=rating)
+
+    @pytest.mark.parametrize("rating", [0.0, 5.0, 10.0, None])
+    def test_valid_rating_accepted(self, rating):
+        result = self._make(rating=rating)
+        assert result.rating == rating
+
+    # ---------------------------------------------------------------------------
+    # H10 — None list field coercion + WARNING log
+    # ---------------------------------------------------------------------------
+
+    def test_none_actors_coerced_to_empty_list(self, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING, logger="app.plugins.base"):
+            result = MetadataResult(title="Test", actors=None)
+        assert result.actors == []
+        assert any("actors" in r.message for r in caplog.records), \
+            "Expected WARNING about None actors field"
+
+    @pytest.mark.parametrize("field", ["genres", "tags", "labels"])
+    def test_none_list_fields_coerced(self, field):
+        result = MetadataResult(title="Test", **{field: None})
+        assert getattr(result, field) == []
+
+    # ---------------------------------------------------------------------------
+    # T3 — str(None) coercion for summary/content_rating/source_url
+    # ---------------------------------------------------------------------------
+
+    @pytest.mark.parametrize("field,value", [
+        ("summary", "None"),
+        ("summary", "none"),
+        ("summary", ""),
+        ("content_rating", "None"),
+        ("content_rating", "  none  "),
+        ("source_url", ""),
+        ("source_url", "NONE"),
+    ])
+    def test_string_none_coercion(self, field, value):
+        result = MetadataResult(title="Test", **{field: value})
+        assert getattr(result, field) is None, \
+            f"Expected {field}={value!r} to be coerced to None"
+
+    # ---------------------------------------------------------------------------
+    # T4 — title whitespace stripping and empty title ValueError
+    # ---------------------------------------------------------------------------
+
+    def test_title_whitespace_stripped(self):
+        result = MetadataResult(title="  My Scene  ")
+        assert result.title == "My Scene"
+
+    @pytest.mark.parametrize("title", ["", "   ", "\t\n"])
+    def test_empty_title_raises(self, title):
+        with pytest.raises((ValueError, PluginValidationError)):
+            MetadataResult(title=title)
+
+
+# ---------------------------------------------------------------------------
+# T1 — two plugin classes in one file
+# ---------------------------------------------------------------------------
+
+class TestTwoPluginsInOneFile:
+    def test_two_plugins_in_one_file(self, tmp_path):
+        """A file with two MetadataPlugin subclasses registers both."""
+        plugin_code = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+
+class PluginAlpha(MetadataPlugin):
+    site_id = "alpha"
+    def fetch(self, p): return None
+
+class PluginBeta(MetadataPlugin):
+    site_id = "beta"
+    def fetch(self, p): return None
+'''
+        (tmp_path / "two_plugins.py").write_text(plugin_code)
+        registry = load_plugins(str(tmp_path))
+        assert "alpha" in registry
+        assert "beta" in registry
+        assert registry["alpha"] is not registry["beta"]
+
+
+# ---------------------------------------------------------------------------
+# T2 — cross-plugin id/alias collision
+# ---------------------------------------------------------------------------
+
+class TestCrossPluginAliasCollision:
+    def test_cross_plugin_alias_collision(self, tmp_path):
+        """Plugin B's alias colliding with Plugin A's site_id: B wins, A's entry replaced."""
+        code_a = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+class PluginA(MetadataPlugin):
+    site_id = "shared"
+    def fetch(self, p): return None
+'''
+        code_b = '''
+from app.plugins.base import MetadataPlugin, ParsedFilename, MetadataResult
+class PluginB(MetadataPlugin):
+    site_id = "unique"
+    aliases = ("shared",)
+    def fetch(self, p): return None
+'''
+        # Write A first, B second so B's registration processes after A
+        (tmp_path / "a_plugin.py").write_text(code_a)
+        (tmp_path / "b_plugin.py").write_text(code_b)
+        registry = load_plugins(str(tmp_path))
+
+        # "shared" should point to exactly one plugin (B, since it overwrites A)
+        assert "shared" in registry
+        assert "unique" in registry
+        assert registry["shared"] is registry["unique"]  # both should be PluginB

@@ -27,6 +27,14 @@ from typing import Literal
 _logger = logging.getLogger(__name__)
 
 
+class PluginValidationError(ValueError):
+    """Raised when MetadataResult contains invalid data from a plugin.
+
+    Distinct from ValueError so main.py can record it as status="plugin_error"
+    rather than conflating it with network errors.
+    """
+
+
 # The four search subtypes the parser can detect (see FILENAME_PATTERNS.md)
 MatchSubtype = Literal["enhanced", "limited", "exact", "add"]
 
@@ -87,7 +95,9 @@ class MetadataResult:
     # Numeric rating (e.g. 7.5 out of 10)
     rating: float | None = None
 
-    # Lists of classification metadata — all written to both NFO and Plex
+    # Lists of classification metadata — all written to both NFO and Plex.
+    # Note: Empty list means "leave existing Plex values unchanged". The values
+    # are only cleared and replaced when the list is non-empty.
     genres: list[str] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)   # Plex labels (flexible bucket)
     tags: list[str] = field(default_factory=list)
@@ -99,6 +109,8 @@ class MetadataResult:
 
     # Release year
     year: int | None = None
+    # Release date in YYYY-MM-DD format; year is auto-derived from it if year is None
+    release_date: str | None = None
     # Content rating string (e.g. "NR", "R", "TV-MA")
     content_rating: str | None = None
 
@@ -107,15 +119,23 @@ class MetadataResult:
     # Site-internal ID — stored in NFO <uniqueid> for traceability
     source_id: str | None = None
 
+    # Studio / production company name
+    studio: str | None = None
+
+    # List of director names.
+    # Note: Empty list means "leave existing Plex values unchanged". The values
+    # are only cleared and replaced when the list is non-empty.
+    directors: list[str] = field(default_factory=list)
+
     def __post_init__(self) -> None:
         # Validate at the plugin boundary so bad data never reaches the writers.
         # A missing title would produce a corrupt NFO and garbage in Plex.
         if not self.title or not self.title.strip():
-            raise ValueError("MetadataResult.title must be a non-empty string")
+            raise PluginValidationError("MetadataResult.title must be a non-empty string")
         # Normalise: strip whitespace from title
         self.title = self.title.strip()
         # Ensure list fields are actually lists (guard against plugins returning None)
-        for field_name in ("actors", "genres", "tags", "labels"):
+        for field_name in ("actors", "genres", "tags", "labels", "directors"):
             if getattr(self, field_name, None) is None:
                 _logger.warning(
                     "MetadataResult.%s was None from plugin — coercing to []. "
@@ -125,19 +145,27 @@ class MetadataResult:
                 # Only set attributes that actually exist on this dataclass
                 if hasattr(self, field_name):
                     setattr(self, field_name, [])
+        # Auto-derive year from release_date if year is not explicitly set
+        if self.release_date and self.year is None:
+            try:
+                self.year = int(self.release_date[:4])
+            except (ValueError, TypeError):
+                pass
         # Validate rating is in a sensible range if provided.
         # math.isfinite() explicitly rejects float('nan') and float('inf').
         # Note: nan is also caught by the chained comparison alone (0.0 <= nan
         # evaluates to False), but isfinite() makes the intent unambiguous.
         if self.rating is not None:
             if not math.isfinite(self.rating) or not (0.0 <= self.rating <= 10.0):
-                raise ValueError(
+                raise PluginValidationError(
                     f"rating must be a finite number 0–10, got {self.rating!r}"
                 )
         # Guard against plugins passing str(None) = "None" as source_id, summary,
-        # content_rating, or source_url (common mistake when building results from
-        # API responses that may return Python None coerced to the string "None").
-        for str_field in ("source_id", "summary", "content_rating", "source_url"):
+        # content_rating, source_url, release_date, or studio (common mistake when
+        # building results from API responses that may return Python None coerced to
+        # the string "None").
+        for str_field in ("source_id", "summary", "content_rating", "source_url",
+                          "release_date", "studio"):
             val = getattr(self, str_field, None)
             if isinstance(val, str) and val.strip().lower() in ("none", ""):
                 setattr(self, str_field, None)
@@ -165,6 +193,15 @@ class MetadataPlugin(ABC):
     # easy to accidentally corrupt all plugins with a single .append() call.
     aliases: tuple[str, ...] = ()  # subclasses should override: aliases = ("MY", "ALIAS")
 
+    def setup(self) -> None:
+        """Called once after the plugin is instantiated and registered.
+
+        Override to validate credentials, warm connections, or perform
+        any startup checks. Raise an exception to prevent the plugin
+        from being registered (it will be skipped with an error log).
+        """
+        pass
+
     @abstractmethod
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         """
@@ -175,7 +212,18 @@ class MetadataPlugin(ABC):
           "enhanced" — search with title, actors, date, and/or scene_id
           "limited"  — search with title and/or actors only
 
-        Return None if the lookup fails or returns no usable result.
+        Return None if the API found no matching result (the file will be recorded
+        as status="unmatched" in the run report).
+
+        Raise ScrapeError (from app.scrape) for network/scraping failures — these
+        are recorded as status="scrape_error". Examples: connection errors,
+        unexpected HTML structure, site returned an error page.
+
+        Raise any other exception for unexpected bugs — recorded as status="error".
+        These indicate a bug in the plugin and should be fixed.
+
+        The "add" form (form="add") is handled before fetch() is called — you will
+        never receive parsed.form == "add" here.
         """
         ...
 
