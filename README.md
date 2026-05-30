@@ -11,6 +11,8 @@ and pushes the same metadata to Plex via its API with field locks.
 
 ### Docker (Unraid / standard Docker host)
 
+> **Note:** The `m3` image must be built locally first (`docker build -t m3 .`) or pulled from Docker Hub (`docker pull YOURDOCKERHUBUSER/m3:latest`). Replace `m3` with your full image name if using Docker Hub.
+
 ```bash
 docker run -d \
   -e PLEX_URL=http://192.168.1.100:32400 \
@@ -200,7 +202,8 @@ python -m app.main --list-unmatched
 python -m app.main --validate-plugins
 
 # Test a single plugin file + filename, print MetadataResult (no writes, no Plex)
-python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+# Pass the filename stem without extension — the parser expects no .mp4/.mkv suffix
+python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345"
 
 # Re-process only failed files from the most recent run
 python -m app.main --retry-failed
@@ -217,7 +220,7 @@ python -m app.tools.parse --json "Jane Doe % MS - eager-hands"   # JSON output
 
 ## Configuration
 
-All configuration is via environment variables. See [config.example.yml](config.example.yml)
+All configuration is via environment variables. See [`.env.example`](.env.example)
 for the full annotated list, or [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 Key variables:
@@ -226,17 +229,18 @@ Key variables:
 |---|---|---|
 | `PLEX_URL` | *(required)* | Plex server URL |
 | `PLEX_TOKEN` | *(required)* | Plex authentication token |
-| `LIBRARY_PATHS` | `./media` (local) / `/media` (Docker) | Comma-separated paths to scan |
+| `LIBRARY_PATHS` | `./media` | Comma-separated paths to scan. Docker images typically mount media at `/media` — set this explicitly in your `docker-compose.yml`. |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip (e.g. `*.part,/media/incoming/**`) |
 | `RUN_SCHEDULE` | `0 3 * * *` | Cron expression for scheduled runs |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | Seconds between plugin API calls (0 to disable) |
 | `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch() is aborted and marked as error |
 | `NOTIFY_URL` | *(empty)* | Webhook URL for post-run JSON summary (Apprise, Gotify, etc.) |
-| `NOTIFY_MIN_ERRORS` | `1` | Defaults to `1` (only notify on errors); set to `0` to notify after every run including clean ones. |
+| `NOTIFY_MIN_ERRORS` | `1` | Minimum combined count of `errors + scrape_errors + image_errors + plugin_errors` before the webhook fires. Default `1` = only notify on errors; set to `0` to always notify. |
 | `APP_NAME` | `m3` | Display name in dashboard header and run reports |
 | `WEB_PORT` | `8765` | Dashboard port |
 | `WEB_HOST` | `0.0.0.0` | Dashboard bind address (`127.0.0.1` to restrict to localhost) |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
+| `DEBUG` | `false` | When `true`, logs a hint to run uvicorn directly for live template reload (dev only) |
 | `TZ` | `UTC` | Container timezone for scheduled runs (e.g. `America/New_York`) |
 
 ---

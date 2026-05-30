@@ -19,6 +19,9 @@ Tasks:
     gen-test-lib    Generate a fake media library in ./test-media/
     check           Run lint + typecheck + tests (full pre-commit gate)
     clean           Remove venv and caches
+    build           Build Docker image (requires DOCKER_HUB_USER env var)
+    push            Push Docker image to Docker Hub (run build first)
+    release         Build + push to Docker Hub in one step
 """
 
 import os
@@ -52,11 +55,22 @@ def run(*cmd: str, env: dict | None = None, check: bool = True) -> int:
 
 TASKS = {}
 
-def task(name):
+def task(name, description: str = ""):
     def decorator(fn):
+        if description and not fn.__doc__:
+            fn.__doc__ = description
         TASKS[name] = fn
         return fn
     return decorator
+
+
+def _get_version() -> str:
+    """Read __version__ from app/__init__.py without importing the package."""
+    init_path = ROOT / "app" / "__init__.py"
+    for line in init_path.read_text().splitlines():
+        if line.startswith("__version__"):
+            return line.split("=")[1].strip().strip('"').strip("'")
+    raise RuntimeError("Could not find __version__ in app/__init__.py")
 
 
 def _get_arg(key: str, default: str = "") -> str:
@@ -111,14 +125,14 @@ def fmt():
 @task("typecheck")
 def typecheck():
     """Run mypy type checks."""
-    run(PY, "-m", "mypy", "app/", "--ignore-missing-imports")
+    run(PY, "-m", "mypy", "app/")
 
 
 @task("check")
 def check():
     """Run lint + typecheck + tests (full pre-commit gate)."""
     run(PY, "-m", "ruff", "check", "app/")
-    run(PY, "-m", "mypy", "app/", "--ignore-missing-imports")
+    run(PY, "-m", "mypy", "app/")
     run(PY, "-m", "pytest", "app/tests/", "-v")
 
 
@@ -171,6 +185,40 @@ def clean():
     for pyc in ROOT.rglob("*.pyc"):
         pyc.unlink(missing_ok=True)
     print("Cleaned.")
+
+
+@task("build", "Build Docker image tagged as DOCKER_HUB_USER/m3:latest and DOCKER_HUB_USER/m3:<version>")
+def build():
+    hub_user = os.environ.get("DOCKER_HUB_USER")
+    if not hub_user:
+        sys.exit(
+            "Error: Set DOCKER_HUB_USER before building.\n"
+            "  Windows: set DOCKER_HUB_USER=myusername\n"
+            "  Mac/Linux: export DOCKER_HUB_USER=myusername"
+        )
+    version = _get_version()
+    run("docker", "build",
+        "-t", f"{hub_user}/m3:latest",
+        "-t", f"{hub_user}/m3:{version}",
+        ".")
+    print(f"Built: {hub_user}/m3:latest  and  {hub_user}/m3:{version}")
+
+
+@task("push", "Push Docker image to Docker Hub (run build first)")
+def push():
+    hub_user = os.environ.get("DOCKER_HUB_USER")
+    if not hub_user:
+        sys.exit("Error: Set DOCKER_HUB_USER before pushing.")
+    version = _get_version()
+    run("docker", "push", f"{hub_user}/m3:latest")
+    run("docker", "push", f"{hub_user}/m3:{version}")
+    print(f"Pushed: {hub_user}/m3:latest  and  {hub_user}/m3:{version}")
+
+
+@task("release", "Build + push to Docker Hub in one step")
+def release():
+    build()
+    push()
 
 
 def main():

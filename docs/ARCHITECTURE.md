@@ -403,7 +403,8 @@ docker exec m3 python -m app.main --retry-failed
 docker exec m3 python -m app.main --retry-failed=3
 
 # Test a single plugin file + filename, print MetadataResult, no writes
-python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+# Pass the filename stem without extension — the parser expects no .mp4/.mkv suffix
+python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345"
 
 # Validate all plugins — print pass/fail table, exit 1 on failure
 python -m app.main --validate-plugins

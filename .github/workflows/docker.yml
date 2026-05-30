@@ -1,0 +1,43 @@
+# Setup required:
+# 1. In GitHub repo: Settings → Secrets and variables → Actions
+# 2. Add Repository VARIABLE (not secret): DOCKER_HUB_USER = your Docker Hub username
+# 3. Add Repository SECRET: DOCKER_HUB_TOKEN = Docker Hub access token
+#    (hub.docker.com → Account Settings → Security → New Access Token)
+# After setup, every push to main automatically builds and pushes to Docker Hub.
+# On Unraid, click "Check for Updates" to pull the new image.
+
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  docker:
+    name: Build & push to Docker Hub
+    runs-on: ubuntu-latest
+    # Only runs when DOCKER_HUB_USER repository variable is configured
+    if: vars.DOCKER_HUB_USER != ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(python3 -c 'from app import __version__; print(__version__)')" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.DOCKER_HUB_USER }}/m3:latest
+            ${{ vars.DOCKER_HUB_USER }}/m3:${{ steps.version.outputs.version }}

@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>m3</Name>
-  <Repository>m3:latest</Repository>
+  <!-- Replace YOURDOCKERHUBUSER with your Docker Hub username before importing this template -->
+  <Repository>YOURDOCKERHUBUSER/m3:latest</Repository>
   <Registry/>
   <Network>bridge</Network>
   <Shell>sh</Shell>
@@ -111,7 +112,7 @@
           Description="Optional webhook URL. m3 POSTs a compact JSON run summary here after each completed run. Works with Apprise, Gotify, Pushover relay, or any HTTP endpoint. Leave empty to disable. See docs/UNRAID_SETUP.md for a Gotify setup walkthrough."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
-  <Config Name="Notify min errors" Target="NOTIFY_MIN_ERRORS" Default="0"
+  <Config Name="Notify min errors" Target="NOTIFY_MIN_ERRORS" Default="1"
           Description="Minimum combined error count (errors + scrape_errors) before the webhook fires. Default 0 fires after every run. Set to 1 to only notify when something broke."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 

@@ -78,7 +78,14 @@ pip install -r requirements.txt -r requirements-dev.txt
 Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
+# macOS / Linux / Git Bash:
 cp .env.example .env
+
+# Windows CMD:
+copy .env.example .env
+
+# Windows PowerShell:
+Copy-Item .env.example .env
 ```
 
 The `.env` file is loaded automatically at startup (`override=False`, so any
@@ -164,7 +171,7 @@ copy plugins\example_plugin.py plugins\mysite.py
 
 Edit `plugins/mysite.py` — at minimum:
 1. Change `site_id` to match the token you'll use in filenames (e.g. `"mysite"`)
-2. Change `aliases` if you want shorthand (e.g. `["MS"]`)
+2. Change `aliases` if you want shorthand (e.g. `("MS",)`)  # Use tuple, not list — class-level defaults must be immutable
 3. Set `BASE_URL` to your API's base URL
 4. Update `_to_result()` to map your API's response fields to `MetadataResult`
 5. Fill in `_fetch_by_id()`, `_fetch_enhanced()`, `_fetch_limited()` with real API calls
@@ -247,15 +254,17 @@ python -c "from app.parser import parse; stems=['Jane Doe with Drama %% mysite -
 Load a single plugin file, call `fetch()` on a parsed filename, and print the
 full `MetadataResult` — no library scan, no Plex connection, no writes:
 
+Pass the filename stem without the `.mp4` extension — the parser expects no file extension:
+
 ```bash
 python -m app.main \
   --test-plugin plugins/mysite.py \
-  --filename "Jane Doe with Drama % mysite - 12345.mp4"
+  --filename "Jane Doe with Drama % mysite - 12345"
 ```
 
 On Windows:
 ```cmd
-python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe with Drama %% mysite - 12345.mp4"
+python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe with Drama %% mysite - 12345"
 ```
 
 This is the fastest way to iterate on plugin mapping logic. You'll see each
@@ -422,7 +431,7 @@ plugin → parse → fetch → NFO pipeline without a Plex server.
 
 ```
 1. Edit plugins/mysite.py
-2. python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345.mp4"
+2. python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345"
      → see full MetadataResult or error message immediately
 3. python -m app.main --once --force
      → full pipeline pass; check run_latest.txt

@@ -143,6 +143,8 @@ ID types:
 
 Date may precede the ID. Additional actor/title terms after a StudioID or ActressID act as a search hint. **Do not add actor/title terms after a Direct URL slug** — they break matching.
 
+> **Note:** `studio_id` and `actress_id` are **reserved fields** — the parser never populates them. These fields describe *conceptual* token types for plugin author guidance only. In practice, a StudioID token will appear as `scene_id` (if numeric) or `direct_url` (if a hyphenated slug). Plugins that need the studio or actress ID must parse it from `scene_id`, `direct_url`, or `raw_match_payload`.
+
 **Examples:**
 ```
 mysite - 12345                                              ← SceneID only

@@ -724,6 +724,12 @@ def _run_test_plugin(plugin_file: str, filename_stem: str | None) -> None:
     print(f"  summary:        {result.summary!r}")
     print(f"  rating:         {result.rating}")
     print(f"  year:           {result.year}")
+    if result.release_date:
+        print(f"  release_date : {result.release_date}")
+    if result.studio:
+        print(f"  studio       : {result.studio}")
+    if result.directors:
+        print(f"  directors    : {', '.join(result.directors)}")
     print(f"  content_rating: {result.content_rating!r}")
     print(f"  genres:         {result.genres}")
     print(f"  tags:           {result.tags}")
@@ -764,7 +770,8 @@ def main() -> None:
         default=None,
         metavar="N",
         help=(
-            "Re-process error and scrape_error files from the N most recent runs "
+            "Re-process error, scrape_error, image_error, and plugin_error files "
+            "from the N most recent runs "
             "(default: 1 = most recent run only), then exit"
         ),
     )

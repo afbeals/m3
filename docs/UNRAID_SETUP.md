@@ -28,9 +28,20 @@ VERSION=$(python3 -c "from app import __version__; print(__version__)")
 
 # From the root of this project
 docker build -t yourdockerhubuser/m3:latest -t yourdockerhubuser/m3:${VERSION} .
+```
 
-# Push both tags to Docker Hub (create a free account at hub.docker.com if needed)
-docker login
+> **Docker Hub account required.** If you don't have one, create a free account at
+> [hub.docker.com](https://hub.docker.com). Then authenticate:
+>
+> ```bash
+> docker login
+> ```
+>
+> Enter your Docker Hub username and password (or access token). You only need to
+> do this once per machine.
+
+```bash
+# Push both tags to Docker Hub
 docker push yourdockerhubuser/m3:latest
 docker push yourdockerhubuser/m3:${VERSION}
 ```
@@ -191,6 +202,8 @@ services:
       # - LIBRARY_EXCLUDE_PATTERNS=*.part,/media/incoming/**
       # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
       # - NOTIFY_URL=
+      # - NOTIFY_MIN_ERRORS=1  # 1=only notify on errors (default); 0=notify after every run
+      # - WEB_HOST=0.0.0.0    # bind address (default: 0.0.0.0)
       # Plugin API keys:
       # - MYSITE_API_KEY=your-key-here
 ```
@@ -228,13 +241,13 @@ Or via SSH:
 docker logs m3 --tail 50
 ```
 
-You should see something like:
+You should see something like (format may vary slightly based on log level alignment):
 ```
-INFO  app.main - m3 1.3.0 starting up
-INFO  app.main - Library paths: ['/media/Movies', '/media/TV']
-INFO  app.plugins.loader - Registered plugin MySitePlugin for id 'mysite'
-INFO  app.plugins.loader - Registered plugin OtherSitePlugin for id 'othersite'
-INFO  app.main - Web dashboard started on http://0.0.0.0:8765
+2025-01-01 03:00:00,000 [INFO    ] app.main: m3 1.3.0 starting up
+2025-01-01 03:00:00,001 [INFO    ] app.main: Library paths: ['/media/Movies', '/media/TV']
+2025-01-01 03:00:00,002 [INFO    ] app.plugins.loader: Registered plugin MySitePlugin for id 'mysite'
+2025-01-01 03:00:00,003 [INFO    ] app.plugins.loader: Registered plugin OtherSitePlugin for id 'othersite'
+2025-01-01 03:00:00,004 [INFO    ] app.main: Web dashboard started on http://0.0.0.0:8765
 ```
 
 ### Open the web dashboard
@@ -385,16 +398,20 @@ m3 POSTs a JSON body that Gotify receives as a message. The key fields:
 ```json
 {
   "app_name": "m3",
-  "started_at": "2025-05-17T03:00:01",
-  "finished_at": "2025-05-17T03:02:34",
-  "duration_seconds": 153,
-  "updated": 12,
-  "errors": 0,
+  "started_at": "2025-01-01T03:00:00+00:00",
+  "finished_at": "2025-01-01T03:05:00+00:00",
+  "duration_seconds": 300,
+  "total_scanned": 50,
+  "updated": 3,
+  "skipped": 45,
+  "renamed": 0,
+  "unmatched": 1,
   "scrape_errors": 1,
-  "unmatched": 2,
-  "total_scanned": 850,
+  "image_errors": 0,
+  "errors": 0,
+  "plugin_errors": 0,
   "first_error": null,
-  "first_scrape_error": "title element not found at h1.scene-title"
+  "first_scrape_error": "Connection timeout for site X"
 }
 ```
 

@@ -10,7 +10,6 @@ All notable changes to m3 are documented here.
 - **`--test-plugin <path>`** — loads a single plugin file, calls `fetch()` on a parsed filename (supply with `--filename "..."`) and prints the full `MetadataResult` fields. No library scan, no writes, no Plex connection. Fastest way to iterate on plugin mapping logic.
 - **`--validate-plugins`** — scans all plugins in `PLUGIN_DIR`, checks each for correct `site_id` format, `MetadataPlugin` subclass, importability, and `fetch()` signature. Prints a pass/fail table; exits with code 1 if any plugin fails. Use before deploying a batch of new plugins.
 - **`--watch`** — monitors `PLUGIN_DIR` for `.py` file changes and hot-reloads plugins automatically. Cross-platform via `watchfiles` (works on Windows; replaces the Unix-only `SIGUSR2` signal for local development).
-- **`--retry-failed=N`** — extends `--retry-failed` to merge failures across N recent runs. `--retry-failed` (no argument) still defaults to the most recent run; `--retry-failed=3` collects unique failures from the last 3 runs, deduplicated by path.
 - **`scripts/generate_test_library.py`** — generates a fake media library in `./test-media/` with empty `.mp4` files covering all parse subtypes (exact/enhanced/limited/add/unmatched). No real media needed; use for smoke-testing the pipeline.
 - **`Makefile`** — `make setup`, `test`, `test-cov`, `lint`, `format`, `typecheck`, `dev`, `dev-reload`, `once`, `validate`, `gen-test-lib`, `clean` targets. Git Bash / WSL required for `make` on Windows; equivalent `python tasks.py <task>` works everywhere.
 - **`tasks.py`** — pure-Python cross-platform task runner. All Makefile targets available as `python tasks.py <task>`, including `dev-reload` (uses env dict, not Unix inline assignment) and `clean` (uses `shutil` + `pathlib`, not `rm -rf`).
@@ -18,6 +17,7 @@ All notable changes to m3 are documented here.
 
 ### Correctness & Windows
 - **`plugin_error` status** — `MetadataResult.__post_init__` now raises `PluginValidationError` (a subclass of `ValueError`) instead of a bare `ValueError` when validation fails (missing/blank title, out-of-range rating, etc.). Recorded as `status=plugin_error` in the run report, distinct from `scrape_error` (site issue) and `error` (unexpected crash). Retry with `--retry-failed` after fixing the plugin's `_to_result()` mapping.
+- **`--retry-failed` now also retries files with `status=plugin_error`.**
 - **Log file rotation** — `RotatingFileHandler` now uses `delay=True`, deferring file open until the first write. Reduces Windows file-locking contention during log rotation.
 - **Path deduplication** — `_dedup_paths()` in `scanner.py` now uses `pathlib.Path.resolve()` and case-insensitive comparison on Windows (`sys.platform == "win32"`). Prevents double-scanning when `LIBRARY_PATHS` contains aliases that differ only by case (e.g. `C:\Media` and `c:\media`).
 - **Local-friendly config defaults** — path defaults changed from absolute container paths (`/plugins`, `/config/reports`, `/config/logs`, `/media`) to relative paths (`./plugins`, `./reports`, `./logs`, `./media`). Docker users set these via env vars (unchanged). Running locally without env vars now works out of the box.
@@ -34,6 +34,7 @@ All notable changes to m3 are documented here.
 
 ### New features
 - **`image_error` status** — when NFO is written successfully but one or more images fail to download, the file is now recorded as `image_error` rather than silently logged as `updated`. Visible in the run detail page (stat card, filter tab, retry button) and plain-text report.
+- **`--retry-failed` now also retries files with `status=image_error`.**
 - **Trigger record history** — `/trigger/file` (inline ↺ retry) now writes a lightweight `trigger_*.json` record after each manual retrigger. The file history page (`/files?path=…`) surfaces these alongside regular run entries, marked with a ↺ indicator.
 - **`--retry-failed=N`** — extend `--retry-failed` to merge failures across N recent runs. `--retry-failed` (no argument) still defaults to the most recent run; `--retry-failed=3` collects unique failures from the last 3 runs. Duplicate paths across runs are deduplicated.
 - **`.env` file support** — `python-dotenv` is now a dependency. If a `.env` file exists in the working directory at startup, it is loaded automatically (container env vars take precedence via `override=False`). Production containers are unaffected; `.env` is a development convenience.

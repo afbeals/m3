@@ -101,7 +101,7 @@ plugins:
 
 | Field | Type | When populated | Description |
 |---|---|---|---|
-| `match_subtype` | `"exact"` / `"enhanced"` / `"limited"` | always | Which search strategy to use |
+| `match_subtype` | `"exact"` / `"enhanced"` / `"limited"` / `"add"` | always | Which search strategy to use |
 | `scene_id` | `str \| None` | exact, enhanced | Numeric or slug scene ID |
 | `direct_url` | `str \| None` | exact | URL path slug (e.g. `eager-hands`) |
 | `title` | `str \| None` | enhanced, limited | Text title from filename |
@@ -119,6 +119,8 @@ plugins:
 - **enhanced** — filename has a date, scene ID, title, and/or actors; use all of them to search
 - **limited** — filename has a title and/or actors but no date or ID; use what's available
 - **add** — Manual Add form; not routed to plugins (handled by the add writer)
+
+**Note:** `fetch()` is never called with `"add"` — Add-form files are handled before dispatch.
 
 ### Step 3 — Implement fetch()
 
@@ -148,6 +150,7 @@ def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
 | Raises `SelectorMissingError` | `scrape_error` | CSS selector broke after site redesign |
 | Raises `PluginValidationError` | `plugin_error` | MetadataResult contained invalid data (bad title, out-of-range rating, etc.) |
 | Raises anything else | `error` | Unexpected plugin crash |
+| Plugin fetch() exceeds `PLUGIN_FETCH_TIMEOUT_SECS` | `scrape_error` | The watchdog kills the call; status appears as `scrape_error` not `error` |
 
 Return `None` if the API returns no usable record. Do **not** raise — returning
 `None` is the contract for "not found". Only raise (or let exceptions propagate)
@@ -187,6 +190,27 @@ return MetadataResult(
     source_id=str(data["id"]) if data.get("id") is not None else None,
 )
 ```
+
+**MetadataResult field reference:**
+
+| Field | Type | NFO element | Plex field | Notes |
+|---|---|---|---|---|
+| `title` | `str` | `<title>` | title | Required; must be non-empty |
+| `summary` | `str\|None` | `<plot>` | summary | Optional |
+| `year` | `int\|None` | `<year>` | year | Auto-derived from release_date if not set |
+| `release_date` | `str\|None` | `<premiered>` | originallyAvailableAt | YYYY-MM-DD; auto-derives year |
+| `rating` | `float\|None` | `<rating>` | rating | 0.0–10.0 |
+| `content_rating` | `str\|None` | `<mpaa>` | contentRating | e.g. "PG-13", "R" |
+| `genres` | `list[str]` | `<genre>` × N | genres | Empty list = leave Plex unchanged |
+| `tags` | `list[str]` | `<tag>` × N | tags | Free-form keywords |
+| `labels` | `list[str]` | `<tag>label:X` × N | labels | Plex server labels |
+| `actors` | `list[str]` | `<actor><name>` × N | actors | |
+| `directors` | `list[str]` | `<director>` × N | directors | |
+| `studio` | `str\|None` | `<studio>` | studio | Production studio name |
+| `poster_url` | `str\|None` | `<art><poster>` | uploadPoster | Downloaded and saved as sidecar |
+| `fanart_url` | `str\|None` | `<art><fanart>` | uploadArt | Downloaded and saved as sidecar |
+| `source_id` | `str\|None` | `<uniqueid>` | — | Site's internal ID (NFO only) |
+| `source_url` | `str\|None` | `<source>` | — | URL to source page (NFO only) |
 
 `__post_init__` validates the result — a missing or blank `title` raises
 `PluginValidationError` (a subclass of `ValueError`) immediately, recorded as `status=plugin_error` in the run report, so you know your plugin has a mapping problem. Plugin authors can also raise `PluginValidationError` directly in `_to_result()` for their own custom validation (e.g. out-of-range rating, missing required field).
@@ -327,7 +351,7 @@ python -m app.main \
 ```
 
 Loads the plugin file, calls `fetch()` on the parsed filename, and prints the
-full `MetadataResult`. No library scan, no Plex connection, no writes. This is
+MetadataResult fields (title, summary, rating, year, release_date, studio, directors, genres, actors, source_url, source_id, and image URLs). No library scan, no Plex connection, no writes. This is
 the fastest inner loop for iterating on `_to_result()` mapping.
 
 Use `--dry-run-strict` if you want to verify parsing and routing across your

@@ -202,6 +202,14 @@ m3 detects a rename when there is **exactly one orphan `.nfo`** (an NFO with no 
 
 ---
 
+## status=renamed (rename workflow)
+
+**`status=renamed`** means the file was detected as a rename — it had no existing `.nfo` but there was an orphan `.nfo` from a now-deleted file in the same directory. m3 renamed the sidecar assets and re-pushed the metadata from the existing NFO to Plex.
+
+If `plex_failed=True` appears alongside `renamed`, the NFO rename succeeded but the Plex push failed. Re-trigger the file once Plex is reachable.
+
+---
+
 ## Disk full / storage issues
 
 | Symptom | Cause | Fix |
