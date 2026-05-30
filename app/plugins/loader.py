@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 
 def load_plugins(
     plugin_dir: str,
-    old_registry: "dict[str, MetadataPlugin] | None" = None,
-) -> "dict[str, MetadataPlugin]":
+    old_registry: dict[str, MetadataPlugin] | None = None,
+) -> dict[str, MetadataPlugin]:
     """
     Discover and load MetadataPlugin subclasses from .py files in plugin_dir.
 
@@ -156,6 +156,11 @@ def load_plugins(
                 for k in list(registry):
                     if registry[k] is instance:
                         del registry[k]
+                # Release any resources opened by setup()
+                try:
+                    instance.close()
+                except Exception:
+                    pass
                 continue
 
         # Defer sys.modules cleanup until after all files are processed.

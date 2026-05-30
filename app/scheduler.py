@@ -100,15 +100,12 @@ def register_sigusr2_reload(registry: dict, plugin_dir: str, scheduler=None) -> 
                                 "Could not resume scheduler after reload: %s", resume_exc
                             )
                 logger.info("Plugin reload complete: %d plugin(s) loaded", len(new_registry))
-            except KeyboardInterrupt:
-                logger.info("[scheduler] SIGUSR2 watcher thread stopping due to keyboard interrupt")
-                break
             except BaseException as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    logger.info("[scheduler] Watcher thread stopping (KeyboardInterrupt)")
+                    break
                 if not isinstance(exc, Exception):
-                    logger.critical(
-                        "[scheduler] SIGUSR2 watcher thread caught unexpected %s — stopping",
-                        type(exc).__name__,
-                    )
+                    logger.critical("[scheduler] Watcher thread caught %s — stopping", type(exc).__name__)
                     break
                 logger.warning("Plugin reload failed: %s", exc)
 
@@ -147,16 +144,20 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
     timezone = os.environ.get("TZ") or "UTC"
     try:
         trigger = CronTrigger(
-            minute=minute,
-            hour=hour,
-            day=day,
-            month=month,
-            day_of_week=day_of_week,
+            minute=parts[0], hour=parts[1], day=parts[2],
+            month=parts[3], day_of_week=parts[4],
             timezone=timezone,
         )
     except Exception as exc:
+        # Check if it's a timezone error vs a cron syntax error
+        exc_str = str(exc).lower()
+        if "timezone" in exc_str or "pytz" in exc_str or "zoneinfo" in exc_str or isinstance(exc, KeyError):
+            raise ValueError(
+                f"TZ={timezone!r} is not a recognised timezone. "
+                "Use a tz database name like 'America/New_York', not a POSIX string like 'EST5EDT'."
+            ) from exc
         raise ValueError(
-            f"Invalid cron schedule or timezone (TZ={timezone!r}): {exc}"
+            f"Invalid cron schedule {schedule!r} (got {len(parts)} fields): {exc}"
         ) from exc
 
     # max_instances=1 prevents concurrent runs if the previous run is still in progress
@@ -197,15 +198,12 @@ def build_scheduler(run_fn, schedule: str) -> BlockingScheduler:
                         replace_existing=True,
                         misfire_grace_time=_MISFIRE_GRACE_SECS,
                     )
-                except KeyboardInterrupt:
-                    logger.info("[scheduler] SIGUSR1 watcher thread stopping due to keyboard interrupt")
-                    break
                 except BaseException as exc:
+                    if isinstance(exc, KeyboardInterrupt):
+                        logger.info("[scheduler] Watcher thread stopping (KeyboardInterrupt)")
+                        break
                     if not isinstance(exc, Exception):
-                        logger.critical(
-                            "[scheduler] SIGUSR1 watcher thread caught unexpected %s — stopping",
-                            type(exc).__name__,
-                        )
+                        logger.critical("[scheduler] Watcher thread caught %s — stopping", type(exc).__name__)
                         break
                     logger.warning("SIGUSR1: could not schedule run: %s", exc)
 

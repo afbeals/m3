@@ -4,8 +4,8 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Run History</h1>
-  {% if actual_run_count is defined and actual_run_count > runs|length + (page - 1) * 25 %}
-  <span class="muted" style="font-size:0.8rem;">Showing {{ total }} of {{ actual_run_count }} runs</span>
+  {% if actual_run_count is defined and actual_run_count > total %}
+  <p class="muted" style="font-size:0.8rem;">Showing {{ total }} of {{ actual_run_count }} runs ...</p>
   {% else %}
   <span class="muted" style="font-size:0.8rem;">{{ total }} run{{ "s" if total != 1 else "" }} total</span>
   {% endif %}

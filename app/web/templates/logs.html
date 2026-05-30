@@ -33,7 +33,7 @@
 
 <div id="log-panel"
      hx-get="/api/log-panel?tail={{ tail }}"
-     hx-trigger="every 30s"
+     hx-trigger="every 30s [document.visibilityState === 'visible']"
      hx-swap="innerHTML"
      hx-push-url="false">
 {% if error %}

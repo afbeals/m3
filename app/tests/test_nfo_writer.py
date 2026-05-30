@@ -702,6 +702,21 @@ def test_write_nfo_writes_premiered_from_release_date(tmp_path):
     assert "<year>2024</year>" in content  # auto-derived from release_date
 
 
+def test_resolve_art_filename_prefers_jpg_when_multiple_extensions_exist(tmp_path):
+    """When both .jpg and .webp exist, .jpg wins (first in _IMAGE_EXTENSIONS)."""
+    from app.writers.nfo import _resolve_art_filename
+
+    stem = "My Movie"
+    # Create both .jpg and .webp
+    (tmp_path / "My Movie-poster.jpg").write_bytes(b"jpeg data")
+    (tmp_path / "My Movie-poster.webp").write_bytes(b"webp data")
+
+    result = _resolve_art_filename(stem, "poster", str(tmp_path))
+
+    assert result == "My Movie-poster.jpg", \
+        f"Expected .jpg to win, got {result!r}"
+
+
 def test_write_nfo_invalid_release_date_not_written(tmp_path):
     """Invalid release_date must be silently cleared — no <premiered> or auto-derived <year>."""
     from app.writers.nfo import write_nfo

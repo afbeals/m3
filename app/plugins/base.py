@@ -131,6 +131,17 @@ class MetadataResult:
     directors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        # Validation order:
+        # 1. title: str(None) guard + non-empty check
+        # 2. rating: finite + range 0.0–10.0
+        # 3. str-field sentinel ("none"/"null"/"") → None
+        # 4. list fields: None raises PluginValidationError
+        # 5. list element type check (all strings)
+        # 6. release_date whitespace strip (must precede ISO validation)
+        # 7. ISO date validation for release_date
+        # 8. String field whitespace strip (summary, content_rating, source_url, studio, source_id)
+        # 9. year auto-derivation from release_date
+        # 10. year range validation (1900–current_year+1)
         # Validate at the plugin boundary so bad data never reaches the writers.
         # A missing title would produce a corrupt NFO and garbage in Plex.
         # Check title specifically for str(None) pattern before the general check.
@@ -163,7 +174,7 @@ class MetadataResult:
         for str_field in ("source_id", "summary", "content_rating", "source_url",
                           "release_date", "studio"):
             val = getattr(self, str_field, None)
-            if isinstance(val, str) and val.strip().lower() in ("none", ""):
+            if isinstance(val, str) and val.strip().lower() in ("none", "null", ""):
                 setattr(self, str_field, None)
         # Ensure list fields are actually lists (guard against plugins returning None).
         # Raise so plugin authors are forced to fix the bug rather than getting silent coercion.
@@ -183,6 +194,11 @@ class MetadataResult:
                         f"MetadataResult.{field_name} contains non-string elements: {bad!r}. "
                         "All elements must be strings."
                     )
+        # Strip whitespace from release_date before ISO validation so padded dates
+        # like "  2024-01-15  " pass the check rather than being cleared with a warning.
+        if isinstance(self.release_date, str):
+            stripped_rd = self.release_date.strip()
+            self.release_date = stripped_rd if stripped_rd else None
         # Validate release_date is a proper ISO date (YYYY-MM-DD); clear it if not.
         if self.release_date is not None:
             try:
@@ -215,8 +231,7 @@ class MetadataResult:
                 )
         # H15: validate year is within an expected range (1900 – current_year+1).
         if self.year is not None:
-            import datetime as _dt_mod
-            current_year = _dt_mod.date.today().year
+            current_year = _date.today().year
             if not (1900 <= self.year <= current_year + 1):
                 _logger.warning(
                     "MetadataResult.year %r is out of expected range (1900-%d) — clearing.",

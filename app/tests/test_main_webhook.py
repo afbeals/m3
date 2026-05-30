@@ -18,6 +18,8 @@ def _run_report(**kwargs):
     report.skipped = kwargs.get("skipped", 0)
     report.errors = kwargs.get("errors", 0)
     report.scrape_errors = kwargs.get("scrape_errors", 0)
+    report.plugin_errors = kwargs.get("plugin_errors", 0)
+    report.image_errors = kwargs.get("image_errors", 0)
     report.unmatched = kwargs.get("unmatched", 0)
     report.total_scanned = kwargs.get("total_scanned", 1)
     report.duration_seconds = kwargs.get("duration_seconds", 5)

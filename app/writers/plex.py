@@ -97,7 +97,7 @@ def find_plex_item(server: PlexServer, file_path: str, _fallback_cache: dict | N
                     return None
                 for media in item.media:
                     for part in media.parts:
-                        if _fallback_cache is not None:
+                        if part.file is not None and _fallback_cache is not None:
                             _fallback_cache[part.file] = item
                         if part.file == file_path:
                             found = item

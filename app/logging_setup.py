@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 _LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per rotated file
 _LOG_BACKUP_COUNT = 5               # keep m3.log + 5 rotated backups
+_BACKUP_SUFFIX_RE = re.compile(r"[0-9]+$")
+
+
+def _safe_filename(name: str) -> str:
+    """Sanitize app_name for use as a filename component."""
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name).strip('. ')
+    return safe if safe else "m3"
 
 # Tracks only handlers that setup_logging itself added, so we only remove our own
 # handlers on re-call (not any handlers added by pytest, third-party libs, etc.)
@@ -45,7 +52,7 @@ def setup_logging(log_path: str, log_level: str, app_name: str = "m3") -> None:
         # Sanitize app_name for use as a filename — remove path separators that would
         # cause the log file to be created in an unexpected subdirectory.
         # CQ6: strip trailing dots and spaces which are illegal in Windows filenames.
-        safe_app_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', app_name).strip('. ')
+        safe_app_name = _safe_filename(app_name)
         log_file = os.path.join(log_path, f"{safe_app_name}.log")
     except OSError as exc:
         print(
@@ -139,14 +146,11 @@ def cleanup_old_files(
     if not os.path.isdir(directory):
         return 0
 
-    active_log = f"{app_name}.log"
+    active_log = f"{_safe_filename(app_name)}.log"
 
     # Any file older than this timestamp will be deleted
     cutoff = datetime.now(tz=timezone.utc) - timedelta(days=retention_days)
     removed = 0
-
-    # Compiled once here so it is not recompiled on every iteration of the scan loop.
-    _backup_suffix_re = re.compile(r"[0-9]+$")
 
     # os.scandir yields DirEntry objects that cache stat results, avoiding a
     # separate os.stat call per file compared to os.listdir + os.path.getmtime.
@@ -163,7 +167,7 @@ def cleanup_old_files(
                 is_rotated_log_backup = (
                     pattern_suffix == ".log"
                     and fname.startswith(f"{active_log}.")
-                    and bool(_backup_suffix_re.fullmatch(fname[len(active_log) + 1:]))
+                    and bool(_BACKUP_SUFFIX_RE.fullmatch(fname[len(active_log) + 1:]))
                 )
                 if not fname.endswith(pattern_suffix) and not is_rotated_log_backup:
                     continue
@@ -177,17 +181,14 @@ def cleanup_old_files(
                 try:
                     os.remove(entry.path)
                     removed += 1
-                except PermissionError as exc:
-                    # On Windows, a log viewer or tail process may hold the file
-                    # open; skip and retry on the next cleanup pass.
-                    logger.info(
-                        "Could not remove %s (file in use, will retry next cleanup): %s",
-                        entry.path, exc,
-                    )
                 except OSError as exc:
-                    # Log but continue — a locked or unwritable file shouldn't
-                    # abort cleanup of all other files
-                    logger.warning("Could not delete old file %s: %s", entry.path, exc)
+                    if isinstance(exc, PermissionError):
+                        logger.info(
+                            "Could not remove %s (file in use, will retry next cleanup): %s",
+                            entry.path, exc,
+                        )
+                    else:
+                        logger.warning("Could not delete old file %s: %s", entry.path, exc)
 
     # CQ8: log the number of files cleaned up so operators can see retention in action.
     if removed > 0:

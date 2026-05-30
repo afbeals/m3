@@ -132,7 +132,7 @@ def scan_library(
             logger.warning("Library path not found, skipping: %s", lib_path)
             continue
 
-        def _walk_onerror(err, _lib=lib_path):
+        def _walk_onerror(err):
             logger.warning("Scanner: cannot access %s: %s", err.filename, err)
 
         # os.walk recursively yields (directory, subdirs, files) for the whole tree

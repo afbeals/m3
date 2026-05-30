@@ -116,7 +116,7 @@
         {% endif %}
       </td>
       <td id="retry-{{ loop.index }}">
-        {% if f.status in ("error", "scrape_error", "image_error", "unmatched") and f.path %}
+        {% if f.status in ("error", "scrape_error", "image_error", "plugin_error", "unmatched") and f.path %}
         <form method="POST" action="/trigger/file" class="inline-form"
               hx-post="/trigger/file"
               hx-target="#retry-{{ loop.index }}"
@@ -155,13 +155,4 @@
   {% endif %}
 </div>
 {% endif %}
-<script>
-document.querySelectorAll('.copy-btn[data-path]').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    navigator.clipboard.writeText(btn.dataset.path);
-    btn.textContent = '✓';
-    setTimeout(function() { btn.textContent = '⎘'; }, 1200);
-  });
-});
-</script>
 {% endblock %}

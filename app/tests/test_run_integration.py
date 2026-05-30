@@ -653,7 +653,36 @@ def test_run_image_error_when_write_images_returns_false(tmp_path):
     assert report.updated == 0
     # DC4: message must say "not written" (not "NFO written")
     image_error_result = next(f for f in report.files if f.status == "image_error")
-    assert "not written" in (image_error_result.message or "").lower()
+    assert image_error_result.message is not None, "image_error FileResult should have a message"
+    assert "not written" in image_error_result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# T1 — write_images paths flow as basenames into write_nfo
+# ---------------------------------------------------------------------------
+
+def test_run_passes_image_basenames_to_write_nfo(tmp_path):
+    """write_images returned paths must be passed as basenames to write_nfo."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+
+    poster_full = str(tmp_path / "Jane Doe % mysite - 12345-poster.webp")
+    fanart_full = str(tmp_path / "Jane Doe % mysite - 12345-fanart.png")
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.write_images", return_value=(True, poster_full, fanart_full)), \
+         patch("app.main.write_nfo") as mock_write_nfo, \
+         patch("app.main.connect_plex", return_value=None), \
+         patch("app.main.write_report"):
+        run(cfg, router)
+
+    assert mock_write_nfo.called, "write_nfo should have been called"
+    call_kwargs = mock_write_nfo.call_args[1]
+    assert call_kwargs.get("poster_filename") == "Jane Doe % mysite - 12345-poster.webp", \
+        f"Expected basename-only poster_filename, got {call_kwargs.get('poster_filename')!r}"
+    assert call_kwargs.get("fanart_filename") == "Jane Doe % mysite - 12345-fanart.png", \
+        f"Expected basename-only fanart_filename, got {call_kwargs.get('fanart_filename')!r}"
 
 
 # ---------------------------------------------------------------------------

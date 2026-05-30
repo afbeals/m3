@@ -87,6 +87,8 @@ def _fire_webhook(url: str, report: RunReport, *, app_name: str = "m3") -> None:
         "unmatched": report.unmatched,
         "scrape_errors": report.scrape_errors,
         "errors": report.errors,
+        "plugin_errors": report.plugin_errors,
+        "image_errors": report.image_errors,
         "total_scanned": report.total_scanned,
         "first_error": first_error,
         "first_scrape_error": first_scrape_error,
@@ -303,11 +305,16 @@ def run(
             logger.warning("Scrape error for %s: %s", media.path, exc)
             report.record(FileResult(path=media.path, status="scrape_error", message=str(exc)))
             continue
-        except TimeoutError as exc:
+        except TimeoutError:
             # Plugin fetch exceeded the configured timeout — treat as scrape_error so
             # users can distinguish a hung plugin from an unexpected crash.
-            logger.warning("Plugin fetch timed out for %s: %s", media.path, exc)
-            report.record(FileResult(path=media.path, status="scrape_error", message=f"fetch timed out: {exc}"))
+            logger.warning("Plugin fetch timed out for %s after %.1fs", media.path, config.plugin_fetch_timeout_secs)
+            file_result = FileResult(
+                path=media.path,
+                status="scrape_error",
+                message=f"plugin fetch timed out after {config.plugin_fetch_timeout_secs:.1f}s",
+            )
+            report.record(file_result)
             continue
         except PluginValidationError as exc:
             # Plugin returned a MetadataResult with invalid data — distinct from a network
@@ -352,7 +359,7 @@ def run(
         # Write images first so we know the actual filenames (extension derived from
         # Content-Type) before writing the NFO <art> block.
         if dry_run:
-            logger.info("[DRY RUN] Would write NFO + images for: %s", media.path)
+            logger.info("[%s] DRY RUN: would write NFO + images for %s", _pfx, media.path)
         else:
             try:
                 images_ok, poster_path, fanart_path = write_images(media, result)
@@ -484,17 +491,19 @@ def _sweep_tmp_orphans(library_paths: list[str], max_age_secs: float = 1800) -> 
     """
     cutoff = time.time() - max_age_secs
     for lib_path in library_paths:
-        tmp_files = list(Path(lib_path).rglob("*.tmp"))
-        for tmp_path in tmp_files:
-            tmp_file = str(tmp_path)
+        for tmp_path in Path(lib_path).rglob("*.tmp"):
+            if not tmp_path.is_file():
+                continue
             try:
-                if not os.path.isfile(tmp_file):
-                    continue
-                if os.path.getmtime(tmp_file) < cutoff:
-                    os.remove(tmp_file)
-                    logger.info("Removed stale .tmp orphan: %s", tmp_file)
-            except OSError as exc:
-                logger.debug("Could not remove stale .tmp file %s: %s", tmp_file, exc)
+                mtime = tmp_path.stat().st_mtime
+            except OSError:
+                continue
+            if mtime < cutoff:
+                try:
+                    tmp_path.unlink()
+                    logger.debug("Removed stale .tmp file: %s", tmp_path)
+                except OSError as exc:
+                    logger.debug("Could not remove stale .tmp file %s: %s", tmp_path, exc)
 
 
 def _validate_paths(config: Config, library_only: bool = False) -> None:
@@ -991,7 +1000,7 @@ def main() -> None:
             from watchfiles import watch as _watch
             import threading as _threading
 
-            # BUG8: a lock guards the clear()+update() two-step so the router never
+            # a lock guards the clear()+update() two-step so the router never
             # sees an empty dict between the two operations.  Must be acquired around
             # both operations together; individual dict ops are GIL-safe but the pair
             # is not atomic without an explicit lock.

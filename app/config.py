@@ -195,7 +195,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
     web_enabled = web_enabled_raw in ("true", "1", "yes", "on")
     # CQ2: single set covers both true and false values — avoids the confusing set-union
     # expression and makes the intent clear.
-    _KNOWN_BOOL = {"true", "1", "yes", "on", "false", "0", "no", "off", ""}
+    _KNOWN_BOOL = {"true", "1", "yes", "on", "false", "0", "no", "off"}
     if web_enabled_raw and web_enabled_raw not in _KNOWN_BOOL:
         logger.warning(
             "WEB_ENABLED=%r is not a recognised boolean value; treating as False. "
@@ -207,8 +207,10 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
     if plex_required:
         from urllib.parse import urlparse as _urlparse
         parsed_url = _urlparse(plex_url)
-        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
-            raise ValueError(f"PLEX_URL must be a valid http/https URL, got: {plex_url!r}")
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.hostname:
+            raise ValueError(
+                f"PLEX_URL must be a valid http/https URL with a hostname, got {plex_url!r}"
+            )
 
     run_schedule = optional("RUN_SCHEDULE", "0 3 * * *")
     try:
@@ -237,6 +239,13 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
             "a hung plugin will block the scheduler indefinitely."
         )
 
+    plugin_rate_limit_secs = optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0)
+    if plugin_rate_limit_secs == 0.0:
+        logger.warning(
+            "PLUGIN_RATE_LIMIT_SECS=0 disables throttling between plugin fetch() calls; "
+            "this may hammer remote sites on large libraries."
+        )
+
     return Config(
         plex_url=plex_url,
         plex_token=require_or_empty("PLEX_TOKEN"),
@@ -252,7 +261,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         web_port=optional_int("WEB_PORT", 8765, min_val=1),
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=app_name,
-        plugin_rate_limit_secs=optional_float("PLUGIN_RATE_LIMIT_SECS", 1.0, min_val=0.0),
+        plugin_rate_limit_secs=plugin_rate_limit_secs,
         plugin_fetch_timeout_secs=_plugin_fetch_timeout_secs,
         notify_url=optional("NOTIFY_URL", ""),
         notify_min_errors=optional_int("NOTIFY_MIN_ERRORS", 1, min_val=0),

@@ -336,43 +336,55 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
     # Trigger records: use a simple cache keyed by file_path.
     # Rebuild the entire per-file mapping when trigger_*.json files change.
     global _trigger_cache, _trigger_cache_key  # noqa: PLW0603
-    current_trigger_key = _trigger_invalidation_key(report_path)
-    with _trigger_cache_lock:
-        if _trigger_cache_key != current_trigger_key:
-            # Invalidate and rebuild: scan all trigger files once.
-            new_cache: dict[str, list[dict]] = {}
-            try:
-                raw = os.listdir(report_path) if os.path.isdir(report_path) else []
-            except OSError:
-                logger.warning("Could not list report directory: %s", report_path)
-                raw = []
-            trigger_files = sorted(
-                (f for f in raw if f.startswith("trigger_") and f.endswith(".json")),
-                reverse=True,
-            )
-            for fname in trigger_files:
-                fpath = os.path.join(report_path, fname)
-                try:
-                    with open(fpath, encoding="utf-8") as fh:
-                        data = json.load(fh)
-                except Exception as exc:
-                    logger.warning("Could not read trigger record %s: %s", fpath, exc)
-                    continue
-                for f in data.get("files", []):
-                    fp = f.get("path", "")
-                    if not fp:
-                        continue
-                    new_cache.setdefault(fp, []).append({
-                        "run_filename": fname,
-                        "started_at": data.get("started_at", ""),
-                        "status": f.get("status", ""),
-                        "message": f.get("message", ""),
-                        "trigger": True,
-                    })
-            _trigger_cache = new_cache
-            _trigger_cache_key = current_trigger_key
 
-        trigger_entries = list(_trigger_cache.get(file_path, []))
+    # Compute invalidation key outside lock (involves filesystem I/O).
+    current_trigger_key = _trigger_invalidation_key(report_path)
+
+    # Fast check inside lock: if cache is still valid, read and return immediately.
+    with _trigger_cache_lock:
+        _needs_rebuild = (_trigger_cache_key != current_trigger_key)
+        if not _needs_rebuild:
+            trigger_entries = list(_trigger_cache.get(file_path, []))
+
+    if _needs_rebuild:
+        # Cache is stale — rebuild outside lock to avoid blocking other threads
+        # during filesystem I/O (os.listdir + multiple open() calls).
+        new_cache: dict[str, list[dict]] = {}
+        try:
+            raw = os.listdir(report_path) if os.path.isdir(report_path) else []
+        except OSError:
+            logger.warning("Could not list report directory: %s", report_path)
+            raw = []
+        trigger_files = sorted(
+            (f for f in raw if f.startswith("trigger_") and f.endswith(".json")),
+            reverse=True,
+        )
+        for fname in trigger_files:
+            fpath = os.path.join(report_path, fname)
+            try:
+                with open(fpath, encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception as exc:
+                logger.warning("Could not read trigger record %s: %s", fpath, exc)
+                continue
+            for f in data.get("files", []):
+                fp = f.get("path", "")
+                if not fp:
+                    continue
+                new_cache.setdefault(fp, []).append({
+                    "run_filename": fname,
+                    "started_at": data.get("started_at", ""),
+                    "status": f.get("status", ""),
+                    "message": f.get("message", ""),
+                    "trigger": True,
+                })
+
+        # Write result inside lock (double-check to handle concurrent rebuilds).
+        with _trigger_cache_lock:
+            if _trigger_cache_key != current_trigger_key:
+                _trigger_cache = new_cache
+                _trigger_cache_key = current_trigger_key
+            trigger_entries = list(_trigger_cache.get(file_path, []))
 
     history.extend(trigger_entries)
 

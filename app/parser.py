@@ -141,7 +141,7 @@ def _parse_general_form(stem: str) -> ParsedFilename | None:
     actors: list[str] = []
     genres: list[str] = []
 
-    with_match = re.search(r"\bwith\s+(.+)$", left, re.IGNORECASE)
+    with_match = re.search(r"\bwith\b\s+(.+)$", left, re.IGNORECASE)
     if with_match:
         genres = _split_csv(with_match.group(1))
         left = left[: with_match.start()].strip()
