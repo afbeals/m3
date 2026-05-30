@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 import httpx
 from lxml import etree
@@ -335,6 +336,20 @@ def rename_nfo_assets(dirpath: str, old_stem: str, new_stem: str) -> None:
         # up tmp_nfo (which no longer exists after atomic_replace succeeded).
         try:
             os.remove(old_nfo)
+        except PermissionError:
+            if sys.platform == "win32":
+                import time
+                for _ in range(4):
+                    time.sleep(0.1)
+                    try:
+                        os.remove(old_nfo)
+                        break
+                    except PermissionError:
+                        pass
+                else:
+                    logger.warning("Could not remove old NFO %s (file in use) — will be cleaned up next run", old_nfo)
+            else:
+                raise
         except OSError:
             logger.warning("Could not remove old NFO after rename: %s", old_nfo)
     except Exception:

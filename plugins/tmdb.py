@@ -70,17 +70,26 @@ class TMDbPlugin(MetadataPlugin):
         )
 
     def setup(self) -> None:
-        """Validate that at least one auth credential is set."""
-        if not os.environ.get("TMDB_BEARER_TOKEN") and not os.environ.get("TMDB_API_KEY"):
+        api_key_present = bool(
+            os.environ.get("TMDB_BEARER_TOKEN") or os.environ.get("TMDB_API_KEY")
+        )
+        if not api_key_present:
             raise RuntimeError(
                 "Neither TMDB_BEARER_TOKEN nor TMDB_API_KEY is set. "
                 "Register at https://www.themoviedb.org/signup and add one to your .env file."
             )
-        # Smoke-test the API key with a cheap configuration call
-        result = self._api_get("/configuration")
-        if result is None:
-            raise RuntimeError("TMDb credential check failed — verify TMDB_BEARER_TOKEN or TMDB_API_KEY")
-        logger.info("[tmdb] Credentials verified")
+        # Smoke-test credentials — but don't fail on transient network errors
+        try:
+            result = self._api_get("/configuration")
+            if result is None:
+                logger.warning("[tmdb] Credential check returned empty — will verify on first fetch()")
+            else:
+                logger.info("[tmdb] Credentials verified")
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            logger.warning(
+                "[tmdb] Could not reach TMDb at startup (%s) — plugin registered anyway, "
+                "will retry on first fetch()", exc,
+            )
 
     def close(self) -> None:
         self._client.close()
@@ -337,6 +346,13 @@ class TMDbPlugin(MetadataPlugin):
             year=year,
             release_date=release_date,
             rating=rating,
+            # content_rating is not included — TMDb requires a separate /movie/{id}/release_dates
+            # call to get MPAA ratings. To add it, include "release_dates" in the
+            # append_to_response parameter and extract:
+            #   data.get("release_dates", {}).get("results", [])
+            #   → filter for country="US" → get release_dates[].certification
+            # See: https://developer.themoviedb.org/reference/movie-release-dates
+            content_rating=None,
             genres=genres,
             actors=actors,
             directors=directors,

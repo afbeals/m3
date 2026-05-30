@@ -177,6 +177,13 @@ class TheTVDBPlugin(MetadataPlugin):
         if parsed.direct_url:
             return parsed.direct_url
         # Bare scene_id (numeric) is not usable without the title slug on TVDB.
+        if parsed.scene_id and not parsed.direct_url:
+            logger.warning(
+                "[thetvdb] Bare numeric scene_id %r is not usable — use the full slug from the "
+                "movie URL, e.g. 'the-mummy-362775'. "
+                "Filename should be: Movie Name %% thetvdb - the-mummy-362775",
+                parsed.scene_id,
+            )
         return None
 
     def _search(self, title: str, date: str | None) -> MetadataResult | None:

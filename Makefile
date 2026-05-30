@@ -77,6 +77,7 @@ lint:
 
 format:
 	$(RUFF) check --fix app/
+	$(RUFF) format app/
 
 typecheck:
 	$(MYPY) app/ --ignore-missing-imports

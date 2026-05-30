@@ -35,7 +35,7 @@ docker push yourdockerhubuser/m3:latest
 docker push yourdockerhubuser/m3:${VERSION}
 ```
 
-Pinning the container to `yourdockerhubuser/m3:1.1.0` (for example) in Unraid
+Pinning the container to `yourdockerhubuser/m3:1.3.0` (for example) in Unraid
 gives you a stable reference you can manually upgrade rather than having `:latest`
 change unexpectedly. Unraid's "Check for Updates" button compares the local image
 digest to the remote `:latest` tag — it does **not** auto-pull; you must click the
@@ -143,7 +143,7 @@ Drop any plugin `.py` files into `/mnt/user/appdata/m3/plugins/` — see the Plu
 | `APP_NAME` | `m3` | Display name in the dashboard header and page title |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) — leave empty to disable |
-| `NOTIFY_MIN_ERRORS` | `0` | Set to `1` to only notify when errors occur; `0` notifies after every run |
+| `NOTIFY_MIN_ERRORS` | `1` | Defaults to `1` (only notify when errors occurred). Set to `0` to notify after every run including clean ones. |
 
 Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`).
 
@@ -230,7 +230,7 @@ docker logs m3 --tail 50
 
 You should see something like:
 ```
-INFO  app.main - m3 1.1.0 starting up
+INFO  app.main - m3 1.3.0 starting up
 INFO  app.main - Library paths: ['/media/Movies', '/media/TV']
 INFO  app.plugins.loader - Registered plugin MySitePlugin for id 'mysite'
 INFO  app.plugins.loader - Registered plugin OtherSitePlugin for id 'othersite'
@@ -366,7 +366,7 @@ Add these two env vars to the m3 container (Docker UI → Edit → Add variable)
 | Key | Value | Notes |
 |---|---|---|
 | `NOTIFY_URL` | `http://<unraid-ip>:<gotify-port>/message?token=<your-app-token>` | Replace with your Gotify host/port and token |
-| `NOTIFY_MIN_ERRORS` | `1` | Only notify when errors occurred; omit (or set to `0`) to notify after every run |
+| `NOTIFY_MIN_ERRORS` | `1` | This is the default — only notifies when errors occurred. Set `NOTIFY_MIN_ERRORS=0` to receive notifications after every run. |
 
 > **Example:** `NOTIFY_URL=http://192.168.1.100:8080/message?token=AbCdEfGhIjKl`
 

@@ -134,7 +134,7 @@ Once the underlying issue is fixed (plugin updated, API key corrected, network r
 docker exec m3 python -m app.main --retry-failed
 ```
 
-`--retry-failed` reads the most recent run report and re-runs only files with `status=error` or `status=scrape_error`. This is faster and safer than `--force`, which reprocesses everything.
+`--retry-failed` reads the most recent run report and re-runs only files with `status=error`, `status=scrape_error`, `status=image_error`, or `status=plugin_error`. This is faster and safer than `--force`, which reprocesses everything.
 
 ---
 
@@ -249,7 +249,7 @@ Common mistakes:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `NOTIFY_URL` is set but no notification arrives after a clean run | `NOTIFY_MIN_ERRORS` is `1` and the run had no errors | Expected — the webhook only fires when `errors + scrape_errors >= NOTIFY_MIN_ERRORS`. Set `NOTIFY_MIN_ERRORS=0` to fire after every run. |
+| `NOTIFY_URL` is set but no notification arrives after a clean run | `NOTIFY_MIN_ERRORS` is `1` and the run had no errors | Expected — the webhook only fires when `errors + scrape_errors + image_errors + plugin_errors >= NOTIFY_MIN_ERRORS`. This is the default — set `NOTIFY_MIN_ERRORS=0` to receive notifications after every run. |
 | Webhook fires but Gotify shows no message | Wrong app token or URL format | Verify with: `curl -s -X POST "http://<gotify-host>/message?token=<token>" -H 'Content-Type: application/json' -d '{"message":"test"}'` — should return `{"id":...}`. |
 | Log shows `Webhook notification failed for ...` | Network error or endpoint unreachable | Webhook failure is non-fatal; the run still completes. Test reachability: `docker exec m3 curl -s -o /dev/null -w "%{http_code}" -X POST <NOTIFY_URL>`. |
 | Webhook fires but receiving service shows 400 | Payload format mismatch | m3 sends raw JSON. Some services (e.g. Gotify) expect a specific schema (`"message"` key). Use an Apprise relay or a thin wrapper script to translate m3's payload. |

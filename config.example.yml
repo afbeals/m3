@@ -109,6 +109,7 @@
 
 # Maximum seconds a single plugin fetch() may run before it is recorded as
 # status=error and the run continues with the next file.
+# Set to 0 to disable the timeout (not recommended — a hung plugin will block the scheduler)
 # Default: 60.0
 # PLUGIN_FETCH_TIMEOUT_SECS=60.0
 
@@ -148,11 +149,10 @@
 #   - Pushover relay or any HTTP endpoint that accepts JSON POST
 # NOTIFY_URL=http://your-notify-endpoint/hook
 
-# Minimum combined error count (errors + scrape_errors) before the webhook fires.
-# Default 0 = fire after every completed run (including clean runs with no errors).
-# Set to 1 to only be notified when something broke — the dashboard shows clean-run
-# history at any time without requiring a notification.
-# NOTIFY_MIN_ERRORS=0
+# Minimum combined error count (errors + scrape_errors + image_errors + plugin_errors) before the webhook fires.
+# 1 = only notify when errors occurred (default). Set to 0 to fire after every run including clean ones.
+# The dashboard shows clean-run history at any time without requiring a notification.
+# NOTIFY_MIN_ERRORS=1
 
 # ---------------------------------------------------------------------------
 # Plugin-specific API keys

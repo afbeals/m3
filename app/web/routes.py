@@ -628,15 +628,15 @@ async def trigger_file(request: Request):
     # Guard: if anything between acquire() and thread.start() raises (e.g. MediaFile
     # construction or state access), release the lock so the path is not permanently
     # blocked from future retrigger attempts.
-    if run_state is not None:
-        run_state.start()
-        run_state_started = True
     try:
+        if run_state is not None:
+            run_state.start()
+            run_state_started = True  # set BEFORE thread.start()
         thread.start()
     except Exception:
-        file_lock.release()
-        if run_state is not None and run_state_started:
+        if run_state_started:
             run_state.stop()
+        file_lock.release()
         raise
 
     # HTMX inline retry (HX-Request header present): return a "queued" badge

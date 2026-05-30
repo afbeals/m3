@@ -26,8 +26,8 @@ services:
       - APP_NAME=m3
       # Optional: webhook URL for post-run JSON notifications (Apprise, Gotify, etc.)
       # - NOTIFY_URL=
-      # Optional: minimum combined errors before webhook fires (0 = always; 1 = errors only)
-      # - NOTIFY_MIN_ERRORS=0
+      # Optional: minimum combined errors before webhook fires (default 1 = errors only; set to 0 to always notify, even on clean runs)
+      # - NOTIFY_MIN_ERRORS=1  # set to 0 to always notify, even on clean runs
       # Optional: seconds between plugin API calls (0 to disable, default 1.0)
       # - PLUGIN_RATE_LIMIT_SECS=1.0
       # Optional: seconds before a single plugin fetch() times out (default 60.0)

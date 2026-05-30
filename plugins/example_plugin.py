@@ -31,7 +31,8 @@ from urllib.parse import quote
 
 import httpx
 
-from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename, PluginValidationError
+from app.scrape import ScrapeError
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,18 @@ class ExampleSitePlugin(MetadataPlugin):
 
     def __exit__(self, *args: object) -> None:
         self.close()
+
+    def setup(self) -> None:
+        """Called once after instantiation — raise to prevent plugin registration."""
+        api_key = os.environ.get("EXAMPLESITE_API_KEY", "")
+        if not api_key:
+            raise RuntimeError(
+                "EXAMPLESITE_API_KEY is not set. "
+                "Add it to your .env file: EXAMPLESITE_API_KEY=your_key_here"
+            )
+        logger.debug("[examplesite] API key found — plugin ready")
+        # Note: if this raises, the plugin will NOT be registered.
+        # Use setup() for any startup checks (credentials, connectivity, config).
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         """
@@ -202,12 +215,9 @@ class ExampleSitePlugin(MetadataPlugin):
     def _api_get(self, path: str, params: dict | None = None) -> dict | list | None:
         """Make a GET request to the example API. Replace with your real logic."""
         # Read the key at call time so key rotation takes effect without restart.
+        # Credentials are validated once in setup(); this is a belt-and-suspenders
+        # check in case _api_get is called in a context where setup() was skipped.
         api_key = os.environ.get("EXAMPLESITE_API_KEY", "")
-        if not api_key:
-            raise RuntimeError(
-                "EXAMPLESITE_API_KEY environment variable is not set. "
-                "Add it to your .env file or container environment."
-            )
 
         url = f"{BASE_URL}{path}"
         all_params = {"api_key": api_key, **(params or {})}
@@ -220,8 +230,6 @@ class ExampleSitePlugin(MetadataPlugin):
             status = exc.response.status_code
             if status == 429:
                 logger.warning("[examplesite] Rate-limited (429) for %s — site is throttling requests", exc.request.url)
-                # Import and raise ScrapeError so main.py records this as scrape_error
-                from app.scrape import ScrapeError
                 raise ScrapeError(f"Rate-limited (429) by {exc.request.url}") from exc
             if status == 404:
                 logger.debug("[examplesite] Scene not found (404) for %s", exc.request.url)
@@ -235,6 +243,7 @@ class ExampleSitePlugin(MetadataPlugin):
             raise
         except Exception:
             logger.exception("[examplesite] Unexpected error fetching %s", url)
+            raise  # propagates to main.py as status="error", not "unmatched"
 
         return None
 
@@ -246,6 +255,11 @@ class ExampleSitePlugin(MetadataPlugin):
         if not isinstance(data, dict):
             logger.warning("[examplesite] _to_result: expected dict, got %s", type(data).__name__)
             return None
+
+        # Example: raise PluginValidationError for logically invalid data
+        # if data.get("rating", 0) > 10:
+        #     raise PluginValidationError(f"Rating {data['rating']} exceeds 10.0 — check the API response")
+
         return MetadataResult(
             # Use `or` (not just `.get(..., default)`) so a present-but-null title
             # field also falls back to the default, instead of passing None to MetadataResult.
@@ -253,11 +267,13 @@ class ExampleSitePlugin(MetadataPlugin):
             summary=data.get("description"),
             rating=data.get("rating"),
             year=data.get("year"),
+            release_date=data.get("release_date"),  # ISO date string e.g. "2024-03-15"; auto-derives year if year= not set
             content_rating=data.get("content_rating"),
             genres=data.get("genres", []),
             tags=data.get("tags", []),
             labels=data.get("labels", []),
             actors=data.get("performers", []),
+            directors=data.get("directors", []),  # list of director name strings
             poster_url=data.get("poster_url"),
             fanart_url=data.get("fanart_url"),
             source_url=data.get("url"),

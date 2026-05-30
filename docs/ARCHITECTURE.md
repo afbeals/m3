@@ -189,7 +189,7 @@ from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
 
 class MyPlugin(MetadataPlugin):
     site_id = "mysite"          # matches the site token in filenames
-    aliases = ["MS"]            # optional shorthand aliases
+    aliases = ("MS",)           # optional shorthand aliases — Use tuple (not list) — the class-level default must be immutable
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         # parsed.match_subtype: "exact" | "enhanced" | "limited" | "add"
@@ -212,6 +212,27 @@ if not el:
 ```
 
 `SelectorMissingError` (a subclass of `ScrapeError`) is recorded as `status="scrape_error"` in the run report — distinct from a generic plugin crash — so the user can see "site changed its markup" vs "plugin has a bug".
+
+**MetadataResult fields** (key fields; all optional except `title`):
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | `str` | Required; must be non-empty |
+| `summary` | `str \| None` | Scene/movie description |
+| `rating` | `float \| None` | 0.0–10.0 |
+| `year` | `int \| None` | Release year |
+| `release_date` | `str \| None` | Full ISO date (e.g. `"2024-03-15"`); auto-derives `year` if `year=` not set; writes `<premiered>` in NFO |
+| `content_rating` | `str \| None` | e.g. `"NR"`, `"R"` |
+| `genres` | `list[str]` | Writes `<genre>` elements in NFO |
+| `tags` | `list[str]` | Writes `<tag>` elements in NFO |
+| `labels` | `list[str]` | Additional classification labels |
+| `actors` | `list[str]` | Writes `<actor>` elements; pushed to Plex |
+| `directors` | `list[str]` | Writes `<director>` elements in NFO; pushed to Plex |
+| `studio` | `str \| None` | Writes `<studio>` in NFO; pushed to Plex |
+| `poster_url` | `str \| None` | Downloaded and written as `-poster.jpg` |
+| `fanart_url` | `str \| None` | Downloaded and written as `-fanart.jpg` |
+| `source_url` | `str \| None` | Canonical scene URL; written as `<source>` in NFO |
+| `source_id` | `str \| None` | Site-specific scene ID; written as `<uniqueid>` in NFO |
 
 See `docs/PLUGIN_WRITING.md` for a full step-by-step guide.
 
@@ -256,11 +277,14 @@ Follows the [Kodi NFO spec](https://kodi.wiki/view/NFO_files/Movies) so the side
 <movie>
   <title>Full Resolved Title</title>
   <year>2023</year>
+  <premiered>2024-03-15</premiered>
   <rating>7.5</rating>
   <mpaa>NR</mpaa>
   <plot>Summary text here.</plot>
+  <studio>Warner Bros.</studio>
   <genre>Drama</genre>
   <tag>custom-tag-1</tag>
+  <director>Christopher Nolan</director>
   <actor><name>Actor Name</name></actor>
   <art>
     <poster>My Movie-poster.jpg</poster>
@@ -325,7 +349,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `WEB_HOST` | `0.0.0.0` | `0.0.0.0` | Host the dashboard binds to (`127.0.0.1` for local dev) |
 | `APP_NAME` | `m3` | `m3` | Display name in the dashboard header and title |
 | `NOTIFY_URL` | *(empty)* | *(empty)* | Webhook URL to POST a JSON run summary after each run |
-| `NOTIFY_MIN_ERRORS` | `0` | `0` | Minimum combined error count before the webhook fires (0 = always fire) |
+| `NOTIFY_MIN_ERRORS` | `1` | `1` | Minimum combined error count (`errors + scrape_errors + image_errors + plugin_errors`) before the webhook fires (0 = always fire) |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | *(empty)* | Comma-separated glob patterns to skip during scanning |
 | `DEBUG` | `false` | `false` | When `true`, logs a hint to run uvicorn directly for live template reload |
 
@@ -351,7 +375,7 @@ All config via environment variables. See `config.example.yml` for the full anno
 # Default — start scheduler + web dashboard, run nightly per RUN_SCHEDULE
 docker run m3
 
-# Manual one-shot — run immediately and exit (web dashboard does NOT start)
+# Manual one-shot — run immediately and exit (web dashboard does NOT start with --once)
 docker exec m3 python -m app.main --once
 
 # Force re-process — ignore existing sidecars, re-fetch everything
@@ -361,6 +385,7 @@ docker exec m3 python -m app.main --once --force
 docker exec m3 python -m app.main --once --dry-run
 
 # Dry-run-strict — skip plugin fetch() entirely; test parsing + routing only, no API calls
+# Note: without --once, --dry-run-strict still starts the scheduler and web dashboard
 docker exec m3 python -m app.main --once --dry-run-strict
 
 # Diagnose unmatched files — scan library, print files no plugin claims, exit
@@ -412,8 +437,9 @@ File statuses:
 | `skipped` | Sidecar already exists and `--force` not set |
 | `unmatched` | Filename unparseable or no plugin registered for site |
 | `add_form` | Manual Add form filename — needs human follow-up |
-| `image_error` | NFO written successfully, but one or more image downloads failed |
+| `image_error` | Image downloads failed — NFO was NOT written (retry with --retry-failed after fixing the URL or connectivity) |
 | `scrape_error` | Plugin raised `ScrapeError` — site markup changed or record gone |
+| `plugin_error` | Plugin returned invalid data (PluginValidationError) — distinct from scrape_error; fix the plugin's _to_result() |
 | `error` | Plugin or writer raised an unexpected exception |
 
 ---

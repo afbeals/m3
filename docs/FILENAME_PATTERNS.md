@@ -169,7 +169,7 @@ class ParsedFilename:
     actors: list[str] = field(default_factory=list)   # from both forms
     genres: list[str] = field(default_factory=list)   # from both forms
     site: str | None = None                           # site_id or shorthand
-    match_subtype: Literal["enhanced", "limited", "exact", "add"] | None = None
+    match_subtype: MatchSubtype = "exact"  # never None after parsing
 
     # Match payload fields (general form)
     date: str | None = None                           # normalised to YYYY-MM-DD

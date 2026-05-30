@@ -17,6 +17,7 @@ All notable changes to m3 are documented here.
 - **`.env` file support** — `python-dotenv` is now a dependency. A `.env` file in the working directory is loaded at startup (`override=False`, so container env vars always win). `.env.example` is included as a fully annotated reference covering all variables with dev-friendly defaults.
 
 ### Correctness & Windows
+- **`plugin_error` status** — `MetadataResult.__post_init__` now raises `PluginValidationError` (a subclass of `ValueError`) instead of a bare `ValueError` when validation fails (missing/blank title, out-of-range rating, etc.). Recorded as `status=plugin_error` in the run report, distinct from `scrape_error` (site issue) and `error` (unexpected crash). Retry with `--retry-failed` after fixing the plugin's `_to_result()` mapping.
 - **Log file rotation** — `RotatingFileHandler` now uses `delay=True`, deferring file open until the first write. Reduces Windows file-locking contention during log rotation.
 - **Path deduplication** — `_dedup_paths()` in `scanner.py` now uses `pathlib.Path.resolve()` and case-insensitive comparison on Windows (`sys.platform == "win32"`). Prevents double-scanning when `LIBRARY_PATHS` contains aliases that differ only by case (e.g. `C:\Media` and `c:\media`).
 - **Local-friendly config defaults** — path defaults changed from absolute container paths (`/plugins`, `/config/reports`, `/config/logs`, `/media`) to relative paths (`./plugins`, `./reports`, `./logs`, `./media`). Docker users set these via env vars (unchanged). Running locally without env vars now works out of the box.
@@ -25,7 +26,7 @@ All notable changes to m3 are documented here.
 ### Tests & CI
 - **`conftest.py`** — shared pytest fixtures (`config`, `app`, `client`, `write_run`) extracted to `app/tests/conftest.py`, replacing duplicated `_make_config()` / `_make_app()` helpers across test files.
 - **GitHub Actions CI** — `.github/workflows/test.yml` runs the full test suite with coverage on `ubuntu-latest` and `windows-latest` (Python 3.12) on every push and PR.
-- **Coverage threshold** — `fail_under = 80` enforced in `pyproject.toml` via `[tool.coverage.report]`.
+- **Coverage threshold** — `fail_under = 85` enforced in `pyproject.toml` via `[tool.coverage.report]`.
 - **Ruff config** — `[tool.ruff]` and `[tool.ruff.lint]` sections added to `pyproject.toml`; `ruff` added to dev extras and `requirements-dev.txt`.
 - **Pytest markers** — `unit` and `integration` markers registered in `pyproject.toml`.
 

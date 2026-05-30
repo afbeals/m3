@@ -50,12 +50,16 @@ _SEL = {
     "fanart":        "img.fanart-image",
     "scene_id_meta": 'meta[name="scene-id"]',
     "result_link":   "a.result-link",
+    # New fields — adjust selectors to match your site's actual markup
+    "release_date":  "span.release-date",
+    "directors":     "a.director-name",
+    "studio":        "span.studio-name",
 }
 
 
 class ExampleHTMLPlugin(MetadataPlugin):
     site_id = "examplehtml"
-    aliases = ("EH",)
+    aliases = ("EH",)  # Use tuple (not list) — class-level defaults must be immutable
 
     def __init__(self) -> None:
         # Most sites block the default python-httpx/x.x.x User-Agent with 403
@@ -75,6 +79,12 @@ class ExampleHTMLPlugin(MetadataPlugin):
 
     def close(self) -> None:
         self._client.close()
+
+    def __enter__(self) -> "ExampleHTMLPlugin":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
     def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
         logger.info(
@@ -209,6 +219,31 @@ class ExampleHTMLPlugin(MetadataPlugin):
             if (name := el.get_text(strip=True).replace("\xa0", " ").strip())
         ))
 
+        # ---- Release date (from <span class="release-date"> or similar) ----
+        # Adjust selector to match your site's HTML
+        release_date_el = soup.select_one(_SEL["release_date"])
+        release_date: str | None = None
+        if release_date_el:
+            raw_date = release_date_el.get_text(strip=True)
+            # Parse "March 15, 2024" → "2024-03-15" or handle ISO format directly
+            m_date = re.match(r"(\d{4})-(\d{2})-(\d{2})", raw_date)
+            if m_date:
+                release_date = m_date.group()
+
+        # ---- Directors (from <a class="director-name"> elements) ----
+        directors = list(dict.fromkeys(
+            el.get_text(strip=True)
+            for el in soup.select(_SEL["directors"])
+            if el.get_text(strip=True)
+        ))
+
+        # ---- Studio (from <span class="studio-name">) ----
+        studio_el = soup.select_one(_SEL["studio"])
+        studio = studio_el.get_text(strip=True) if studio_el else None
+
+        # ---- Labels (Plex/Kodi labels — site-specific) ----
+        # labels: list[str] = []  # Uncomment and populate if your site provides labels
+
         # ---- Images ----
         poster_el = soup.select_one(_SEL["poster"])
         # Try data-src first (used by lazy-loading sites), then src
@@ -237,9 +272,12 @@ class ExampleHTMLPlugin(MetadataPlugin):
             title=title,
             summary=summary,
             year=year,
+            release_date=release_date,
             rating=rating,
             genres=genres,
             actors=actors,
+            directors=directors,
+            studio=studio,
             poster_url=poster_url,
             fanart_url=fanart_url,
             source_url=source_url,

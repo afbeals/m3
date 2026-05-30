@@ -105,6 +105,7 @@ def lint():
 def fmt():
     """Auto-fix lint issues with ruff."""
     run(PY, "-m", "ruff", "check", "--fix", "app/")
+    run(PY, "-m", "ruff", "format", "app/")
 
 
 @task("typecheck")

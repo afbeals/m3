@@ -91,7 +91,7 @@ It must be lowercase, no spaces, URL-friendly. You can also add short aliases:
 ```python
 class MyPlugin(MetadataPlugin):
     site_id = "mysite"
-    aliases = ["MS"]   # % MS - 12345 also routes here
+    aliases = ("MS",)  # % MS - 12345 also routes here — Use tuple (not list) — the class-level default must be immutable
 ```
 
 ### Step 2 — Understand ParsedFilename
@@ -121,6 +121,8 @@ plugins:
 
 ### Step 3 — Implement fetch()
 
+> **Note:** `fetch()` is never called with `parsed.form == 'add'` — Add-form filenames are handled by the router before dispatch and never reach your plugin.
+
 Route by subtype, then call the appropriate helper:
 
 ```python
@@ -143,6 +145,7 @@ def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
 | Returns `None` | `unmatched` | Record not found — do not raise |
 | Raises `ScrapeError` | `scrape_error` | Network / HTTP error from site |
 | Raises `SelectorMissingError` | `scrape_error` | CSS selector broke after site redesign |
+| Raises `PluginValidationError` | `plugin_error` | MetadataResult contained invalid data (bad title, out-of-range rating, etc.) |
 | Raises anything else | `error` | Unexpected plugin crash |
 
 Return `None` if the API returns no usable record. Do **not** raise — returning
@@ -163,11 +166,14 @@ return MetadataResult(
     summary=data.get("description"),
     rating=data.get("rating"),         # float, 0.0–10.0
     year=data.get("year"),             # int
+    release_date="2024-03-15",  # full ISO date; auto-derives year if year= not set; writes <premiered> in NFO
     content_rating=data.get("rating_code"),       # e.g. "NR", "R"
     genres=data.get("genres", []),
     tags=data.get("tags", []),
     labels=data.get("labels", []),
     actors=data.get("performers", []),
+    directors=["Christopher Nolan"],  # writes <director> in NFO; pushed to Plex
+    studio="Warner Bros.",  # writes <studio> in NFO; pushed to Plex
     poster_url=data.get("poster_url"),
     fanart_url=data.get("fanart_url"),
     source_url=data.get("url"),
@@ -176,7 +182,7 @@ return MetadataResult(
 ```
 
 `__post_init__` validates the result — a missing or blank `title` raises
-`ValueError` immediately so you know your plugin has a mapping problem.
+`PluginValidationError` (a subclass of `ValueError`) immediately, recorded as `status=plugin_error` in the run report, so you know your plugin has a mapping problem. Plugin authors can also raise `PluginValidationError` directly in `_to_result()` for their own custom validation (e.g. out-of-range rating, missing required field).
 
 ### Step 5 — Reading API keys
 
@@ -229,6 +235,8 @@ from the JSON API plugin:
 from app.scrape import fetch_html, ScrapeError, SelectorMissingError
 from bs4 import BeautifulSoup
 ```
+
+> **Import note:** `ScrapeError` can also be imported from `app.plugins.base` alongside `MetadataPlugin`, `MetadataResult`, and `ParsedFilename` — convenient for a single import line. `SelectorMissingError` is only available from `app.scrape`.
 
 ### Call fetch_html
 
@@ -449,6 +457,31 @@ def _fetch_enhanced(self, parsed):
 The key rule: **return `None` for "not found", raise for "something is broken".**
 A `None` return is quiet and expected; a raised exception logs a traceback and
 blocks the file from being marked as "updated".
+
+---
+
+## Optional lifecycle hooks
+
+In addition to `fetch()`, plugins can implement two optional lifecycle hooks:
+
+### `setup(self) -> None`
+
+Called once after instantiation, before the plugin is registered and made available for dispatch. Raise any exception here to prevent the plugin from being registered — useful for validating credentials or required env vars at startup rather than discovering the problem at first `fetch()`.
+
+```python
+def setup(self) -> None:
+    if not os.environ.get("MYSITE_API_KEY"):
+        raise RuntimeError("[mysite] MYSITE_API_KEY is not set — plugin will not be registered")
+```
+
+### `close(self) -> None`
+
+Called when the plugin is being replaced by a hot-reload (SIGUSR2 or `--watch`). Use this to release resources such as `httpx.Client` connections before the old plugin instance is discarded.
+
+```python
+def close(self) -> None:
+    self._client.close()
+```
 
 ---
 

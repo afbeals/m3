@@ -157,6 +157,19 @@ def scan_library(
                 elif ext == ".nfo":
                     nfo_stems.add(os.path.splitext(fname)[0])
 
+            # On Windows, filesystems are case-insensitive — normalize stems for
+            # comparison only. The original-case stems are preserved in video_stems
+            # and nfo_stems so MediaFile.stem uses the video file's actual casing
+            # (required for correct NFO filename construction).
+            if sys.platform == "win32":
+                nfo_stems_lower: set[str] = {s.lower() for s in nfo_stems}
+                excluded_video_stems_lower: set[str] = {s.lower() for s in excluded_video_stems}
+                video_stems_lower: dict[str, str] = {s.lower(): p for s, p in video_stems.items()}
+            else:
+                nfo_stems_lower = nfo_stems  # type: ignore[assignment]
+                excluded_video_stems_lower = excluded_video_stems
+                video_stems_lower = video_stems  # type: ignore[assignment]
+
             # Rename detection: one orphan NFO + one new video → rename workflow.
             # An "orphan" NFO has no matching video stem in this directory.
             # A "new" video has no matching NFO stem.
@@ -164,8 +177,8 @@ def scan_library(
             # (e.g. two files renamed simultaneously, or stale NFOs from deletions).
             # Excluded video stems are subtracted so their NFOs are never treated as orphans.
             if not force:
-                orphan_nfos = (nfo_stems - video_stems.keys()) - excluded_video_stems
-                new_videos = {s: p for s, p in video_stems.items() if s not in nfo_stems}
+                orphan_nfos = (nfo_stems_lower - set(video_stems_lower.keys())) - excluded_video_stems_lower
+                new_videos = {s: p for s, p in video_stems.items() if s.lower() not in nfo_stems_lower}
                 if len(orphan_nfos) == 1 and len(new_videos) == 1:
                     old_stem = next(iter(orphan_nfos))
                     new_stem, new_path = next(iter(new_videos.items()))
@@ -183,12 +196,12 @@ def scan_library(
                     # Exclude old_stem from the nfo check: it's an orphan NFO whose
                     # video was renamed, so no other video should be classified as
                     # "skipped" because its stem happens to equal old_stem.
-                    _remaining_nfo_stems = nfo_stems - {old_stem}
+                    _remaining_nfo_stems_lower = nfo_stems_lower - {old_stem.lower()}
                     for stem, full_path in video_stems.items():
                         if stem == new_stem:
                             continue
                         _loop_nfo_path = os.path.join(dirpath, f"{stem}.nfo")
-                        if stem in _remaining_nfo_stems:
+                        if stem.lower() in _remaining_nfo_stems_lower:
                             logger.debug("Skipping (sidecar exists): %s", full_path)
                             skipped += 1
                         else:
@@ -198,7 +211,7 @@ def scan_library(
             # Normal per-stem classification (no rename candidate, or --force)
             for stem, full_path in video_stems.items():
                 nfo_path = os.path.join(dirpath, f"{stem}.nfo")
-                if not force and stem in nfo_stems:
+                if not force and stem.lower() in nfo_stems_lower:
                     logger.debug("Skipping (sidecar exists): %s", full_path)
                     skipped += 1
                     continue

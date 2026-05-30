@@ -340,6 +340,8 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
     # Compute invalidation key outside lock (involves filesystem I/O).
     current_trigger_key = _trigger_invalidation_key(report_path)
 
+    trigger_entries: list[dict] = []  # initialize before any lock block
+
     # Fast check inside lock: if cache is still valid, read and return immediately.
     with _trigger_cache_lock:
         _needs_rebuild = (_trigger_cache_key != current_trigger_key)

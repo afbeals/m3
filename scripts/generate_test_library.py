@@ -63,10 +63,14 @@ def main() -> None:
         # --- Manual Add form ---
         "Add Jane Doe And Mary Smith In Great Scene At MyStudio.mp4",
         "Add Alice Brown In Her Scene At AnotherStudio With Drama, Comedy.mp4",
+        # date-prefixed Add form
+        f"Add 2024-03-15 Jane Doe In Best Scene At {site} With Action.mp4",
 
         # --- unmatched (no site token, not an Add form) ---
         "Unknown File Without Token.mp4",
         "Another Unmatched File.mp4",
+        # malformed general form: % with empty payload (no site token)
+        "Broken Actor % .mp4",
 
         # --- alias test (uppercase alias) ---
         f"Jane Doe % {site.upper()} - 55555.mp4",
