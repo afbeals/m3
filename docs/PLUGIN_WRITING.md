@@ -110,6 +110,7 @@ plugins:
 | `date` | `str \| None` | enhanced | Release date (YYYY-MM-DD) |
 | `studio_id` | `str \| None` | reserved — parser never populates this | Studio numeric ID (multi-studio sites); set manually in custom plugins if needed |
 | `actress_id` | `str \| None` | reserved — parser never populates this | Actress page ID; set manually in custom plugins if needed |
+| `extra_actors` | `list[str]` | when present | Actor tokens extracted from within the % match payload (e.g. `site - 12345 - Jane Doe` → extra_actors=['Jane Doe']). Most plugins use `actors` from the left side of the filename; `extra_actors` is available for right-side actor tokens. |
 | `raw_match_payload` | `str \| None` | always | Raw text after `%` for custom parsing |
 
 **Match subtypes:**
@@ -152,6 +153,12 @@ Return `None` if the API returns no usable record. Do **not** raise — returnin
 `None` is the contract for "not found". Only raise (or let exceptions propagate)
 for actual errors (network failure, unexpected API response shape), which will be
 recorded as `status="error"` in the run report.
+
+```python
+# You can also raise PluginValidationError yourself for site-specific validation:
+if data.get("status") == "deleted":
+    raise PluginValidationError(f"Scene {data.get('id')} has been deleted from the site")
+```
 
 ### Step 4 — Build MetadataResult
 
@@ -279,6 +286,8 @@ fanart_url = fanart_el["src"] if fanart_el else None
 
 ### 0. Check routing (fastest — no API call)
 
+> **Note:** The flags `--test-plugin`, `--validate-plugins`, `--dry-run-strict`, and `--list-unmatched` do **not** require `PLEX_URL` or `PLEX_TOKEN` to be set — they skip Plex connection entirely.
+
 Before writing a single line of plugin code, verify your filenames route to your plugin:
 
 ```bash
@@ -367,6 +376,12 @@ cat ./reports/run_latest.txt
 Look for your file under `updated` (success) or `error`/`scrape_error` (check
 the message column).
 
+**Inspect the NFO file on disk:**
+```bash
+cat "test-media/Jane Doe % mysite - 12345.nfo"
+```
+Verify: `<title>`, `<premiered>`, `<actor>`, `<studio>`, `<art>` elements are correct.
+
 ### 5. Validate before deploying
 
 ```bash
@@ -377,6 +392,8 @@ Prints a pass/fail table for every plugin in `PLUGIN_DIR`. Exits 1 if any
 plugin fails structural checks. Run this before a batch deploy.
 
 ### 6. Unit tests
+
+Create your plugin test file at `app/tests/test_plugin_yoursite.py` (alongside the existing test files). The plugin code itself lives in `plugins/yoursite.py`. With venv active: `python -m pytest app/tests/test_plugin_yoursite.py -v`
 
 Write a test file in `app/tests/test_plugin_mysite.py`. Mock the HTTP calls
 with `httpx`'s built-in `MockTransport`, or use `unittest.mock.patch` to mock
@@ -467,6 +484,8 @@ In addition to `fetch()`, plugins can implement two optional lifecycle hooks:
 ### `setup(self) -> None`
 
 Called once after instantiation, before the plugin is registered and made available for dispatch. Raise any exception here to prevent the plugin from being registered — useful for validating credentials or required env vars at startup rather than discovering the problem at first `fetch()`.
+
+If `setup()` raises, that plugin is **skipped with an error log** — all other plugins continue to load normally. The container does **not** stop. Check `docker logs m3` for 'Failed to register plugin' messages at startup.
 
 ```python
 def setup(self) -> None:

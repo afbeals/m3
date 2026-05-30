@@ -138,9 +138,9 @@ def write_report(
     # Derive the filename from the run's start time so the filename is consistent
     # with the report contents. Fall back to the current time if started_at is empty.
     if _start_dt is not None:
-        ts = _start_dt.strftime("%Y%m%d_%H%M%S")
+        ts = f"{_start_dt.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
     else:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ts = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
 
     duration_str = (
         f"{report.duration_seconds}s" if report.duration_seconds is not None else "N/A"

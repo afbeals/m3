@@ -208,7 +208,7 @@ def run_history(request: Request, page: int = 1):
     report_path = request.app.state.config.report_path
     all_runs = list_runs(report_path)
     actual_run_count = count_runs(report_path)
-    total = len(all_runs)
+    total = actual_run_count
     page = max(1, page)
     start = (page - 1) * _RUNS_PAGE_SIZE
     end = start + _RUNS_PAGE_SIZE
@@ -588,7 +588,7 @@ async def trigger_file(request: Request):
                     outcome_message = str(exc)
                     return
                 outcome_status = "updated"
-            if plex_server is not None:
+            if plex_server is not None and outcome_status == "updated":
                 try:
                     push_to_plex(plex_server, resolved_file_path, result)
                 except Exception as exc:

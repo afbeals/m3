@@ -123,7 +123,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         return os.environ.get(key, default).strip()
 
     # Inner helper: parse an integer env var with a clear error on bad values
-    def optional_int(key: str, default: int, min_val: int | None = None) -> int:
+    def optional_int(key: str, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
         raw = os.environ.get(key, "").strip()
         if not raw:
             return default
@@ -136,6 +136,10 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         if min_val is not None and val < min_val:
             raise ValueError(
                 f"Environment variable {key!r} must be >= {min_val}, got {val}"
+            )
+        if max_val is not None and val > max_val:
+            raise ValueError(
+                f"Environment variable {key!r} must be <= {max_val}, got {val}"
             )
         return val
 
@@ -258,7 +262,7 @@ def load_config(force: bool = False, plex_required: bool = True) -> Config:
         log_retention_days=optional_int("LOG_RETENTION_DAYS", 30, min_val=1),
         report_retention_days=optional_int("REPORT_RETENTION_DAYS", 90, min_val=1),
         web_enabled=web_enabled,
-        web_port=optional_int("WEB_PORT", 8765, min_val=1),
+        web_port=optional_int("WEB_PORT", 8765, min_val=1, max_val=65535),
         web_host=optional("WEB_HOST", "0.0.0.0"),
         app_name=app_name,
         plugin_rate_limit_secs=plugin_rate_limit_secs,

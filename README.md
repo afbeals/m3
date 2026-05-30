@@ -27,6 +27,8 @@ docker run -d \
 
 Or use the included `docker-compose.yml`:
 
+> **Before running:** Edit `docker-compose.yml` — at minimum set `PLEX_URL`, `PLEX_TOKEN`, and your media path under volumes.
+
 ```bash
 docker-compose up -d
 ```
@@ -170,6 +172,8 @@ python -m app.main --once
 
 # Run once, re-process files that already have .nfo sidecars
 python -m app.main --once --force
+# Note: `--force` is only meaningful for files that already have an `.nfo` sidecar.
+# On a fresh library, all files are processed regardless of whether `--force` is passed.
 
 # Dry run — parse + route + fetch but skip all writes
 python -m app.main --once --dry-run
@@ -178,6 +182,9 @@ python -m app.main --once --dry-run
 python -m app.main --once --dry-run-strict
 
 # Trigger an immediate run without restarting the container (Unix/Linux/macOS)
+# Note: `docker exec m3 python -m app.main --once` starts a second process alongside the
+# running scheduler. For large libraries, prefer the Run Now button in the dashboard, or
+# trigger via signal: `docker exec m3 kill -USR1 1`
 docker exec m3 kill -USR1 1
 
 # Reload plugins without restarting the container (Unix/Linux/macOS)

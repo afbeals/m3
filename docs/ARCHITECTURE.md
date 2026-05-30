@@ -20,6 +20,11 @@ A scheduled Python service that reads media filenames from Plex library director
 [APScheduler cron / "Run now" button / SIGUSR1]
        │
        ▼
+[Startup sweep] On startup (before the first run), stale `.tmp` orphan files older
+  than 30 minutes are swept from all library paths to clean up any partial writes
+  from a previous interrupted run.
+       │
+       ▼
 [Library Scanner]  (app/scanner.py)
   - Enumerates configured library directories in a single O(n) per-directory pass
   - Classifies each video file:
@@ -343,12 +348,12 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `LOG_RETENTION_DAYS` | `30` | `30` | Delete log files older than N days |
 | `REPORT_RETENTION_DAYS` | `90` | `90` | Delete report files older than N days |
 | `PLUGIN_RATE_LIMIT_SECS` | `1.0` | `1.0` | Seconds to wait between plugin fetch() calls |
-| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | `60.0` | Seconds before a single plugin fetch() is marked as timed out |
+| `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | `60.0` | Seconds before a single plugin fetch() is marked as timed out (set to 0 to disable — not recommended; a hung plugin will block the scheduler indefinitely) |
 | `WEB_ENABLED` | `true` | `true` | Enable the web dashboard |
 | `WEB_PORT` | `8765` | `8765` | Port the dashboard listens on |
 | `WEB_HOST` | `0.0.0.0` | `0.0.0.0` | Host the dashboard binds to (`127.0.0.1` for local dev) |
 | `APP_NAME` | `m3` | `m3` | Display name in the dashboard header and title |
-| `NOTIFY_URL` | *(empty)* | *(empty)* | Webhook URL to POST a JSON run summary after each run |
+| `NOTIFY_URL` | *(empty)* | *(empty)* | Webhook URL to POST a JSON run summary after each run. See `NOTIFY_MIN_ERRORS` for the error threshold that controls whether the webhook fires. |
 | `NOTIFY_MIN_ERRORS` | `1` | `1` | Minimum combined error count (`errors + scrape_errors + image_errors + plugin_errors`) before the webhook fires (0 = always fire) |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | *(empty)* | Comma-separated glob patterns to skip during scanning |
 | `DEBUG` | `false` | `false` | When `true`, logs a hint to run uvicorn directly for live template reload |
@@ -432,7 +437,7 @@ File statuses:
 
 | Status | Meaning |
 |---|---|
-| `updated` | Metadata fetched and written (NFO + Plex) |
+| `updated` | Metadata fetched and written (NFO + Plex). If the Plex API push fails but the NFO was written, the file is still recorded as `updated` but a 'Plex push failed' flag appears in the run detail. The sidecar is correct — re-trigger the file once Plex is reachable. |
 | `renamed` | File renamed: sidecar assets renamed, Plex re-pushed from existing NFO; no API fetch |
 | `skipped` | Sidecar already exists and `--force` not set |
 | `unmatched` | Filename unparseable or no plugin registered for site |

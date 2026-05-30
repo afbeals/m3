@@ -390,11 +390,15 @@ def get_file_history(report_path: str, file_path: str, *, max_runs: int = _MAX_R
 
     history.extend(trigger_entries)
 
-    def _safe_dt(e):
+    def _safe_dt(e: dict) -> datetime:
         try:
-            return datetime.fromisoformat(e.get("started_at", ""))
+            dt = datetime.fromisoformat(e.get("started_at", ""))
+            # Normalize to naive for consistent comparison
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
         except (ValueError, TypeError):
-            return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min  # naive fallback
 
     history.sort(key=_safe_dt, reverse=True)
     return history[:max_runs]

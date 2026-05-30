@@ -72,7 +72,7 @@ def _fire_webhook(url: str, report: RunReport, *, app_name: str = "m3") -> None:
     """
     # Collect first error/scrape-error message for alert systems that display a preview
     first_error = next(
-        (f.message for f in report.files if f.status == "error" and f.message), None
+        (f.message for f in report.files if f.status == "error"), None
     )
     first_scrape_error = next(
         (f.message for f in report.files if f.status == "scrape_error" and f.message), None
@@ -223,6 +223,7 @@ def run(
             report.record(FileResult(path=media.path, status="error", message=str(exc)))
             continue
 
+        plex_push_failed = False
         if plex_server is not None:
             try:
                 push_nfo_to_plex(
@@ -231,11 +232,13 @@ def run(
                 )
             except Exception as exc:
                 logger.warning("Plex re-push failed for renamed file %s: %s", media.path, exc)
+                plex_push_failed = True
 
         report.record(FileResult(
             path=media.path,
             status="renamed",
             message=f"renamed from {media.renamed_from!r}",
+            plex_failed=plex_push_failed,
         ))
         logger.info("Renamed: %s (was %r)", media.path, media.renamed_from)
 
@@ -360,6 +363,13 @@ def run(
         # Content-Type) before writing the NFO <art> block.
         if dry_run:
             logger.info("[%s] DRY RUN: would write NFO + images for %s", _pfx, media.path)
+            file_result = FileResult(
+                path=media.path,
+                status="skipped",
+                message="dry-run: would write NFO + images",
+            )
+            report.record(file_result)
+            continue
         else:
             try:
                 images_ok, poster_path, fanart_path = write_images(media, result)
@@ -402,9 +412,7 @@ def run(
         # won't overwrite our values on the next scheduled refresh.
         # This is non-fatal: if Plex is unreachable we still have the NFO sidecar.
         plex_failed = False
-        if dry_run:
-            logger.info("[DRY RUN] Would push to Plex for: %s", media.path)
-        elif plex_server is not None:
+        if plex_server is not None:
             try:
                 ok = push_to_plex(plex_server, media.path, result, _fallback_cache=plex_item_cache)
                 if not ok:
@@ -921,6 +929,9 @@ def main() -> None:
                 print(f"Could not read run report: {summary['filename']}")
                 continue
             for f in full_run.get("files", []):
+                # "renamed" is intentionally excluded — a renamed file that succeeded the rename
+                # but failed the Plex push is still structurally correct on disk. Use --force
+                # to reprocess renamed files if needed.
                 if f.get("status") in ("error", "scrape_error", "image_error", "plugin_error") and f.get("path"):
                     p = f["path"]
                     if p not in seen_paths:

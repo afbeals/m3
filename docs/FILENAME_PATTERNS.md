@@ -217,7 +217,15 @@ Since subtypes share structural overlap, the parser applies these rules in order
 7. Only a Direct URL slug with no free-text → Exact Match
 8. Plugin receives `match_subtype` and uses it to decide which API call to make
 
-Subtype resolution is deliberately **advisory** — plugins may override the subtype inference if they know their site's API better.
+Subtype resolution is deliberately **advisory** — plugins may override the subtype inference if they know their site's API better. For example, if your API always uses numeric IDs:
+
+```python
+def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+    # Ignore match_subtype and dispatch entirely by what fields are present
+    if parsed.scene_id:
+        return self._fetch_by_id(parsed)
+    ...
+```
 
 ---
 

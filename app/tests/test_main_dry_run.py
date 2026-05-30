@@ -67,7 +67,7 @@ def test_dry_run_does_not_call_connect_plex(tmp_path):
     mock_img.assert_not_called()
 
 
-def test_dry_run_logs_would_push_line(tmp_path, caplog):
+def test_dry_run_logs_would_write_line(tmp_path, caplog):
     media = _make_media(tmp_path)
     router = Router({"drysite": _GoodPlugin()})
     cfg = _config(tmp_path)
@@ -78,5 +78,5 @@ def test_dry_run_logs_would_push_line(tmp_path, caplog):
          caplog.at_level(logging.INFO, logger="app.main"):
         run(cfg, router, dry_run=True)
 
-    would_push_lines = [r for r in caplog.records if "Would push to Plex" in r.message]
-    assert len(would_push_lines) >= 1, "Expected at least one '[DRY RUN] Would push to Plex' log entry"
+    would_write_lines = [r for r in caplog.records if "DRY RUN: would write NFO" in r.message]
+    assert len(would_write_lines) >= 1, "Expected at least one '[DRY RUN] would write NFO + images' log entry"

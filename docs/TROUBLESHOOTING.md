@@ -115,6 +115,33 @@ Look for:
 
 ---
 
+## Add-form files (status=add_form)
+
+Files with `status=add_form` used the Manual Add filename grammar (starting with "Add ...").
+These files are **not** auto-processed by plugins — they need human follow-up.
+
+**What to do:**
+- If the file already exists in Plex: no action needed — the Add form is for manual metadata entry
+- If you want m3 to auto-process it: rename the file using the standard grammar: `Actor % site - 12345.mp4`
+- To add the metadata manually in Plex: use Plex's "Fix Incorrect Match" feature
+
+---
+
+## Image errors (status=image_error)
+
+When images fail to download, the NFO is **not written** (the file shows as image_error, not updated).
+
+**Common causes:**
+- The poster/fanart URL returned a 403 (CDN rate limiting or authentication required)
+- The image URL has expired (some sites rotate URLs periodically)
+- The image URL points to a deleted or moved file (404)
+- Network connectivity issues to the image CDN
+
+**How to diagnose:** Check the full error in the run detail page or run_latest.txt.
+**How to fix:** Correct the URL in your plugin's `_to_result()`, then use `--retry-failed` to reprocess.
+
+---
+
 ## Scrape errors
 
 `status=scrape_error` in the run report means the plugin raised a `ScrapeError`
@@ -228,13 +255,15 @@ Note: only files **without** an existing `.nfo` sidecar are processed. Once all 
 ## Schedule not running
 
 ```bash
-# Verify your cron expression parses correctly (replace values with your actual settings)
+# Verify your cron expression parses correctly
 python3 -c "
 import os, datetime
 from apscheduler.triggers.cron import CronTrigger
 tz = os.environ.get('TZ') or 'UTC'
-t = CronTrigger.from_crontab('0 3 * * *', timezone=tz)  # replace with your RUN_SCHEDULE
+schedule = os.environ.get('RUN_SCHEDULE', '0 3 * * *')
+t = CronTrigger.from_crontab(schedule, timezone=tz)
 print('timezone:', tz)
+print('schedule:', schedule)
 print('next run:', t.get_next_fire_time(None, datetime.datetime.now()))
 "
 ```

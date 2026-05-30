@@ -48,6 +48,15 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 
+// Strip ?msg= from URL after displaying flash messages (prevents stale alerts on refresh/bookmark)
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.location.search.includes('msg=')) {
+    var url = new URL(window.location.href);
+    url.searchParams.delete('msg');
+    window.history.replaceState({}, '', url.pathname + (url.search || ''));
+  }
+});
+
 // Re-apply filter after HTMX refreshes the log panel
 document.addEventListener('htmx:afterSwap', function (evt) {
   if (evt.detail.target && evt.detail.target.id === 'log-panel') {

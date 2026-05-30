@@ -6,6 +6,8 @@ Planned improvements and enhancements for m3. Items are grouped by theme; each e
 
 ## SQLite run history database
 
+> **Status: Not yet implemented**
+
 **Why:** The current run history is stored as one JSON file per run in `/config/reports/`. This works fine for browsing recent runs, but has scaling limits:
 
 - The `/files?path=…` history view must read every JSON report on disk to build one file's history — gets noticeably slow once you have hundreds of runs
@@ -50,6 +52,8 @@ The `web/history.py` functions (`list_runs`, `get_run`, `get_file_history`, `agg
 
 ## Deleted file tracking
 
+> **Status: Not yet implemented**
+
 **Why:** When you delete a media file and its sidecars, Plex removes it from its library after a scan + "Empty Trash". But m3 has no awareness of deletions — it never records that a file was removed, and the historical run report entries for that file remain in the dashboard indefinitely (until they age out after `REPORT_RETENTION_DAYS`).
 
 Additionally, orphaned sidecars (`.nfo` + images left on disk after the video is deleted) accumulate silently and take up space.
@@ -67,6 +71,8 @@ Additionally, orphaned sidecars (`.nfo` + images left on disk after the video is
 ---
 
 ## Web dashboard authentication
+
+> **Status: Not yet implemented**
 
 **Why:** The web dashboard currently has no authentication. Anyone on the same network who can reach the port can:
 - Trigger a full library run (computationally expensive, hammers source APIs)
@@ -102,6 +108,8 @@ class BasicAuthMiddleware:
 ---
 
 ## Scheduled orphan sidecar cleanup
+
+> **Status: Not yet implemented**
 
 **Why:** Over time, deleted or moved media files leave orphan `.nfo`, `-poster.jpg`, and `-fanart.jpg` files on disk. These accumulate silently, waste disk space, and can confuse Plex's scanner.
 

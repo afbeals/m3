@@ -604,6 +604,25 @@ def test_retry_failed_n_boundary(tmp_path):
     assert len(media_2) == 2
 
 
+@pytest.mark.parametrize("status", ["error", "scrape_error", "image_error", "plugin_error"])
+def test_retry_failed_includes_all_error_statuses(tmp_path, status):
+    """--retry-failed must retry all error-like statuses including image_error and plugin_error."""
+    path = str(tmp_path / "Jane Doe % mysite - 001.mp4")
+    open(path, "w").close()
+
+    list_runs_val = [{"filename": "run_20250101.json"}]
+    get_run_map = {
+        "run_20250101.json": {"files": [{"path": path, "status": status}]},
+    }
+
+    mock_run = _invoke_retry(tmp_path, ["--retry-failed", "1"], list_runs_val, get_run_map)
+
+    mock_run.assert_called_once()
+    _, _, media_list = mock_run.call_args.args
+    assert len(media_list) == 1, f"Expected 1 file for status={status!r}, got {len(media_list)}"
+    assert media_list[0].path == path
+
+
 def test_retry_failed_skips_nonexistent_files(tmp_path):
     """Paths in the report that no longer exist on disk must be skipped silently."""
     existing_path = str(tmp_path / "Jane Doe % mysite - 001.mp4")
@@ -655,6 +674,32 @@ def test_run_image_error_when_write_images_returns_false(tmp_path):
     image_error_result = next(f for f in report.files if f.status == "image_error")
     assert image_error_result.message is not None, "image_error FileResult should have a message"
     assert "not written" in image_error_result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# T1 (plex) — push_to_plex returning False → plex_failed=True
+# ---------------------------------------------------------------------------
+
+def test_run_marks_plex_failed_when_push_to_plex_returns_false(tmp_path):
+    """When push_to_plex returns False, FileResult.plex_failed must be True."""
+    media = _make_media(tmp_path, "Jane Doe % mysite - 12345")
+    router = Router({"mysite": _GoodPlugin()})
+    cfg = _config(tmp_path)
+    mock_plex = MagicMock()
+
+    with patch("app.main.scan_library", return_value=([media], 0)), \
+         patch("app.main.write_nfo"), \
+         patch("app.main.write_images", return_value=(True, "/p.jpg", "/f.jpg")), \
+         patch("app.main.connect_plex", return_value=mock_plex), \
+         patch("app.main.push_to_plex", return_value=False), \
+         patch("app.main.write_report") as mock_report:
+        run(cfg, router)
+
+    report = mock_report.call_args.args[0]
+    assert report.files[0].status == "updated"
+    assert report.files[0].plex_failed is True, (
+        "plex_failed should be True when push_to_plex returns False"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -181,6 +181,12 @@ def scan_library(
                 new_videos = {s: p for s, p in video_stems.items() if s.lower() not in nfo_stems_lower}
                 if len(orphan_nfos) == 1 and len(new_videos) == 1:
                     old_stem = next(iter(orphan_nfos))
+                    # Resolve lowercase back to original case on Windows
+                    if sys.platform == "win32":
+                        old_stem = next(
+                            (s for s in nfo_stems if s.lower() == old_stem),
+                            old_stem,  # fallback to lowercase if not found
+                        )
                     new_stem, new_path = next(iter(new_videos.items()))
                     nfo_path = os.path.join(dirpath, f"{new_stem}.nfo")
                     logger.info(

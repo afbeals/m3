@@ -1,5 +1,8 @@
 # Manual Search Usage
 
+> **Historical reference only.** The canonical grammar specification is in `FILENAME_PATTERNS.md`.
+> This file is preserved as the original source note and may differ from the implemented behavior.
+
 > Verbatim copy of the user's source note (originally at `api.jsonbin.io/v3/qs/6a0809ccadc21f119aa9ffc3`, `record.notes`). Saved here as the canonical reference for the filename grammar implemented in `FILENAME_PATTERNS.md`.
 
 ---

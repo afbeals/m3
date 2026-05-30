@@ -43,7 +43,7 @@ cd /path/to/m3
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 #### Windows (Command Prompt)
@@ -54,7 +54,7 @@ cd C:\path\to\m3
 python -m venv .venv
 .venv\Scripts\activate.bat
 
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 #### Windows (PowerShell)
@@ -65,7 +65,7 @@ cd C:\path\to\m3
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 > **Note:** If PowerShell blocks the activation script, run:
@@ -125,6 +125,12 @@ python tasks.py gen-test-lib
 This creates `./test-media/` with empty `.mp4` files covering all filename
 subtypes: exact match, enhanced, limited, add-form, and intentionally
 unmatched. Use `--output <dir>` to write to a different path.
+
+By default the generator uses `examplesite` as the site token. To generate files for your own plugin, pass `--site yoursite`:
+
+```bash
+python3 scripts/generate_test_library.py --site mysite
+```
 
 You can also create files manually:
 

@@ -155,7 +155,7 @@ Add any plugin-specific API keys as additional variables (e.g., `MYSITE_API_KEY`
 
 ### Via docker-compose (alternative)
 
-If you prefer to manage containers with Compose (e.g., using the Unraid **Docker Compose Manager** plugin), create `/mnt/user/appdata/m3/docker-compose.yml`:
+If you prefer to manage containers with Compose (e.g., using the Unraid **Docker Compose Manager** plugin), the repo includes a sample `docker-compose.yml` at the project root — copy it to your Unraid appdata directory and edit the placeholder values (`your-plex-token`, IP, paths). Or create `/mnt/user/appdata/m3/docker-compose.yml` from scratch:
 
 ```yaml
 version: "3.8"
@@ -292,6 +292,16 @@ cat /mnt/user/appdata/m3/config/reports/run_latest.txt
 
 Alternatively, follow the [official Plex guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
 
+**Token format:** Your Plex token is a 20-character alphanumeric string.
+
+**Verify your token with curl:**
+
+```bash
+curl -s "http://YOUR_PLEX_IP:32400/identity?X-Plex-Token=YOUR_TOKEN" | grep -o 'machineIdentifier="[^"]*"'
+```
+
+If this returns output (e.g. `machineIdentifier="abc123..."`), the token is valid and Plex is reachable at that address.
+
 ---
 
 ## Updating the Container
@@ -327,11 +337,7 @@ No data migration is needed between versions — m3 stores all state in the conf
 
 **Why the NFO sidecars matter:** m3 pushes metadata directly to Plex's database (fast path), but the Plex database is not portable — it is lost if you rebuild Plex, migrate to a new server, or switch to Jellyfin. The NFO sidecar files on disk are the permanent backup that travels with your media files regardless of which media server you use.
 
-**Plex database:** You do not need to back up the Plex database for m3's purposes. If the Plex database is lost, run:
-```bash
-docker exec m3 python -m app.main --once --force
-```
-m3 re-reads the NFO sidecars (via the rename workflow) and re-pushes all metadata to Plex. A full re-fetch from source sites is only needed if the sidecar files are also lost.
+**Plex database:** You do not need to back up the Plex database for m3's purposes. If the Plex database is lost and your NFO sidecars are intact, Plex will pick them up on its next library scan (using XBMCnfoMoviesImporter or a compatible agent). To restore metadata from NFO sidecars in Plex, use Plex's own "Fix Incorrect Match" or "Fix Incorrect Artwork" features, or the Plex Meta Manager tool. Note that `--once --force` re-fetches all metadata from your plugins' source APIs — it does not read NFO sidecars. A full re-fetch from source sites is needed only if both the Plex database and the sidecar files are lost.
 
 ### Restore after data loss
 
