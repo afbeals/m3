@@ -113,7 +113,7 @@
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <Config Name="Notify min errors" Target="NOTIFY_MIN_ERRORS" Default="1"
-          Description="Minimum combined error count (errors + scrape_errors) before the webhook fires. Default 0 fires after every run. Set to 1 to only notify when something broke."
+          Description="Minimum combined error count before the webhook fires. Default 1 = only notify when something broke. Set to 0 to always notify after every run (including clean runs)."
           Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
   <!-- ── Advanced ─────────────────────────────────────────────────── -->

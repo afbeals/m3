@@ -23,7 +23,10 @@ htmlcov/
 dist/
 build/
 
-# Real plugin files — example_plugin.py IS committed as a reference.
-# Any other .py files you create in plugins/ likely contain API keys or
-# proprietary logic. Add their names here to prevent accidental commits:
-# plugins/myplugin.py
+# Custom plugins may contain API keys — they are gitignored by default.
+# To track a specific plugin file, add it explicitly (e.g. !plugins/myplugin.py)
+plugins/*.py
+!plugins/example_plugin.py
+!plugins/example_html_plugin.py
+!plugins/thetvdb.py
+!plugins/tmdb.py

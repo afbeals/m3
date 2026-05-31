@@ -61,11 +61,13 @@ docker restart m3
 Or, if the container is already running, trigger a hot-reload without a restart:
 
 ```bash
-# Unix/Linux/macOS:
+# Unix/Linux/macOS only — trigger plugin hot-reload:
 docker exec m3 kill -USR2 1
+```
 
-# All platforms (local dev with --watch flag):
-python -m app.main --watch   # auto-reloads on every .py save in plugins/
+```bash
+# All platforms — use --watch flag for automatic hot-reload:
+python -m app.main --watch
 ```
 
 Your plugin is live. Test it with a one-shot run:
@@ -76,6 +78,27 @@ docker exec m3 python -m app.main --once --force
 ---
 
 ## Full Step-by-Step Guide
+
+### Minimal working stub
+
+Before writing real API code, confirm your environment works with this 5-line stub:
+
+```python
+from app.plugins.base import MetadataPlugin, MetadataResult, ParsedFilename
+
+class MyPlugin(MetadataPlugin):
+    site_id = "mysite"
+
+    def fetch(self, parsed: ParsedFilename) -> MetadataResult | None:
+        # Hardcoded result — replace with real API call
+        return MetadataResult(title="Test Title — replace with real API call")
+```
+
+Drop this in `plugins/mysite.py`, then run:
+```bash
+python -m app.main --test-plugin plugins/mysite.py --filename "Actor % mysite - 12345"
+```
+You should see `title: Test Title — replace with real API call` in the output. If routing works, you're ready to write real fetch logic.
 
 ### Step 1 — Decide your `site_id`
 
@@ -308,6 +331,11 @@ fanart_url = fanart_el["src"] if fanart_el else None
 
 ## Testing Your Plugin
 
+> Note: use `python` (not `python3`) on Windows.
+
+> **Fastest development loop:** Edit `_to_result()` → run `--test-plugin` → repeat.
+> Steps 1–2 are the active development cycle. Steps 3–6 are pre-deploy validation.
+
 ### 0. Check routing (fastest — no API call)
 
 > **Note:** The flags `--test-plugin`, `--validate-plugins`, `--dry-run-strict`, and `--list-unmatched` do **not** require `PLEX_URL` or `PLEX_TOKEN` to be set — they skip Plex connection entirely.
@@ -328,8 +356,10 @@ disappear from the list (they'll now be routed to your plugin).
 
 ### 1. Test parsing (no API needed)
 
-```bash
-python3 - <<'EOF'
+Save this as `test_parse.py` and run it:
+
+```python
+# test_parse.py
 from app.parser import parse
 
 stems = [
@@ -339,8 +369,13 @@ stems = [
 for stem in stems:
     r = parse(stem)
     print(f"subtype={r.match_subtype} site={r.site} scene_id={r.scene_id} title={r.title!r}")
-EOF
 ```
+
+```bash
+python test_parse.py
+```
+
+> **Windows users:** The `python3 - <<'EOF'` heredoc syntax doesn't work in Windows CMD or PowerShell. Always save to a `.py` file and run it with `python`. Delete the file when done.
 
 ### 2. Test the plugin with `--test-plugin` (recommended)
 
@@ -363,8 +398,10 @@ python -m app.main --once --dry-run-strict
 
 ### 3. Test the plugin directly in Python (alternative)
 
-```bash
-python3 - <<'EOF'
+Save this as `test_plugin.py` and run it:
+
+```python
+# test_plugin.py
 import os
 os.environ["MYSITE_API_KEY"] = "your-real-key"
 
@@ -381,8 +418,13 @@ if result:
     print("poster_url:", result.poster_url)
 else:
     print("result: None (not found)")
-EOF
 ```
+
+```bash
+python test_plugin.py
+```
+
+> **Windows users:** The `python3 - <<'EOF'` heredoc syntax doesn't work in Windows CMD or PowerShell. Always save to a `.py` file and run it with `python`. Delete the file when done.
 
 ### 4. Run a full one-shot pass
 
@@ -443,7 +485,7 @@ def test_fetch_by_id_returns_title():
 
 Run it:
 ```bash
-python3 -m pytest app/tests/test_plugin_mysite.py -v
+python -m pytest app/tests/test_plugin_mysite.py -v
 ```
 
 ---

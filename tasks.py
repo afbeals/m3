@@ -85,6 +85,13 @@ def _get_arg(key: str, default: str = "") -> str:
 @task("setup")
 def setup():
     """Create venv and install all dependencies."""
+    import sys as _sys
+    vi = _sys.version_info
+    if (vi.major, vi.minor) < (3, 12):
+        print(f"ERROR: Python 3.12+ is required, but this is Python {vi.major}.{vi.minor}.{vi.micro}")
+        print("Download Python 3.12 from https://www.python.org/downloads/")
+        print("Windows: During install, check 'Add python.exe to PATH'")
+        _sys.exit(1)
     run(PY_EXE, "-m", "venv", str(VENV))
     run(PIP, "install", "--upgrade", "pip")
     run(PIP, "install", "-r", "requirements.txt", "-r", "requirements-dev.txt")
@@ -144,7 +151,7 @@ def dev():
 
 @task("dev-reload")
 def dev_reload():
-    """Start with DEBUG=true (uvicorn auto-reload)."""
+    """Start the app with DEBUG=true — logs a reminder to run uvicorn directly for live template reload."""
     run(PY, "-m", "app.main", env={"DEBUG": "true"})
 
 
@@ -208,7 +215,12 @@ def build():
 def push():
     hub_user = os.environ.get("DOCKER_HUB_USER")
     if not hub_user:
-        sys.exit("Error: Set DOCKER_HUB_USER before pushing.")
+        sys.exit(
+            "Error: Set DOCKER_HUB_USER before pushing.\n"
+            "  Windows PowerShell: $env:DOCKER_HUB_USER = 'myusername'\n"
+            "  Windows CMD: set DOCKER_HUB_USER=myusername\n"
+            "  Mac/Linux: export DOCKER_HUB_USER=myusername"
+        )
     version = _get_version()
     run("docker", "push", f"{hub_user}/m3:latest")
     run("docker", "push", f"{hub_user}/m3:{version}")

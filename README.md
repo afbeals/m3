@@ -2,8 +2,19 @@
 
 A scheduled Python service that reads media filenames from Plex library
 directories, routes each file to a site-specific metadata plugin, fetches
-metadata from external APIs, writes NFO sidecar files + poster images to disk,
+metadata from external APIs or by scraping site HTML, writes NFO sidecar files + poster images to disk,
 and pushes the same metadata to Plex via its API with field locks.
+
+---
+
+## Prerequisites
+
+Before you start, you'll need:
+
+- **Python 3.12+** — [Download from python.org](https://www.python.org/downloads/)
+  > **Windows:** On the installer's first screen, **check "Add python.exe to PATH"** before clicking Install. Without this, no `python` command will work. After install, open a new terminal and verify: `python --version` (expected: Python 3.12.x)
+- **Git** — [Git for Windows](https://gitforwindows.org/) (includes Git Bash)
+- **Docker Desktop** — only needed to build/deploy to Unraid (see [UNRAID_SETUP.md](docs/UNRAID_SETUP.md))
 
 ---
 
@@ -27,6 +38,8 @@ docker run -d \
   m3
 ```
 
+> **Windows PowerShell:** Replace `\` with `` ` `` for line continuation, or use `docker compose up -d` with the included `docker-compose.yml` (recommended).
+
 Or use the included `docker-compose.yml`:
 
 > **Before running:** Edit `docker-compose.yml` — at minimum set `PLEX_URL`, `PLEX_TOKEN`, and your media path under volumes.
@@ -48,6 +61,8 @@ python tasks.py setup
 copy .env.example .env
 python tasks.py dev
 ```
+
+> **No Plex server?** Leave `PLEX_URL`/`PLEX_TOKEN` blank. The app runs in sidecar-only mode and logs a warning instead of crashing. You can still test plugins and generate NFO files.
 
 See [docs/local-testing.md](docs/local-testing.md) for a full step-by-step guide
 covering macOS, Linux, and Windows.
@@ -204,7 +219,15 @@ python -m app.main --validate-plugins
 # Test a single plugin file + filename, print MetadataResult (no writes, no Plex)
 # Pass the filename stem without extension — the parser expects no .mp4/.mkv suffix
 python -m app.main --test-plugin plugins/mysite.py --filename "Jane Doe % mysite - 12345"
+```
 
+> **Windows CMD:** Escape `%` as `%%` in filenames:
+> ```cmd
+> python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe %% mysite - 12345"
+> ```
+> **Windows PowerShell:** `%` is not special in PowerShell — use single `%` as shown above.
+
+```bash
 # Re-process only failed files from the most recent run
 python -m app.main --retry-failed
 
@@ -264,7 +287,7 @@ python -m pytest app/tests/ -v
 ```
 
 CI runs automatically on every push and PR via GitHub Actions
-(`ubuntu-latest` + `windows-latest`, Python 3.12). Coverage threshold: 80%.
+(`ubuntu-latest` + `windows-latest`, Python 3.12). Coverage threshold: 85%.
 
 ---
 

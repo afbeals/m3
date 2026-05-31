@@ -19,8 +19,8 @@ USER m3
 
 EXPOSE 8765
 
-# Health check: the web dashboard's /healthz endpoint returns 200 when the
-# process is alive. No start-period needed — uvicorn starts in seconds.
+# Health check: /healthz returns 200 when uvicorn is ready.
+# start-period=30s allows time for uvicorn to bind before Docker starts counting failures.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8765/healthz || exit 1
 

@@ -7,7 +7,16 @@ to Docker/Unraid.
 
 ## Prerequisites
 
-- Python 3.12 or later
+Ensure the following are installed before starting:
+
+| Tool | Version | Notes |
+|------|---------|-------|
+| Python | 3.12+ | **Windows:** During install, check "Add python.exe to PATH" |
+| Git | any | [Git for Windows](https://gitforwindows.org/) includes Git Bash |
+
+**Verify Python:** Open a new terminal and run `python --version` — expected: `Python 3.12.x`
+
+Other prerequisites:
 - `pip` / `venv` (included with Python)
 - An API key for whichever site your plugin targets
 - Optional: a running Plex server (not required — the app works in sidecar-only
@@ -15,7 +24,14 @@ to Docker/Unraid.
 
 ---
 
-## 1. Set up a virtual environment
+## Step 1 — Clone and set up
+
+```bash
+git clone https://github.com/YOUR_ORG/m3.git
+cd m3
+```
+
+Then create the virtual environment.
 
 ### Quickstart (any platform)
 
@@ -63,13 +79,21 @@ pip install -r requirements.txt -r requirements-dev.txt
 cd C:\path\to\m3
 
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-> **Note:** If PowerShell blocks the activation script, run:
-> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+**Windows PowerShell** — run this once to allow scripts (if you get an error about scripts being disabled):
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Then activate the virtual environment:
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+```powershell
+pip install -r requirements.txt -r requirements-dev.txt
+```
 
 ---
 
@@ -91,6 +115,19 @@ Copy-Item .env.example .env
 The `.env` file is loaded automatically at startup (`override=False`, so any
 environment variables already set in your shell take precedence). This removes
 the need to export a long list of `VAR=value` prefixes before every command.
+
+> **Note:** The default `LIBRARY_PATHS=./media` requires that directory to exist. Create it now:
+> ```bash
+> # macOS / Linux / Git Bash:
+> mkdir media
+>
+> # Windows CMD:
+> md media
+>
+> # Windows PowerShell:
+> New-Item -ItemType Directory media
+> ```
+> Or skip this step and use `python tasks.py gen-test-lib` in Step 3 which creates it automatically.
 
 Key values to set for local testing:
 
@@ -153,6 +190,8 @@ touch "./test-media/Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
 # Windows (PowerShell)
 New-Item -ItemType Directory -Force -Path .\test-media
 New-Item ".\test-media\Jane Doe with Drama % examplesite - 12345.mp4"
+New-Item ".\test-media\Jane Doe with Drama % examplesite - 19-06-15 - 12345 - An Interesting Plot.mp4"
+New-Item ".\test-media\Add Jane Doe And Mary Smith In My Scene At MyStudio.mp4"
 ```
 
 ---
@@ -190,6 +229,8 @@ python -m app.main --validate-plugins
 This loads all plugins in `PLUGIN_DIR`, checks `site_id` format, subclassing,
 and `fetch()` signature, and prints a pass/fail table. Exits with code 1 if any
 plugin fails.
+
+> **Note:** `example_plugin.py` will always show `FAIL` in validation unless `EXAMPLESITE_API_KEY` is set in your `.env`. This is expected behavior for the reference template — it requires an API key to function. Copy it to `plugins/mysite.py` and configure your own credentials.
 
 ---
 
@@ -262,9 +303,14 @@ python -m app.main \
   --filename "Jane Doe with Drama % mysite - 12345"
 ```
 
-On Windows:
+**Windows CMD** — escape `%` as `%%`:
 ```cmd
 python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe with Drama %% mysite - 12345"
+```
+
+**Windows PowerShell** — `%` is not special, no escaping needed:
+```powershell
+python -m app.main --test-plugin plugins\mysite.py --filename "Jane Doe with Drama % mysite - 12345"
 ```
 
 This is the fastest way to iterate on plugin mapping logic. You'll see each
@@ -312,6 +358,23 @@ python -m app.main --once --force
 > **Without `.env`**: pass env vars explicitly as before, or export them in
 > your shell. The `.env` approach is recommended for local dev.
 
+### Expected output
+
+A successful `python tasks.py once` run looks like:
+
+```
+INFO     app.main: m3 1.3.0 starting up
+INFO     app.main: Loaded 0 plugins (add plugins to ./plugins/)
+INFO     app.main: Scanning library paths...
+INFO     app.scanner: Scanner found 3 file(s) to process, 0 skipped
+INFO     app.main: [1/3] Processing: test-media/Jane Doe % examplesite - 12345.mp4
+WARNING  app.main: No plugin registered for site 'examplesite'
+INFO     app.main: Run complete. updated=0 skipped=0 unmatched=3 errors=0
+```
+
+If you see `No media files found` — check that `LIBRARY_PATHS` in `.env` points to your `media/` folder.
+If you see `unmatched=N` — this is expected; you need a plugin for each site token.
+
 ---
 
 ## 8. Run with the web dashboard
@@ -333,19 +396,19 @@ python -m app.main
 Open `http://localhost:8765` in your browser. Click **Run Now** to trigger an
 immediate run. Press Ctrl+C to stop.
 
-### Live reload during template / UI development
+> **Tip:** The scheduler runs at 3am by default — nothing happens immediately! To trigger a run:
+> - Open the dashboard at `http://localhost:8765` and click **Run Now**
+> - Or use `python tasks.py once` for a one-shot run that exits when complete
 
-The web dashboard runs in a daemon thread alongside the scheduler, which means
-uvicorn's built-in `--reload` mode cannot be used in that architecture. For live
-reloading of templates and routes during UI development, run uvicorn directly in
-a separate terminal:
+### Live template / UI development
 
-```bash
-python -m uvicorn app.web:create_app --reload --port 8765
-```
+For iterating on HTML templates, the fastest workflow is:
 
-This starts only the web server with auto-reload on file changes. Run the
-scheduler separately in another terminal if needed.
+1. Run `python tasks.py dev` (or `python tasks.py dev-reload` which starts with `DEBUG=true`)
+2. Edit templates in `app/web/templates/`
+3. Press `Ctrl+C` to stop, then restart with `python tasks.py dev`
+
+> **Note:** uvicorn's `--reload` mode is not compatible with m3's architecture (the web server runs in a daemon thread). Use the restart approach above for template iteration. The `python tasks.py dev-reload` command starts the app with `DEBUG=true` which logs a reminder about this.
 
 ---
 

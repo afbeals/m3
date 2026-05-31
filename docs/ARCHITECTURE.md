@@ -333,7 +333,7 @@ Plex connection is re-established at the start of every run (not once at startup
 
 ## Configuration
 
-All config via environment variables. See `config.example.yml` for the full annotated reference.
+All config via environment variables. See `.env.example` for the full annotated reference in Docker-compatible `.env` format. (`config.example.yml` is a legacy reference — do not use it for configuration.)
 
 | Variable | Default (local) | Default (Docker) | Purpose |
 |---|---|---|---|
@@ -356,11 +356,13 @@ All config via environment variables. See `config.example.yml` for the full anno
 | `NOTIFY_URL` | *(empty)* | *(empty)* | Webhook URL to POST a JSON run summary after each run. See `NOTIFY_MIN_ERRORS` for the error threshold that controls whether the webhook fires. |
 | `NOTIFY_MIN_ERRORS` | `1` | `1` | Minimum combined error count (`errors + scrape_errors + image_errors + plugin_errors`) before the webhook fires (0 = always fire) |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | *(empty)* | Comma-separated glob patterns to skip during scanning |
-| `DEBUG` | `false` | `false` | When `true`, logs a hint to run uvicorn directly for live template reload |
+| `DEBUG` | `false` | `false` | When true, logs a startup hint to run uvicorn directly for live template reloading. Does not enable uvicorn's --reload mode (incompatible with m3's daemon-thread architecture). |
 
 > **Local dev tip:** copy `.env.example` to `.env` — the app loads it at startup
-> (`override=False`). The defaults in `.env.example` are tuned for local development
-> (`LOG_LEVEL=DEBUG`, `PLUGIN_RATE_LIMIT_SECS=0`, `WEB_HOST=127.0.0.1`).
+> (`override=False`). For local development, consider overriding `LOG_LEVEL=DEBUG`
+> (default: `INFO`), `PLUGIN_RATE_LIMIT_SECS=0` (default: `1.0`), and
+> `WEB_HOST=127.0.0.1` (already set in `.env.example`). See `local-testing.md`
+> for the full recommended local dev configuration.
 
 ---
 

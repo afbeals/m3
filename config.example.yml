@@ -1,3 +1,7 @@
+# LEGACY REFERENCE — do not use this file for configuration.
+# All configuration is via environment variables. See .env.example for the
+# complete annotated list in Docker-compatible .env format.
+#
 # config.example.yml
 #
 # Reference list of all environment variables supported by m3.

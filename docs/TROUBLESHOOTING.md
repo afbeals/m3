@@ -4,15 +4,64 @@ Common issues and how to fix them.
 
 ---
 
+## Local development on Windows
+
+Common issues when developing locally on Windows:
+
+**Virtual environment activation:**
+```powershell
+# If you get "running scripts is disabled":
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+# Activate:
+.venv\Scripts\Activate.ps1  # PowerShell
+.venv\Scripts\activate.bat  # CMD
+```
+
+**Use `python` not `python3`:**
+Windows uses `python` (not `python3`). All commands in this guide work with `python` on Windows.
+
+**Setting environment variables for testing:**
+```powershell
+# PowerShell (current session):
+$env:MYSITE_API_KEY = "yourkey"
+
+# CMD:
+set MYSITE_API_KEY=yourkey
+```
+
+**Heredoc workaround:**
+The `python3 - <<'EOF'` heredoc syntax doesn't work on Windows. Save scripts to a `.py` file instead:
+```python
+# test_script.py
+from app.parser import parse
+print(parse("Actor % mysite - 12345"))
+```
+```bash
+python test_script.py
+```
+
+**Hot-reload (SIGUSR2) not available on Windows:**
+Use `--watch` flag instead: `python -m app.main --watch`
+
+---
+
 ## Quick diagnostic: check the logs first
 
 ```bash
 # Container logs (last 50 lines)
 docker logs m3 --tail 50
 
-# Full rotating log file
+# Full rotating log file — Unix/Linux/macOS / Git Bash:
 docker exec m3 tail -100 /config/logs/m3.log
 
+# Windows PowerShell:
+docker exec m3 powershell Get-Content /config/logs/m3.log -Tail 100
+```
+
+> **Docker Desktop for Windows:** Alternatively, use the Docker Desktop GUI: click the `m3` container → **Files** tab → navigate to `/config/logs/m3.log` → view in the browser.
+
+```bash
 # Or on Unraid host
 cat /mnt/user/appdata/m3/config/logs/m3.log | tail -100
 ```
@@ -64,8 +113,10 @@ Open the web dashboard at `http://<host>:8765/unmatched` to see all unmatched fi
 
 **Step 2 — Test the filename parser**
 
-```bash
-python3 - <<'EOF'
+Save this as `test_parse.py` and run it:
+
+```python
+# test_parse.py
 from app.parser import parse
 
 stem = "Jane Doe with Drama % mysite - 12345"  # replace with your actual filename stem
@@ -74,8 +125,13 @@ if result:
     print(f"site={result.site!r}  subtype={result.match_subtype}  scene_id={result.scene_id!r}")
 else:
     print("Could not parse — filename doesn't match any known pattern")
-EOF
 ```
+
+```bash
+python test_parse.py
+```
+
+> **Windows users:** The `python3 - <<'EOF'` heredoc syntax doesn't work in Windows CMD or PowerShell. Always save to a `.py` file and run it with `python`. Delete the file when done.
 
 If `parse()` returns `None`, the filename grammar doesn't match. See
 [docs/FILENAME_PATTERNS.md](FILENAME_PATTERNS.md) for the full grammar.

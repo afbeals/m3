@@ -17,34 +17,72 @@ This guide covers building the Docker image, deploying it on Unraid, and configu
 
 You have two options: build the image on your local machine and push it, or build directly on the Unraid server.
 
-### Option A — Build on your local machine and push to Docker Hub
+> **Windows prerequisites for Docker Desktop:**
+> 1. **WSL2 must be enabled.** Open PowerShell as Administrator and run: `wsl --install`, then restart your machine.
+> 2. **Docker Desktop must be running.** Look for the whale icon in the system tray. If it's not there, launch Docker Desktop from the Start menu and wait for "Docker Desktop is running."
+> 3. **Sign into Docker Hub** via the Docker Desktop GUI (Sign In button, top-right) — this authenticates all `docker push` commands without needing `docker login`.
 
-Tag both `:latest` and a version tag so you can roll back to a known-good image
-if a new build has problems:
+### Option A — Build and push from your local machine
+
+#### Set your Docker Hub username
+
+Before building, set the `DOCKER_HUB_USER` environment variable to your Docker Hub username:
+
+| Shell | Command |
+|-------|---------|
+| Windows PowerShell (current session) | `$env:DOCKER_HUB_USER = "yourusername"` |
+| Windows PowerShell (persist across sessions) | `[System.Environment]::SetEnvironmentVariable("DOCKER_HUB_USER", "yourusername", "User")` then open a new terminal |
+| Windows CMD | `set DOCKER_HUB_USER=yourusername` |
+| macOS / Linux | `export DOCKER_HUB_USER=yourusername` |
+
+#### Recommended (all platforms): use the task runner
+
+```powershell
+# Windows PowerShell — set your Docker Hub username first:
+$env:DOCKER_HUB_USER = "yourusername"
+python tasks.py release   # builds :latest + :1.3.0, pushes both
+
+# Windows CMD:
+set DOCKER_HUB_USER=yourusername
+python tasks.py release
+
+# macOS / Linux:
+export DOCKER_HUB_USER=yourusername
+python tasks.py release
+```
+
+`python tasks.py release` handles version tagging automatically.
+
+#### Alternative: raw Docker CLI
 
 ```bash
-# Read the current version from app/__init__.py
+# macOS / Linux / Git Bash:
 VERSION=$(python3 -c "from app import __version__; print(__version__)")
+docker build -t $DOCKER_HUB_USER/m3:latest -t $DOCKER_HUB_USER/m3:${VERSION} .
+docker push $DOCKER_HUB_USER/m3:latest
+docker push $DOCKER_HUB_USER/m3:${VERSION}
+```
 
-# From the root of this project
-docker build -t yourdockerhubuser/m3:latest -t yourdockerhubuser/m3:${VERSION} .
+```powershell
+# Windows PowerShell:
+$VERSION = python -c "from app import __version__; print(__version__)"
+docker build -t "$($env:DOCKER_HUB_USER)/m3:latest" -t "$($env:DOCKER_HUB_USER)/m3:$VERSION" .
+docker push "$($env:DOCKER_HUB_USER)/m3:latest"
+docker push "$($env:DOCKER_HUB_USER)/m3:$VERSION"
 ```
 
 > **Docker Hub account required.** If you don't have one, create a free account at
-> [hub.docker.com](https://hub.docker.com). Then authenticate:
->
-> ```bash
-> docker login
-> ```
->
-> Enter your Docker Hub username and password (or access token). You only need to
-> do this once per machine.
+> [hub.docker.com](https://hub.docker.com).
 
-```bash
-# Push both tags to Docker Hub
-docker push yourdockerhubuser/m3:latest
-docker push yourdockerhubuser/m3:${VERSION}
-```
+> **Docker Desktop for Windows users:** If you signed into Docker Desktop through its GUI (the "Sign In" button in the Docker Desktop taskbar app), you are **already authenticated** — skip `docker login`. Docker Desktop stores credentials in Windows Credential Manager, which the Docker CLI reads automatically.
+>
+> Only run `docker login` if you are using Docker Engine without Docker Desktop, or if you haven't signed in via the GUI.
+
+#### Verify the push
+
+Open the Docker Hub Desktop app (or visit [hub.docker.com](https://hub.docker.com)) and navigate to your repositories. You should see `yourusername/m3` with both a `latest` tag and a version tag (e.g., `1.3.0`) with a recent "Last pushed" timestamp.
+
+Alternatively, verify from **Docker Desktop → Images → Hub repositories** tab.
 
 Pinning the container to `yourdockerhubuser/m3:1.3.0` (for example) in Unraid
 gives you a stable reference you can manually upgrade rather than having `:latest`
@@ -151,6 +189,7 @@ Drop any plugin `.py` files into `/mnt/user/appdata/m3/plugins/` — see the Plu
 | `PLUGIN_FETCH_TIMEOUT_SECS` | `60.0` | Seconds before a single plugin fetch is aborted and marked as `error` |
 | `WEB_ENABLED` | `true` | Set to `false` to disable the dashboard entirely |
 | `WEB_PORT` | `8765` | Must match the container port in your port mapping above |
+| `WEB_HOST` | `0.0.0.0` | Bind address for the web dashboard. Use `127.0.0.1` to restrict access to localhost only. |
 | `APP_NAME` | `m3` | Display name in the dashboard header and page title |
 | `LIBRARY_EXCLUDE_PATTERNS` | *(empty)* | Comma-separated glob patterns to skip during scanning (e.g. `*.part,/media/incoming/**`) |
 | `NOTIFY_URL` | *(empty)* | Webhook URL to receive a JSON run summary after each run (Apprise, Gotify, etc.) — leave empty to disable |
@@ -313,16 +352,30 @@ Alternatively, follow the [official Plex guide](https://support.plex.tv/articles
 curl -s "http://YOUR_PLEX_IP:32400/identity?X-Plex-Token=YOUR_TOKEN" | grep -o 'machineIdentifier="[^"]*"'
 ```
 
+```powershell
+# Windows PowerShell:
+Invoke-RestMethod "http://YOUR_PLEX_IP:32400/identity?X-Plex-Token=YOUR_TOKEN"
+# If valid, returns XML with your server info. If 401, token is wrong.
+```
+
 If this returns output (e.g. `machineIdentifier="abc123..."`), the token is valid and Plex is reachable at that address.
 
 ---
 
-## Updating the Container
+## Updating m3
 
-### If using Docker Hub:
-1. Pull the new image: `docker pull yourdockerhubuser/m3:latest`
-2. In the Unraid Docker UI: click the container icon → **Update** (or Force Update)
-3. The container restarts automatically with the new image
+After pushing a new image to Docker Hub:
+
+**Via Unraid Docker UI (easiest — no SSH needed):**
+1. In the Unraid web UI → Docker tab, click **Check for Updates**
+2. If a new version is available, the m3 row shows an **Update** button — click it
+3. Unraid pulls the new image and restarts the container automatically
+
+**Via SSH (optional):**
+```bash
+docker pull yourusername/m3:latest
+docker restart m3
+```
 
 ### If built locally on Unraid:
 ```bash
@@ -401,15 +454,14 @@ m3 POSTs a JSON body that Gotify receives as a message. The key fields:
   "started_at": "2025-01-01T03:00:00+00:00",
   "finished_at": "2025-01-01T03:05:00+00:00",
   "duration_seconds": 300,
-  "total_scanned": 50,
   "updated": 3,
   "skipped": 45,
-  "renamed": 0,
   "unmatched": 1,
   "scrape_errors": 1,
-  "image_errors": 0,
   "errors": 0,
   "plugin_errors": 0,
+  "image_errors": 0,
+  "total_scanned": 50,
   "first_error": null,
   "first_scrape_error": "Connection timeout for site X"
 }
