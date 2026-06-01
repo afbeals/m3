@@ -2,6 +2,105 @@
 
 All notable changes to m3 are documented here.
 
+## [2.0.0] — plugin framework, web improvements, Windows-ready
+
+### Highlights
+
+A large quality and hardening pass across all layers: plugin API expanded with new metadata fields, web dashboard gains dry-run mode and a filename test modal, Docker Hub CI/CD workflow added, Windows development experience fully documented and tested.
+
+### Plugin system
+
+- **New `MetadataResult` fields** — `release_date` (ISO date, auto-derives `year`; writes `<premiered>` to NFO and `originallyAvailableAt` to Plex), `directors` (list; writes `<director>` to NFO and pushes to Plex), `studio` (writes `<studio>` to NFO and Plex).
+- **`PluginValidationError`** — distinct from `ValueError`; raised by `__post_init__` for invalid data; recorded as `status=plugin_error` in reports.
+- **`setup()` lifecycle hook** — called once after plugin instantiation; raise to prevent registration (e.g. missing API key). All example plugins demonstrate this.
+- **`ScrapeError` re-exported** from `app.plugins.base` — single import line for all plugin primitives.
+- **`close()` lifecycle hook** — called on hot-reload to release resources (e.g. `httpx.Client`).
+- **Element-type validation** — list fields (`actors`, `genres`, etc.) now validate all elements are strings.
+- **`site_id` whitespace guard** — `__init_subclass__` now uses `.strip()` to catch whitespace-only `site_id` values.
+- **`all_ids()` strips aliases** — whitespace stripped from aliases before registration.
+- **Loader: deferred `sys.modules` cleanup** — shared helper modules stay available across the full plugin load loop; cleaned up after all files are processed.
+- **Loader: eviction safety** — on collision, all alias keys for the evicted plugin are removed before `close()` is called; `closed_instances` set prevents double-close.
+
+### Real plugins added
+
+- **`plugins/tmdb.py`** — TMDb v3 JSON API plugin (free key required). Uses `append_to_response=credits,images` for a single-request full-detail fetch. Full comments explaining every decision.
+- **`plugins/thetvdb.py`** — TheTVDB HTML scraper (no key required). Verified against live pages. Selectors documented.
+- **`plugins/example_plugin.py`** and **`plugins/example_html_plugin.py`** — heavily commented templates; demonstrate all `MetadataResult` fields, `setup()`, `PluginValidationError`, result scoring, session reuse, CSS selector registry, and lazy-load image fallback.
+
+### Web dashboard
+
+- **Dry-run mode** — "Run now" button now has a "Dry run (routing only, no writes)" checkbox. Triggers a `dry_run_strict` run; results show as `status=skipped` with routing preview.
+- **Filename test modal** — "⚡ Test a filename" button on the Plugins page. Paste any filename stem; shows parse result, which plugin handles it, and the full `MetadataResult` — all in the dashboard without touching the CLI.
+- **`plugin_error` status** — filter tab, stat card, and badge added to run detail page.
+- **Pagination fix** — "Page X of Y" now shows the real total run count, not the capped 100-entry limit.
+- **Stats partial** — `/api/stats` endpoint returns just the stats block; dashboard polls it instead of the full `/` page.
+- **Log panel partial** — `/api/log-panel` returns only the log content; refresh button no longer injects full HTML into `#log-panel`.
+- **`plugin_errors` and `image_errors` in webhook payload** — downstream alert systems can now distinguish all failure modes.
+- **CSP fix** — all inline `<script>` blocks moved to `/static/dashboard.js`; `script-src 'self'` now actually enforces correctly.
+- **`trigger_file` uses resolved path** — symlinks and `..` components normalised before NFO construction.
+- **Trigger records cached** — file history page no longer re-reads all trigger JSON files on every request.
+- **`status=renamed` documented** in TROUBLESHOOTING.md.
+
+### Writers (NFO/Plex)
+
+- **`write_images` before `write_nfo`** — image extension (jpg/png/webp) now determined before the NFO is written, so `<art>` block references the correct file.
+- **Content-type extension detection** — images saved with correct extension derived from `Content-Type` header; `.jpg` fallback only when no image exists.
+- **`originallyAvailableAt`** pushed to Plex from both `push_to_plex` and `push_nfo_to_plex`.
+- **`push_nfo_to_plex` reads `<director>` and `<studio>`** from NFO.
+- **Partial image cleanup** — partially-downloaded images deleted before recording `image_error`.
+- **`image_error` message corrected** — now says "NFO not written" (NFO is skipped when images fail).
+- **XXE-safe parser** — `rename_nfo_assets` now uses `XMLParser(resolve_entities=False)`.
+- **0-byte image rejected** — `Content-Length: 0` response rejected before writing.
+
+### Data correctness
+
+- **`dry_run=True` records `status=skipped`** — run summaries are now meaningful in dry-run mode.
+- **Report filename collision** — `os.getpid()` appended to prevent same-second clobber.
+- **`plex_failed=True` for renamed files** — Plex push failure on rename now surfaces in reports.
+- **`get_run` LRU cache** — double-checked locking prevents TOCTOU eviction of valid entries.
+- **`list_runs` mtime sort** — uses `(mtime, filename)` as sort key; filename tiebreaker handles Windows 10ms filesystem resolution.
+- **`--retry-failed` retries `image_error` and `plugin_error`** (previously only `error` and `scrape_error`).
+
+### Code quality
+
+- **`FileStatus` Literal type** defined in `reporter.py`; used throughout.
+- **`total_scanned` unconditional** — unknown status values no longer silently undercount the total.
+- **`_stop_event` removed** — rate-limit sleep uses `time.sleep`; the unused event was misleading.
+- **`_run_with_media` forwards `dry_run`** — `--retry-failed --dry-run` now works correctly.
+- **`notify_min_errors` default raised to 1** — webhook no longer fires on every clean run.
+- **`PLUGIN_FETCH_TIMEOUT_SECS=0` warns** at startup.
+- **`PLUGIN_RATE_LIMIT_SECS=0` warns** at startup.
+- **`safe_app_name` strips Windows-illegal chars** from log filename.
+- **`cleanup_old_files` backup detection** tightened to numeric suffix only.
+- **`retry_with_backoff` guards** — `max_attempts < 1` and `backoff_base < 0` now raise `ValueError`.
+
+### Windows development
+
+- **`tasks.py setup()`** validates Python 3.12+ at startup with a clear message.
+- **`tasks.py dev/once/dev-reload`** use `run_interactive()` with `CREATE_NEW_PROCESS_GROUP` so Ctrl+C works correctly in PowerShell.
+- **`tzdata`** added to `requirements.txt` — non-UTC TZ values work on Windows without system timezone database.
+- **`lxml>=5.3.0`** — pre-built wheels available for Python 3.13 on Windows.
+- **`watchfiles`** moved to `requirements-dev.txt` — not installed in production Docker image.
+- **`.gitignore`** active `plugins/*.py` rule — custom plugins with API keys not accidentally committed.
+- **`test_validate_paths`** Windows-compatible — uses file-as-directory to guarantee OSError on all platforms.
+- **`trigger_reload` SIGUSR2** accessed via `getattr` — no `AttributeError` at import time on Windows.
+
+### Docker / Unraid
+
+- **`.github/workflows/docker.yml`** — auto-builds and pushes to Docker Hub on every `main` push (requires `DOCKER_HUB_USER` variable + `DOCKER_HUB_TOKEN` secret).
+- **`tasks.py build/push/release`** — `python tasks.py release` handles version tagging on all platforms.
+- **`unraid-template.xml`** — `<Repository>` updated to `YOURDOCKERHUBUSER/m3:latest` placeholder; `NOTIFY_MIN_ERRORS` default corrected to `1`.
+- **Dockerfile** — `HEALTHCHECK` comment fixed; base image `python:3.12-slim`.
+
+### Documentation
+
+- **Prerequisites section** — Python PATH warning, Python 3.12 requirement, Git install.
+- **`.env.example`** created — all env vars documented; `PLEX_URL`/`PLEX_TOKEN` marked optional (sidecar-only mode works without Plex).
+- **UNRAID_SETUP.md** — Docker Desktop for Windows workflow (WSL2, GUI auth, PowerShell syntax, Docker Hub Desktop verification); Unraid "Check for Updates → Update" replaces manual `docker pull`.
+- **PLUGIN_WRITING.md** — `MetadataResult` field reference table; `setup()`/`close()` lifecycle; `PluginValidationError` manual raise example; minimal runnable stub; heredoc replaced with Windows-compatible save-to-file approach.
+- **TROUBLESHOOTING.md** — "Local development on Windows" section; `status=renamed` entry; `image_error` root-cause diagnosis; `add_form` guidance.
+- **FILENAME_PATTERNS.md** — `studio_id`/`actress_id` clarified as never populated by the parser.
+
 ## [1.3.0] — developer ergonomics, Windows support, new CLI flags
 
 ### New features

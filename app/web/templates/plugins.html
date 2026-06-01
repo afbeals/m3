@@ -4,15 +4,22 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Loaded Plugins</h1>
-  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
-    <form method="POST" action="/trigger/reload"
-          hx-post="/trigger/reload"
-          hx-target="#reload-feedback"
-          hx-swap="innerHTML"
-          hx-confirm="Reload all plugins now?">
-      <button type="submit" title="Reload plugins without restarting the container (Unix only)">↺ Reload plugins</button>
-    </form>
-    <span id="reload-feedback" style="font-size:0.8rem; min-height:1.2em;"></span>
+  <div style="display:flex; align-items:center; gap:0.75rem;">
+    <button type="button"
+            onclick="openFilenameTest()"
+            title="Test how a filename would be parsed and routed">
+      ⚡ Test a filename
+    </button>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+      <form method="POST" action="/trigger/reload"
+            hx-post="/trigger/reload"
+            hx-target="#reload-feedback"
+            hx-swap="innerHTML"
+            hx-confirm="Reload all plugins now?">
+        <button type="submit" title="Reload plugins without restarting the container (Unix only)">↺ Reload plugins</button>
+      </form>
+      <span id="reload-feedback" style="font-size:0.8rem; min-height:1.2em;"></span>
+    </div>
   </div>
 </div>
 
@@ -46,6 +53,72 @@
 {% endif %}
 
 <p class="muted" style="margin-top:1rem; font-size:0.8rem;">
-  To reload plugins without restarting: <code>docker exec pm kill -USR2 1</code> (Unix only). A container restart is still needed on Windows.
+  To reload plugins without restarting: <code>docker exec m3 kill -USR2 1</code> (Unix only). A container restart is still needed on Windows.
 </p>
+
+<!-- Filename test modal -->
+<div id="filename-test-backdrop"
+     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:100; align-items:center; justify-content:center;">
+  <div style="background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:1.5rem;
+              width:min(600px,92vw); max-height:85vh; overflow-y:auto; position:relative;">
+
+    <button type="button"
+            onclick="closeFilenameTest()"
+            style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none;
+                   color:var(--dim); font-size:1.1rem; cursor:pointer;"
+            aria-label="Close">✕</button>
+
+    <h2 style="margin-bottom:0.25rem; font-size:0.95rem;">Test filename routing</h2>
+    <p class="muted" style="font-size:0.8rem; margin-bottom:1rem;">
+      Paste any filename stem to see how it parses, which plugin handles it, and what metadata the plugin returns.
+    </p>
+
+    <form hx-post="/api/test-plugin"
+          hx-target="#filename-test-result"
+          hx-swap="innerHTML"
+          hx-disabled-elt="find button[type='submit']"
+          style="display:flex; gap:0.5rem; align-items:flex-start; flex-wrap:wrap;">
+
+      <input type="search"
+             name="filename_stem"
+             id="filename-test-input"
+             placeholder="Actor % site - 12345"
+             aria-label="Filename stem to test"
+             style="flex:1; min-width:200px; background:var(--bg3); border:1px solid var(--border);
+                    color:var(--text); border-radius:4px; padding:0.4rem 0.75rem;
+                    font-family:inherit; font-size:0.85rem;">
+
+      <button type="submit" class="primary">▶ Run test</button>
+    </form>
+
+    <p class="muted" style="font-size:0.75rem; margin-top:0.4rem;">
+      No <code>.mp4</code> extension needed — paste just the filename stem, e.g.
+      <code>The Mummy % tmdb - 335988</code>
+    </p>
+
+    <div id="filename-test-result" style="margin-top:1rem; min-height:1.5rem;"></div>
+  </div>
+</div>
+
+<script>
+function openFilenameTest() {
+  document.getElementById('filename-test-input').value = '';
+  document.getElementById('filename-test-result').innerHTML = '';
+  var backdrop = document.getElementById('filename-test-backdrop');
+  backdrop.style.display = 'flex';
+  setTimeout(function() { document.getElementById('filename-test-input').focus(); }, 50);
+}
+
+function closeFilenameTest() {
+  document.getElementById('filename-test-backdrop').style.display = 'none';
+}
+
+document.getElementById('filename-test-backdrop').addEventListener('click', function(e) {
+  if (e.target === this) closeFilenameTest();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeFilenameTest();
+});
+</script>
 {% endblock %}

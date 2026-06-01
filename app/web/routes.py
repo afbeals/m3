@@ -335,6 +335,177 @@ def plugin_list(request: Request):
     )
 
 
+@router.post("/api/test-plugin", response_class=HTMLResponse)
+async def test_plugin(request: Request):
+    """Parse a filename stem, route it to a plugin, run fetch(), and return an HTML result fragment.
+
+    Called from the filename test modal via HTMX. Handles all outcomes:
+    - parse failure (no % separator, add-form, etc.)
+    - no plugin registered for the parsed site
+    - plugin returns None (no match)
+    - plugin raises an exception
+    - successful result
+    """
+    form = await request.form()
+    filename_stem = (form.get("filename_stem") or "").strip()
+
+    if not filename_stem:
+        return HTMLResponse('<p style="color:var(--dim);">Enter a filename stem above.</p>')
+
+    # ── Step 1: Parse ────────────────────────────────────────────────────────
+    from app.parser import parse
+    parsed = parse(filename_stem)
+
+    if parsed is None:
+        return HTMLResponse(
+            '<div style="color:var(--red);">✗ Could not parse this filename.</div>'
+            '<div class="muted" style="font-size:0.8rem; margin-top:0.4rem;">'
+            'Expected format: <code>Actor % site - 12345</code><br>'
+            'For Add-form: <code>Add Actor Name In Title At Studio</code>'
+            '</div>'
+        )
+
+    # Show parse summary regardless of outcome
+    parse_html = (
+        '<div style="border:1px solid var(--border); border-radius:4px; padding:0.6rem 0.75rem; margin-bottom:0.75rem;">'
+        f'<div class="muted" style="font-size:0.75rem; margin-bottom:0.3rem;">Parsed as</div>'
+        f'<table style="width:100%; border-collapse:collapse;">'
+    )
+    parse_fields = [
+        ("form",       parsed.form),
+        ("site",       parsed.site or "—"),
+        ("subtype",    parsed.match_subtype),
+        ("scene_id",   parsed.scene_id or "—"),
+        ("direct_url", parsed.direct_url or "—"),
+        ("date",       parsed.date or "—"),
+        ("title",      parsed.title or "—"),
+        ("actors",     ", ".join(parsed.actors) if parsed.actors else "—"),
+    ]
+    for label, value in parse_fields:
+        if value and value != "—":
+            parse_html += (
+                f'<tr><td style="width:30%; font-size:0.78rem; color:var(--dim); padding:0.1rem 0;">{label}</td>'
+                f'<td style="font-size:0.82rem; padding:0.1rem 0;"><code>{value}</code></td></tr>'
+            )
+    parse_html += '</table></div>'
+
+    # add-form files are handled before dispatch and never reach a plugin
+    if parsed.form == "add":
+        return HTMLResponse(
+            parse_html
+            + '<div style="color:var(--blue);">ℹ Add-form file — handled directly by m3 (no plugin needed).</div>'
+            '<div class="muted" style="font-size:0.8rem; margin-top:0.3rem;">'
+            'Add-form filenames are recorded as <code>add_form</code> status and require manual Plex entry.</div>'
+        )
+
+    # ── Step 2: Route ────────────────────────────────────────────────────────
+    plugin_router = request.app.state.plugin_router
+    registry = request.app.state.plugin_registry
+    _parsed, plugin = plugin_router.dispatch(filename_stem)
+
+    if plugin is None:
+        site_hint = f"<code>{parsed.site}</code>" if parsed.site else "no site token found"
+        return HTMLResponse(
+            parse_html
+            + f'<div style="color:var(--yellow);">✗ No plugin registered for {site_hint}.</div>'
+            '<div class="muted" style="font-size:0.8rem; margin-top:0.3rem;">'
+            f'Loaded plugins: {", ".join(f"<code>{k}</code>" for k in sorted(registry.keys())) or "none"}'
+            '</div>'
+        )
+
+    cls = type(plugin)
+    route_html = (
+        f'<div style="margin-bottom:0.75rem;">'
+        f'<span style="color:var(--green);">✓ Routed to plugin</span> '
+        f'<strong>{cls.site_id}</strong> '
+        f'<span class="muted" style="font-size:0.8rem;">({cls.__name__})</span>'
+        f'</div>'
+    )
+
+    # ── Step 3: Fetch ────────────────────────────────────────────────────────
+    config = request.app.state.config
+    timeout = config.plugin_fetch_timeout_secs if config.plugin_fetch_timeout_secs else 30.0
+    from app.utils import call_with_timeout
+    from app.plugins.base import PluginValidationError
+
+    try:
+        result = call_with_timeout(lambda: plugin.fetch(parsed), timeout_secs=timeout)
+    except TimeoutError:
+        return HTMLResponse(
+            parse_html + route_html
+            + f'<div style="color:var(--red);">⏱ Plugin fetch timed out after {timeout:.0f}s.</div>'
+        )
+    except PluginValidationError as exc:
+        return HTMLResponse(
+            parse_html + route_html
+            + f'<div style="color:var(--red);">⚠ Plugin returned invalid data: <code>{exc}</code></div>'
+        )
+    except Exception as exc:
+        return HTMLResponse(
+            parse_html + route_html
+            + f'<div style="color:var(--red);">✗ Plugin raised an exception: <code>{exc}</code></div>'
+            '<div class="muted" style="font-size:0.8rem; margin-top:0.3rem;">'
+            'Check the app logs for the full traceback.</div>'
+        )
+
+    if result is None:
+        return HTMLResponse(
+            parse_html + route_html
+            + '<div style="color:var(--yellow);">✗ Plugin returned None — no match found.</div>'
+            '<div class="muted" style="font-size:0.8rem; margin-top:0.3rem;">'
+            'The plugin could not find a matching record for this filename on the remote site.</div>'
+        )
+
+    # ── Step 4: Show result ──────────────────────────────────────────────────
+    def _fmt_list(lst, max_items=5):
+        if not lst:
+            return None
+        shown = ", ".join(lst[:max_items])
+        return shown + (f" +{len(lst)-max_items} more" if len(lst) > max_items else "")
+
+    def _fmt_summary(s):
+        if not s:
+            return None
+        return s[:150] + ("…" if len(s) > 150 else "")
+
+    fields = [
+        ("title",          result.title),
+        ("year",           result.year),
+        ("release_date",   result.release_date),
+        ("rating",         result.rating),
+        ("content_rating", result.content_rating),
+        ("summary",        _fmt_summary(result.summary)),
+        ("genres",         _fmt_list(result.genres)),
+        ("directors",      _fmt_list(result.directors)),
+        ("actors",         _fmt_list(result.actors)),
+        ("studio",         result.studio),
+        ("tags",           _fmt_list(result.tags)),
+        ("labels",         _fmt_list(result.labels)),
+        ("source_id",      result.source_id),
+        ("source_url",     result.source_url),
+        ("poster_url",     result.poster_url),
+        ("fanart_url",     result.fanart_url),
+    ]
+
+    rows = "".join(
+        f'<tr>'
+        f'<td style="width:32%; font-size:0.78rem; color:var(--dim); padding:0.15rem 0.5rem 0.15rem 0;">{label}</td>'
+        f'<td style="font-size:0.82rem; padding:0.15rem 0; word-break:break-all;">{value}</td>'
+        f'</tr>'
+        for label, value in fields
+        if value is not None and value != "" and value != []
+    )
+
+    result_html = (
+        '<div style="border:1px solid var(--border); border-radius:4px; padding:0.6rem 0.75rem;">'
+        '<div class="muted" style="font-size:0.75rem; margin-bottom:0.3rem;">Metadata result</div>'
+        f'<table style="width:100%; border-collapse:collapse;">{rows}</table>'
+        '</div>'
+    )
+
+    return HTMLResponse(parse_html + route_html + result_html)
+
+
 # ---------------------------------------------------------------------------
 # Config page
 # ---------------------------------------------------------------------------
@@ -406,12 +577,17 @@ def trigger_reload(request: Request):
     Redirects to /plugins so the user sees the refreshed plugin list.
     """
     if platform.system() != "Windows":
-        try:
-            os.kill(os.getpid(), signal.SIGUSR2)
-            logger.info("Plugin reload triggered via web UI")
-        except Exception as exc:
-            logger.warning("Could not send SIGUSR2 for plugin reload: %s", exc)
-            raise HTTPException(status_code=500, detail="Internal error — see server logs")
+        sigusr2 = getattr(signal, "SIGUSR2", None)
+        if sigusr2 is not None:
+            try:
+                os.kill(os.getpid(), sigusr2)
+                logger.info("Plugin reload triggered via web UI")
+            except Exception as exc:
+                logger.warning("Could not send SIGUSR2 for plugin reload: %s", exc)
+                raise HTTPException(status_code=500, detail="Internal error — see server logs")
+        else:
+            # SIGUSR2 not available (e.g. running tests on Windows with mocked platform)
+            logger.info("Plugin reload: SIGUSR2 not available, skipping signal")
     else:
         logger.info("Plugin reload requested on Windows — restart required instead")
 
@@ -421,7 +597,7 @@ def trigger_reload(request: Request):
 
 
 @router.post("/trigger/run")
-def trigger_run(request: Request):
+async def trigger_run(request: Request):
     """Schedule an immediate run then redirect to the dashboard."""
     run_state = request.app.state.run_state
     if run_state is not None and run_state.snapshot()["running"]:
@@ -435,13 +611,24 @@ def trigger_run(request: Request):
 
     scheduler = request.app.state.scheduler
     run_fn = request.app.state.run_fn
+    dry_run_fn = request.app.state.dry_run_fn  # may be None on older deployments
     if scheduler is None or run_fn is None:
         raise HTTPException(status_code=503, detail="Scheduler not available")
     if not scheduler.running:
         raise HTTPException(status_code=503, detail="Scheduler not ready")
+
+    # Check if the dry-run checkbox was ticked
+    form = await request.form()
+    is_dry_run = form.get("dry_run_strict") == "1"
+
+    # Use dry_run_fn if available and requested, otherwise fall back to run_fn
+    job_fn = (dry_run_fn if (is_dry_run and dry_run_fn is not None) else run_fn)
+    job_id = "dry_run_trigger" if is_dry_run else "manual_trigger"
+
     try:
-        scheduler.add_job(run_fn, id="manual_trigger", replace_existing=True)
-        logger.info("Manual run triggered via web UI")
+        scheduler.add_job(job_fn, trigger="date", id=job_id, replace_existing=True,
+                          misfire_grace_time=3600)
+        logger.info("Manual %srun triggered via web UI", "dry " if is_dry_run else "")
     except Exception as exc:
         logger.warning("Could not schedule manual run: %s", exc)
         raise HTTPException(status_code=500, detail="Internal error — see server logs")
@@ -450,6 +637,11 @@ def trigger_run(request: Request):
     # A 303 redirect causes HTMX to do a full-page navigation rather than a
     # partial swap, leaving the user with no visible feedback.
     if request.headers.get("HX-Request"):
+        if is_dry_run:
+            return HTMLResponse(
+                '<span style="color:var(--blue); font-size:0.85rem;">✓ Dry run queued — check report for routing preview</span>',
+                status_code=200,
+            )
         return HTMLResponse(
             '<span style="color:var(--green); font-size:0.85rem;">✓ Queued — stats update shortly</span>',
             status_code=200,

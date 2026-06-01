@@ -281,8 +281,13 @@ def test_validate_paths_raises_when_report_path_not_writable(tmp_path, monkeypat
 
     cfg = MagicMock()
     cfg.library_paths = [str(lib)]
-    cfg.report_path = "/nonexistent/deeply/nested/unwritable/path"
     cfg.log_path = str(tmp_path / "logs")
+
+    # Use a path that is guaranteed unwritable on all platforms:
+    # point report_path at an existing *file* so os.makedirs fails with OSError.
+    unwritable = tmp_path / "a_file.txt"
+    unwritable.write_text("block")
+    cfg.report_path = str(unwritable / "subdir")  # file treated as dir → OSError
 
     with pytest.raises(SystemExit):
         _validate_paths(cfg)

@@ -5,10 +5,14 @@
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
   <h1>Latest Run</h1>
   <div style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
-    <button type="button" class="primary"
-            hx-post="/trigger/run" hx-target="#run-now-feedback" hx-swap="innerHTML">
-      ▶ Run now
-    </button>
+    <form hx-post="/trigger/run" hx-target="#run-now-feedback" hx-swap="innerHTML"
+          hx-disabled-elt="find button[type='submit']" style="display:flex; flex-direction:column; align-items:flex-end; gap:0.35rem;">
+      <button type="submit" class="primary">▶ Run now</button>
+      <label style="font-size:0.75rem; color:var(--dim); cursor:pointer; display:flex; align-items:center; gap:0.35rem;">
+        <input type="checkbox" name="dry_run_strict" value="1" style="cursor:pointer;">
+        Dry run (routing only, no writes)
+      </label>
+    </form>
     <span id="run-now-feedback" style="font-size:0.8rem; min-height:1.2em;"></span>
     {% if next_run %}
     <span class="muted" style="font-size:0.75rem;">Next run: {{ next_run.strftime("%Y-%m-%d %H:%M") }}</span>

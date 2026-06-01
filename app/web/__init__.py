@@ -38,7 +38,8 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None) -> FastAPI:
+def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None,
+               dry_run_fn=None) -> FastAPI:
     """
     Build and return the FastAPI application.
 
@@ -47,6 +48,7 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     scheduler       — the APScheduler BlockingScheduler instance (for "Run now")
     run_fn          — the run() closure used by the scheduler (same one reused here)
     run_state       — optional RunState for the in-progress indicator
+    dry_run_fn      — optional dry-run closure (runs with dry_run_strict=True)
     """
     app = FastAPI(title=f"{config.app_name} dashboard", docs_url=None, redoc_url=None)
 
@@ -57,6 +59,7 @@ def create_app(config, plugin_registry: dict, scheduler, run_fn, run_state=None)
     app.state.plugin_router = Router(plugin_registry)
     app.state.scheduler = scheduler
     app.state.run_fn = run_fn
+    app.state.dry_run_fn = dry_run_fn
     app.state.run_state = run_state
 
     # Static files (CSS)

@@ -122,7 +122,10 @@ def list_runs(report_path: str, *, _invalidation_key: tuple | None = None) -> li
 
     filenames = sorted(
         [f for f in os.listdir(report_path) if f.startswith("run_") and f.endswith(".json")],
-        key=_safe_mtime,
+        # Primary: mtime (newest first). Secondary: filename (lexicographic, newest first).
+        # The filename tiebreaker handles Windows filesystems where multiple files written
+        # in rapid succession share the same mtime (Windows has ~10ms timestamp resolution).
+        key=lambda f: (_safe_mtime(f), f),
         reverse=True,
     )
     # Do NOT pre-slice filenames[:_MAX_RUNS] here — if some files were deleted between

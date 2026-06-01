@@ -53,6 +53,38 @@ def run(*cmd: str, env: dict | None = None, check: bool = True) -> int:
     return result.returncode
 
 
+def run_interactive(*cmd: str, env: dict | None = None) -> int:
+    """Run a command interactively, forwarding Ctrl+C correctly on all platforms.
+
+    subprocess.run() on Windows swallows Ctrl+C in PowerShell — the signal is
+    delivered to the parent (tasks.py) but not forwarded to the child process.
+    Using Popen with CREATE_NEW_PROCESS_GROUP + CTRL_C_EVENT fixes this.
+    """
+    merged_env = {**os.environ, **(env or {})}
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            # CREATE_NEW_PROCESS_GROUP lets us send CTRL_C_EVENT to the child
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            proc = subprocess.Popen(cmd, env=merged_env,
+                                    creationflags=CREATE_NEW_PROCESS_GROUP)
+        else:
+            proc = subprocess.Popen(cmd, env=merged_env)
+        proc.wait()
+        return proc.returncode
+    except KeyboardInterrupt:
+        # Ctrl+C received — give the child a moment to shut down gracefully
+        try:
+            if sys.platform == "win32":
+                proc.send_signal(subprocess.signal.CTRL_C_EVENT)
+            else:
+                proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+        return 0
+
+
 TASKS = {}
 
 def task(name, description: str = ""):
@@ -145,20 +177,20 @@ def check():
 
 @task("dev")
 def dev():
-    """Start the app (scheduler + web dashboard)."""
-    run(PY, "-m", "app.main")
+    """Start the app (scheduler + web dashboard). Ctrl+C to stop."""
+    run_interactive(PY, "-m", "app.main")
 
 
 @task("dev-reload")
 def dev_reload():
     """Start the app with DEBUG=true — logs a reminder to run uvicorn directly for live template reload."""
-    run(PY, "-m", "app.main", env={"DEBUG": "true"})
+    run_interactive(PY, "-m", "app.main", env={"DEBUG": "true"})
 
 
 @task("once")
 def once():
     """Run one metadata pass and exit."""
-    run(PY, "-m", "app.main", "--once")
+    run_interactive(PY, "-m", "app.main", "--once")
 
 
 @task("validate")

@@ -995,6 +995,14 @@ def main() -> None:
         finally:
             run_state.stop()
 
+    def _dry_run():
+        """Web UI dry-run: routing preview with no API calls and no writes."""
+        run_state.start()
+        try:
+            run(config, router, dry_run_strict=True)
+        finally:
+            run_state.stop()
+
     if args.once:
         # Run immediately and exit — useful for testing or docker exec one-shots
         _run()
@@ -1072,7 +1080,8 @@ def main() -> None:
         import uvicorn
         from app.web import create_app
 
-        web_app = create_app(config, registry, scheduler, _run, run_state)
+        web_app = create_app(config, registry, scheduler, _run, run_state,
+                             dry_run_fn=_dry_run)
         web_config = uvicorn.Config(
             web_app,
             host=config.web_host,
