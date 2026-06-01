@@ -64,3 +64,37 @@ document.addEventListener('htmx:afterSwap', function (evt) {
     if (q && q.value) { filterLogs(q.value); }
   }
 });
+
+// === Filename test modal (plugins.html) ===
+function openFilenameTest() {
+  var input = document.getElementById('filename-test-input');
+  var result = document.getElementById('filename-test-result');
+  if (!input || !result) { return; }
+  input.value = '';
+  result.innerHTML = '';
+  var backdrop = document.getElementById('filename-test-backdrop');
+  if (backdrop) {
+    backdrop.style.display = 'flex';
+    setTimeout(function () { input.focus(); }, 50);
+  }
+}
+
+function closeFilenameTest() {
+  var backdrop = document.getElementById('filename-test-backdrop');
+  if (backdrop) { backdrop.style.display = 'none'; }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  var backdrop = document.getElementById('filename-test-backdrop');
+  if (!backdrop) { return; }
+
+  // Close on backdrop click
+  backdrop.addEventListener('click', function (e) {
+    if (e.target === backdrop) { closeFilenameTest(); }
+  });
+});
+
+// Close on Escape (global — safe since backdrop won't exist on non-plugins pages)
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeFilenameTest(); }
+});

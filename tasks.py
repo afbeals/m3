@@ -125,14 +125,33 @@ def setup():
         print("Windows: During install, check 'Add python.exe to PATH'")
         _sys.exit(1)
     run(PY_EXE, "-m", "venv", str(VENV))
-    run(PIP, "install", "--upgrade", "pip")
-    run(PIP, "install", "-r", "requirements.txt", "-r", "requirements-dev.txt")
-    print("\nSetup complete. Copy .env.example to .env and fill in your values.")
-    if sys.platform == "win32":
-        print(f"Activate: {VENV}\\Scripts\\activate.bat  (CMD)")
-        print(f"          {VENV}\\Scripts\\Activate.ps1   (PowerShell)")
+    # Use the venv Python to upgrade pip rather than the pip executable directly.
+    # On Windows, running pip.exe to upgrade itself fails with "to modify pip,
+    # please run: python -m pip install --upgrade pip" — using python -m pip avoids this.
+    venv_py = str(BIN / PY_EXE)
+    run(venv_py, "-m", "pip", "install", "--upgrade", "pip")
+    run(venv_py, "-m", "pip", "install", "-r", "requirements.txt", "-r", "requirements-dev.txt")
+
+    # Copy .env.example → .env if .env doesn't exist yet
+    env_example = ROOT / ".env.example"
+    env_file = ROOT / ".env"
+    if env_example.exists() and not env_file.exists():
+        import shutil
+        shutil.copy(env_example, env_file)
+        print(f"\n✓ Created .env from .env.example — edit it to set your PLEX_URL, PLEX_TOKEN, and LIBRARY_PATHS.")
+    elif env_file.exists():
+        print(f"\n✓ .env already exists — skipping copy.")
     else:
-        print(f"Activate: source {VENV}/bin/activate")
+        print(f"\n⚠ .env.example not found — create a .env file manually.")
+
+    print("\nSetup complete.")
+    if sys.platform == "win32":
+        print(f"  Run:      python tasks.py dev")
+        print(f"  Activate: {VENV}\\Scripts\\activate.bat  (CMD)")
+        print(f"            {VENV}\\Scripts\\Activate.ps1   (PowerShell)")
+    else:
+        print(f"  Run:      python tasks.py dev")
+        print(f"  Activate: source {VENV}/bin/activate")
 
 
 @task("test")

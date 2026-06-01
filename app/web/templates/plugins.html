@@ -100,25 +100,5 @@
   </div>
 </div>
 
-<script>
-function openFilenameTest() {
-  document.getElementById('filename-test-input').value = '';
-  document.getElementById('filename-test-result').innerHTML = '';
-  var backdrop = document.getElementById('filename-test-backdrop');
-  backdrop.style.display = 'flex';
-  setTimeout(function() { document.getElementById('filename-test-input').focus(); }, 50);
-}
-
-function closeFilenameTest() {
-  document.getElementById('filename-test-backdrop').style.display = 'none';
-}
-
-document.getElementById('filename-test-backdrop').addEventListener('click', function(e) {
-  if (e.target === this) closeFilenameTest();
-});
-
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeFilenameTest();
-});
-</script>
+{# Modal JS (openFilenameTest / closeFilenameTest) lives in /static/dashboard.js #}
 {% endblock %}
