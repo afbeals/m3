@@ -66,35 +66,38 @@ document.addEventListener('htmx:afterSwap', function (evt) {
 });
 
 // === Filename test modal (plugins.html) ===
-function openFilenameTest() {
-  var input = document.getElementById('filename-test-input');
-  var result = document.getElementById('filename-test-result');
-  if (!input || !result) { return; }
-  input.value = '';
-  result.innerHTML = '';
-  var backdrop = document.getElementById('filename-test-backdrop');
-  if (backdrop) {
-    backdrop.style.display = 'flex';
-    setTimeout(function () { input.focus(); }, 50);
-  }
-}
-
-function closeFilenameTest() {
-  var backdrop = document.getElementById('filename-test-backdrop');
-  if (backdrop) { backdrop.style.display = 'none'; }
-}
-
 document.addEventListener('DOMContentLoaded', function () {
   var backdrop = document.getElementById('filename-test-backdrop');
-  if (!backdrop) { return; }
+  if (!backdrop) { return; }  // not on the plugins page, skip
+
+  function openModal() {
+    var input = document.getElementById('filename-test-input');
+    var result = document.getElementById('filename-test-result');
+    if (input) { input.value = ''; }
+    if (result) { result.innerHTML = ''; }
+    backdrop.style.display = 'flex';
+    setTimeout(function () { if (input) { input.focus(); } }, 50);
+  }
+
+  function closeModal() {
+    backdrop.style.display = 'none';
+  }
+
+  // Open button
+  var openBtn = document.getElementById('open-filename-test');
+  if (openBtn) { openBtn.addEventListener('click', openModal); }
+
+  // Close button
+  var closeBtn = document.getElementById('close-filename-test');
+  if (closeBtn) { closeBtn.addEventListener('click', closeModal); }
 
   // Close on backdrop click
   backdrop.addEventListener('click', function (e) {
-    if (e.target === backdrop) { closeFilenameTest(); }
+    if (e.target === backdrop) { closeModal(); }
   });
-});
 
-// Close on Escape (global — safe since backdrop won't exist on non-plugins pages)
-document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { closeFilenameTest(); }
+  // Close on Escape
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && backdrop.style.display === 'flex') { closeModal(); }
+  });
 });

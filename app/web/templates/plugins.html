@@ -6,7 +6,7 @@
   <h1>Loaded Plugins</h1>
   <div style="display:flex; align-items:center; gap:0.75rem;">
     <button type="button"
-            onclick="openFilenameTest()"
+            id="open-filename-test"
             title="Test how a filename would be parsed and routed">
       ⚡ Test a filename
     </button>
@@ -63,7 +63,7 @@
               width:min(600px,92vw); max-height:85vh; overflow-y:auto; position:relative;">
 
     <button type="button"
-            onclick="closeFilenameTest()"
+            id="close-filename-test"
             style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none;
                    color:var(--dim); font-size:1.1rem; cursor:pointer;"
             aria-label="Close">✕</button>

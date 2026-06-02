@@ -56,31 +56,21 @@ def run(*cmd: str, env: dict | None = None, check: bool = True) -> int:
 def run_interactive(*cmd: str, env: dict | None = None) -> int:
     """Run a command interactively, forwarding Ctrl+C correctly on all platforms.
 
-    subprocess.run() on Windows swallows Ctrl+C in PowerShell — the signal is
-    delivered to the parent (tasks.py) but not forwarded to the child process.
-    Using Popen with CREATE_NEW_PROCESS_GROUP + CTRL_C_EVENT fixes this.
+    subprocess.run() on Windows can swallow Ctrl+C in PowerShell. Using Popen
+    without CREATE_NEW_PROCESS_GROUP keeps the child in the same console group
+    as tasks.py, so Ctrl+C is delivered to both and the child shuts down cleanly.
     """
+    import signal as _signal
     merged_env = {**os.environ, **(env or {})}
+    proc = subprocess.Popen(cmd, env=merged_env)
     try:
-        if sys.platform == "win32":
-            import ctypes
-            # CREATE_NEW_PROCESS_GROUP lets us send CTRL_C_EVENT to the child
-            CREATE_NEW_PROCESS_GROUP = 0x00000200
-            proc = subprocess.Popen(cmd, env=merged_env,
-                                    creationflags=CREATE_NEW_PROCESS_GROUP)
-        else:
-            proc = subprocess.Popen(cmd, env=merged_env)
         proc.wait()
         return proc.returncode
     except KeyboardInterrupt:
-        # Ctrl+C received — give the child a moment to shut down gracefully
+        # Ctrl+C — wait briefly for the child to handle its own KeyboardInterrupt
         try:
-            if sys.platform == "win32":
-                proc.send_signal(subprocess.signal.CTRL_C_EVENT)
-            else:
-                proc.terminate()
             proc.wait(timeout=5)
-        except Exception:
+        except subprocess.TimeoutExpired:
             proc.kill()
         return 0
 
