@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-06-02T04:49:54+00:00",
+  "finished_at": "2026-06-02T04:49:54+00:00",
+  "duration_seconds": 0,
+  "total_scanned": 0,
+  "updated": 0,
+  "renamed": 0,
+  "skipped": 0,
+  "unmatched": 0,
+  "add_form": 0,
+  "scrape_errors": 0,
+  "image_errors": 0,
+  "plugin_errors": 0,
+  "errors": 0,
+  "files": []
+}

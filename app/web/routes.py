@@ -372,14 +372,19 @@ async def test_plugin(request: Request):
         f'<table style="width:100%; border-collapse:collapse;">'
     )
     parse_fields = [
-        ("form",       parsed.form),
-        ("site",       parsed.site or "—"),
-        ("subtype",    parsed.match_subtype),
-        ("scene_id",   parsed.scene_id or "—"),
-        ("direct_url", parsed.direct_url or "—"),
-        ("date",       parsed.date or "—"),
-        ("title",      parsed.title or "—"),
-        ("actors",     ", ".join(parsed.actors) if parsed.actors else "—"),
+        ("form",        parsed.form),
+        ("site",        parsed.site),
+        ("subtype",     parsed.match_subtype),
+        ("actors",      ", ".join(parsed.actors) if parsed.actors else None),
+        ("genres",      ", ".join(parsed.genres) if parsed.genres else None),
+        ("date",        parsed.date),
+        ("scene_id",    parsed.scene_id),
+        ("direct_url",  parsed.direct_url),
+        ("title",       parsed.title),
+        ("studio",      parsed.studio),
+        ("raw_payload", parsed.raw_match_payload),
+
+        
     ]
     for label, value in parse_fields:
         if value and value != "—":

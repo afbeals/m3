@@ -1,0 +1,13 @@
+m3 run — 2026-06-02T05:22:48+00:00  (duration: 0s)
+────────────────────────────────────────
+  Total files scanned                    : 0
+  Updated                                : 0
+  Renamed (assets updated, no re-fetch)  : 0
+  Skipped (up-to-date)                   : 0
+  Manual Add (pending)                   : 0
+  Unmatched                              : 0
+  Scrape errors (site change / not found): 0
+  Image errors (NFO not written — images failed): 0
+  Plugin errors (invalid data returned)  : 0
+  Errors (unexpected)                    : 0
+
